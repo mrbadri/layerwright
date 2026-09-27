@@ -1,0 +1,48 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  body { font: 12px/1.4 Inter, system-ui, sans-serif; margin: 12px; color: var(--figma-color-text, #111); background: var(--figma-color-bg, #fff); }
+  .row { display: flex; align-items: center; gap: 8px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #d33; }
+  .dot.on { background: #1a9d4b; }
+  #log { margin-top: 8px; color: var(--figma-color-text-secondary, #666); white-space: pre-wrap; max-height: 80px; overflow: auto; }
+  input { width: 60px; }
+</style>
+</head>
+<body>
+  <div class="row"><span id="dot" class="dot"></span><b id="status">Connecting…</b></div>
+  <div class="row" style="margin-top:6px">Bridge port <input id="port" value="7331" /></div>
+  <div id="log"></div>
+<script>
+  // The UI iframe is only a transport relay: WebSocket <-> plugin main thread.
+  // No secrets, no model calls, no logic.
+  let ws, timer, hello = null;
+  const $ = (id) => document.getElementById(id);
+  const log = (m) => { const l = $("log"); l.textContent = (m + "\n" + l.textContent).slice(0, 2000); };
+  function connect() {
+    clearTimeout(timer);
+    try { ws = new WebSocket("ws://localhost:" + $("port").value); } catch (e) { return retry(); }
+    ws.onopen = () => { $("dot").classList.add("on"); $("status").textContent = "Connected to Claude"; if (hello) ws.send(JSON.stringify(hello)); };
+    ws.onclose = () => { $("dot").classList.remove("on"); $("status").textContent = "Waiting for bridge…"; retry(); };
+    ws.onerror = () => {};
+    ws.onmessage = (ev) => {
+      let req; try { req = JSON.parse(ev.data); } catch { return; }
+      log("→ " + req.method);
+      parent.postMessage({ pluginMessage: { type: "request", req } }, "*");
+    };
+  }
+  function retry() { clearTimeout(timer); timer = setTimeout(connect, 1500); }
+  $("port").onchange = () => { try { ws && ws.close(); } catch {} connect(); };
+  window.onmessage = (ev) => {
+    const msg = ev.data && ev.data.pluginMessage;
+    if (!msg) return;
+    if (msg.type === "hello") { hello = msg.hello; if (ws && ws.readyState === 1) ws.send(JSON.stringify(hello)); }
+    if (msg.type === "response") { if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg.res)); log((msg.res.ok ? "✓ " : "✗ ") + msg.res.id); }
+  };
+  parent.postMessage({ pluginMessage: { type: "ui-ready" } }, "*");
+  connect();
+</script>
+</body>
+</html>

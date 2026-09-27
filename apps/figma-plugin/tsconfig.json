@@ -1,0 +1,1 @@
+{ "extends": "../../tsconfig.base.json", "compilerOptions": { "baseUrl": "../..", "lib": ["ES2020", "DOM"], "typeRoots": ["../../node_modules/@types", "../../node_modules/@figma"], "types": ["plugin-typings", "node"] }, "include": ["src", "test"] }
