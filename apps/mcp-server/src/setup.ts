@@ -72,7 +72,11 @@ export async function init(o: InitOptions = {}): Promise<number> {
 Next steps:
   1. Figma desktop → Plugins → Development → Import plugin from manifest… → ${join(home, "manifest.json")}
   2. Open your design file and run the plugin (keep its small window open).
-  3. Restart Claude Code in ${dir} and ask: "Import ./design.html into Figma" or "Create a login screen in Figma using our Design System".
+  3. Restart Claude Code in ${dir} and ask, for example:
+     • "Import ./design.html into Figma"                         (HTML → Figma)
+     • "Create a login screen in Figma using our Design System"  (prompt → Figma)
+     • select a frame in Figma, then "Implement the selected Figma frame in code using our components"  (Figma → code)
+Optional: paste the prompt from https://github.com/shayan-m81/layerwright/blob/main/docs/claude-prompt.md into CLAUDE.md.
 Trouble? Run: npx ${PKG_NAME} doctor`);
   return 0;
 }

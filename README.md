@@ -58,6 +58,9 @@ npx layerwright init
 3. Restart **Claude Code** in the project and ask:
    - *"Import ./design.html into Figma"*: a Claude Design HTML export becomes editable frames.
    - *"Create a sign-up flow in Figma using our Design System"*: new screens built from your components.
+   - Select a frame in Figma, then *"Implement the selected Figma frame in code using our components"*: Figma → code with your mapped React components and theme tokens, checked afterwards.
+
+Want these rules always in Claude's context? Paste [this prompt](https://github.com/shayan-m81/layerwright/blob/main/docs/claude-prompt.md) into your project's `CLAUDE.md`.
 
 Something not working? Run `npx layerwright doctor`.
 

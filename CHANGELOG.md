@@ -5,6 +5,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-09-28
+
+### Added
+- `init` and the README now also show the Figma → code workflow ("Implement the selected Figma frame in code").
+- docs/claude-prompt.md: a ready-to-paste prompt for CLAUDE.md, plus example requests.
+
 ## [0.1.3] - 2026-09-28
 
 ### Fixed
@@ -41,7 +47,8 @@ All notable changes to this project are documented here. The format follows
 ### Fixed
 - The plugin no longer opens a duplicate connection after the port is changed.
 
-[Unreleased]: https://github.com/shayan-m81/layerwright/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/shayan-m81/layerwright/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/shayan-m81/layerwright/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/shayan-m81/layerwright/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/shayan-m81/layerwright/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/shayan-m81/layerwright/compare/v0.1.0...v0.1.1
