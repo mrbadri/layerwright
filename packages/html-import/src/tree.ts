@@ -1,14 +1,7 @@
-// HTML → Figma node tree. Renders a prototype in headless Chrome and serializes what the browser
+// HTML → Figma node tree (pixel-faithful, absolute layers; used by figma_import_html). Renders a prototype in headless Chrome and serializes what the browser
 // actually painted (boxes, computed styles, text runs, inline SVG). No model tokens are spent on layout.
-import http from "node:http";
-import { readFile } from "node:fs/promises";
-import { dirname, extname, join, resolve, sep } from "node:path";
 import type { ImportNode } from "@cde/core";
-
-const MIME: Record<string, string> = {
-  ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".json": "application/json",
-  ".woff2": "font/woff2", ".woff": "font/woff", ".ttf": "font/ttf", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg",
-};
+import { withPage } from "./browser.ts";
 
 export interface ImportTarget { selector: string; name?: string; index?: number }
 /** Replace matching elements with instances of an existing component. Variant = first rule whose test matches
@@ -17,43 +10,14 @@ export interface ImportSwap { selector: string; component: string; variants?: { 
 export interface ImportAction { click: string; index?: number; waitMs?: number }
 export interface ImportedScreen { name: string; width: number; height: number; tree: ImportNode; nodeCount: number }
 
-/** Serve `root` over http (the dc runtime fetches its own files, which fails on file://). */
-function serve(root: string): Promise<{ url: string; close: () => void }> {
-  return new Promise((ok) => {
-    const srv = http.createServer(async (q, r) => {
-      const p = resolve(join(root, decodeURIComponent((q.url ?? "/").split("?")[0])));
-      if (!p.startsWith(root + sep) && p !== root) { r.writeHead(403); r.end(); return; }
-      try { const buf = await readFile(p); r.writeHead(200, { "content-type": MIME[extname(p)] ?? "application/octet-stream" }); r.end(buf); }
-      catch { r.writeHead(404); r.end(); }
-    }).listen(0, "127.0.0.1", () => {
-      const a = srv.address() as { port: number };
-      ok({ url: `http://127.0.0.1:${a.port}`, close: () => srv.close() });
-    });
-  });
-}
-
 export async function importHtml(opts: { file: string; root?: string; targets?: ImportTarget[]; swaps?: ImportSwap[]; actions?: ImportAction[]; viewport?: number; waitMs?: number }): Promise<ImportedScreen[]> {
-  const file = resolve(opts.file);
-  const root = resolve(opts.root ?? dirname(dirname(file)));
-  const { chromium } = await import("playwright-core");
-  const site = await serve(root);
-  const browser = await chromium.launch({ channel: "chrome" });
-  try {
-    const page = await browser.newPage({ viewport: { width: opts.viewport ?? 2400, height: 1200 }, deviceScaleFactor: 1, reducedMotion: "reduce" });
-    // tsx/esbuild wraps named inner functions in __name(); give the page a no-op so SERIALIZE runs there.
-    await page.addInitScript("window.__name = (f) => f");
-    await page.goto(`${site.url}/${file.slice(root.length + 1).split(sep).join("/")}`, { waitUntil: "networkidle" });
-    await page.waitForTimeout(opts.waitMs ?? 1500);
-    await page.evaluate(() => (document as any).fonts?.ready);
+  return withPage(opts.file, { root: opts.root, width: opts.viewport ?? 2400, height: 1200, waitMs: opts.waitMs ?? 1500 }, async (page) => {
     for (const a of opts.actions ?? []) {
       await page.locator(a.click).nth(a.index ?? 0).click();
       await page.waitForTimeout(a.waitMs ?? 300);
     }
     return (await page.evaluate(SERIALIZE, { targets: opts.targets ?? null, swaps: opts.swaps ?? [] })) as ImportedScreen[];
-  } finally {
-    await browser.close();
-    site.close();
-  }
+  });
 }
 
 // Runs inside the page. Kept dependency-free and self-contained.

@@ -10,6 +10,6 @@
     "resolveJsonModule": true,
     "allowImportingTsExtensions": true,
     "baseUrl": ".",
-    "paths": { "@cde/core": ["packages/core/src/index.ts"] }
+    "paths": { "@cde/core": ["packages/core/src/index.ts"], "@cde/html-import": ["packages/html-import/src/index.ts"] }
   }
 }

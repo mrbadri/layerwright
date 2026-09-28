@@ -1,6 +1,6 @@
 // Deterministic executor: ResolvedPlan -> real Figma nodes, and Transformation[] -> edits.
 // No model calls, no eval. Every operation is a fixed Plugin API call.
-import type { ExecutionReport, Num, Paint as PlanPaint, ResolvedFrame, ResolvedInstance, ResolvedNode, ResolvedPlan, ResolvedRect, ResolvedText, StructuredError, Transformation, TransformReport } from "@cde/core";
+import type { ExecutionReport, Num, Paint as PlanPaint, ResolvedFrame, ResolvedGradient, ResolvedInstance, ResolvedNode, ResolvedPlan, ResolvedRect, ResolvedShadow, ResolvedSvg, ResolvedText, StructuredError, Transformation, TransformReport } from "@cde/core";
 
 export class ExecError extends Error {
   constructor(public detail: StructuredError) { super(detail.message); }
@@ -13,11 +13,66 @@ const hexToRgb = (hex: string) => {
   return { color: { r: n(0), g: n(2), b: n(4) }, opacity: h.length === 8 ? n(6) : 1 };
 };
 
+const WEIGHTS: [RegExp, number][] = [[/thin|hairline/, 100], [/extra ?light|ultra ?light/, 200], [/light/, 300], [/medium/, 500], [/semi ?bold|demi ?bold/, 600], [/extra ?bold|ultra ?bold/, 800], [/black|heavy/, 900], [/bold/, 700]];
+export const weightOf = (style: string) => { const s = style.toLowerCase(); for (const [re, w] of WEIGHTS) if (re.test(s)) return w; return 400; };
+const normStyle = (s: string) => s.toLowerCase().replace(/[\s_-]+/g, "");
+
+/** Pick the closest available style of a family: exact name (ignoring spaces), else nearest weight with matching italic. */
+export function closestStyle(styles: string[], want: string, italic = false): string | undefined {
+  if (!styles.length) return undefined;
+  const target = normStyle(italic && !/italic/i.test(want) ? `${want} Italic` : want);
+  const exact = styles.find((s) => normStyle(s) === target || (target === "regular" && normStyle(s) === "normal"));
+  if (exact) return exact;
+  const w = weightOf(want);
+  const pool = styles.filter((s) => /italic|oblique/i.test(s) === italic);
+  return [...(pool.length ? pool : styles)].sort((a, b) => Math.abs(weightOf(a) - w) - Math.abs(weightOf(b) - w) || a.length - b.length)[0];
+}
+
+function gradientPaint(g: ResolvedGradient): GradientPaint {
+  // CSS angles: 0deg points up, 90deg right. Figma's gradient space runs left→right, so rotate about the centre.
+  const t = ((g.angle - 90) * Math.PI) / 180, c = Math.cos(t), s = Math.sin(t);
+  return {
+    type: "GRADIENT_LINEAR",
+    gradientTransform: [[c, s, 0.5 - 0.5 * c - 0.5 * s], [-s, c, 0.5 + 0.5 * s - 0.5 * c]],
+    gradientStops: g.stops.map((st) => { const { color, opacity } = hexToRgb(st.hex); return { position: st.position, color: { ...color, a: opacity } }; }),
+  };
+}
+
+function shadowEffect(s: ResolvedShadow): Effect {
+  const { color, opacity } = hexToRgb(s.hex);
+  const base = { color: { ...color, a: opacity }, offset: { x: s.x, y: s.y }, radius: s.blur, spread: s.spread, visible: true, blendMode: "NORMAL" as const };
+  return s.type === "INNER_SHADOW" ? { type: "INNER_SHADOW", ...base } : { type: "DROP_SHADOW", ...base, showShadowBehindNode: false };
+}
+
 class Ctx {
   vars = new Map<string, Variable>();
   warnings: string[] = [];
   nodeIds: Record<string, string> = {};
   fonts = new Set<string>();
+  private catalog?: Map<string, string[]>;
+
+  /** Resolve a family + weight to a loaded, available font. Never throws: falls back to Inter with a warning. */
+  async resolveFont(family: string, weight: string, italic: boolean, path: string): Promise<FontName> {
+    if (!this.catalog) {
+      this.catalog = new Map();
+      try {
+        for (const f of await figma.listAvailableFontsAsync()) this.catalog.set(f.fontName.family, [...(this.catalog.get(f.fontName.family) ?? []), f.fontName.style]);
+      } catch { /* an empty catalog just means every lookup falls back below */ }
+    }
+    const catalog = this.catalog;
+    const byLower = (fam: string) => [...catalog.keys()].find((k) => k.toLowerCase() === fam.toLowerCase());
+    const tries: FontName[] = [];
+    const fam = byLower(family);
+    if (fam) tries.push({ family: fam, style: closestStyle(catalog.get(fam)!, weight, italic)! });
+    else this.warnings.push(`${path}: font "${family}" is not available; using Inter.`);
+    const inter = byLower("Inter");
+    tries.push({ family: "Inter", style: inter ? closestStyle(catalog.get(inter)!, weight, italic)! : "Regular" }, { family: "Inter", style: "Regular" });
+    for (const f of tries) {
+      try { await this.font(f); return f; } catch { /* try the next candidate */ }
+    }
+    this.warnings.push(`${path}: no font could be loaded; text left in the default font.`);
+    return { family: "Inter", style: "Regular" };
+  }
 
   async variable(id?: string, key?: string): Promise<Variable> {
     const k = key ?? id!;
@@ -83,6 +138,17 @@ function applySizing(node: SceneNode, spec: ResolvedNode, ctx: Ctx) {
     const w = spec.width ?? node.width, h = spec.height ?? node.height;
     if ("resize" in node) (node as FrameNode).resize(Math.max(1, w), Math.max(1, h));
   }
+  if (spec.absolute) {
+    if (parentAuto) (node as FrameNode).layoutPositioning = "ABSOLUTE";
+    node.x = spec.absolute.x; node.y = spec.absolute.y;
+  }
+  if (spec.opacity !== undefined && "opacity" in node) (node as FrameNode).opacity = spec.opacity;
+  if ((spec.minWidth !== undefined || spec.maxWidth !== undefined) && "minWidth" in node) {
+    if (parentAuto || selfAuto) {
+      if (spec.minWidth !== undefined) (node as FrameNode).minWidth = spec.minWidth;
+      if (spec.maxWidth !== undefined) (node as FrameNode).maxWidth = spec.maxWidth;
+    } else ctx.warnings.push(`${spec.path}: minWidth/maxWidth need Auto Layout; ignored.`);
+  }
   const set = (axis: "Horizontal" | "Vertical", mode?: string) => {
     if (!mode) return;
     const prop = `layoutSizing${axis}` as "layoutSizingHorizontal";
@@ -112,6 +178,7 @@ async function buildFrame(n: ResolvedFrame, parent: BaseNode & ChildrenMixin, ct
     if (n.layout.wrap && n.layout.direction === "HORIZONTAL") f.layoutWrap = "WRAP";
   }
   await ctx.fill(f, n.fill);
+  if (n.gradient) f.fills = [...(f.fills as Paint[]), gradientPaint(n.gradient)];
   if (n.stroke) {
     await ctx.fill(f, n.stroke, "stroke");
     const w = n.strokeWeight ?? 1;
@@ -121,9 +188,14 @@ async function buildFrame(n: ResolvedFrame, parent: BaseNode & ChildrenMixin, ct
       f.strokeTopWeight = on.has("top") ? w : 0; f.strokeRightWeight = on.has("right") ? w : 0;
       f.strokeBottomWeight = on.has("bottom") ? w : 0; f.strokeLeftWeight = on.has("left") ? w : 0;
     } else f.strokeWeight = w;
+    if (n.strokeWeights) {
+      const s = n.strokeWeights;
+      f.strokeTopWeight = s.top ?? 0; f.strokeRightWeight = s.right ?? 0; f.strokeBottomWeight = s.bottom ?? 0; f.strokeLeftWeight = s.left ?? 0;
+    }
   }
   await ctx.radius(f, n.radius);
   if (n.effectStyleId) await f.setEffectStyleIdAsync(n.effectStyleId);
+  else if (n.shadows?.length) f.effects = n.shadows.map(shadowEffect);
   applySizing(f, n, ctx);
   for (const c of n.children) await buildNode(c, f, ctx);
   return f;
@@ -140,10 +212,11 @@ async function buildText(n: ResolvedText, parent: BaseNode & ChildrenMixin, ctx:
     await ctx.font(style.fontName);
     await t.setTextStyleIdAsync(style.id);
   } else {
-    const font = { family: "Inter", style: n.fontWeight ?? "Regular" };
-    try { await ctx.font(font); t.fontName = font; } catch { ctx.warnings.push(`${n.path}: font ${font.family} ${font.style} unavailable; using Inter Regular.`); }
+    t.fontName = await ctx.resolveFont(n.fontFamily ?? "Inter", n.fontWeight ?? "Regular", !!n.italic, n.path);
     if (n.fontSize) t.fontSize = n.fontSize;
   }
+  if (n.lineHeight) t.lineHeight = n.lineHeight.unit === "AUTO" ? { unit: "AUTO" } : { unit: n.lineHeight.unit, value: n.lineHeight.value };
+  if (n.letterSpacing) t.letterSpacing = { unit: n.letterSpacing.unit, value: n.letterSpacing.value };
   t.characters = n.content;
   t.name = n.name;
   if (n.align) t.textAlignHorizontal = n.align;
@@ -202,9 +275,40 @@ async function buildRect(n: ResolvedRect, parent: BaseNode & ChildrenMixin, ctx:
   r.name = n.name;
   r.resize(n.width ?? 100, n.height ?? 1);
   await ctx.fill(r, n.fill);
+  if (n.src) {
+    // Keep the placeholder fill if the bytes can't be decoded; report instead of failing the plan.
+    try {
+      const m = n.src.match(/^data:image\/[\w.+-]+;base64,(.+)$/);
+      if (!m) throw new Error("only data:image/…;base64 URLs reach the plugin (https is inlined by the server)");
+      const img = figma.createImage(figma.base64Decode(m[1]));
+      r.fills = [{ type: "IMAGE", imageHash: img.hash, scaleMode: n.fit ?? "FILL" }];
+    } catch (e) { ctx.warnings.push(`${n.path}: image could not be loaded (${(e as Error).message}); kept the placeholder.`); }
+  }
   await ctx.radius(r, n.radius);
   applySizing(r, { ...n, width: undefined, height: undefined }, ctx);
   return r;
+}
+
+async function buildSvg(n: ResolvedSvg, parent: BaseNode & ChildrenMixin, ctx: Ctx): Promise<SceneNode> {
+  let node: SceneNode;
+  try { node = figma.createNodeFromSvg(n.svg); }
+  catch (e) {
+    ctx.warnings.push(`${n.path}: invalid SVG (${(e as Error).message}); drew a placeholder.`);
+    return buildRect({ kind: "rect", role: "icon-placeholder", path: n.path, name: n.name, width: n.width ?? 24, height: n.height ?? 24, fill: { hex: "#E5E7EB" } }, parent, ctx);
+  }
+  parent.appendChild(node);
+  ctx.nodeIds[n.path] = node.id;
+  node.name = n.name;
+  if (n.fill && "findAll" in node) {
+    const paint = await ctx.solid(n.fill);
+    for (const v of (node as FrameNode).findAll((c) => c.type === "VECTOR")) {
+      const vec = v as VectorNode;
+      if ((vec.fills as Paint[]).length) vec.fills = [paint];
+      if ((vec.strokes as Paint[]).length) vec.strokes = [paint];
+    }
+  }
+  applySizing(node, n, ctx);
+  return node;
 }
 
 function buildNode(n: ResolvedNode, parent: BaseNode & ChildrenMixin, ctx: Ctx): Promise<SceneNode> {
@@ -214,6 +318,7 @@ function buildNode(n: ResolvedNode, parent: BaseNode & ChildrenMixin, ctx: Ctx):
       case "text": return buildText(n, parent, ctx);
       case "instance": return buildInstance(n, parent, ctx);
       case "rect": return buildRect(n, parent, ctx);
+      case "svg": return buildSvg(n, parent, ctx);
     }
   };
   return run().catch((e) => {

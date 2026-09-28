@@ -1,0 +1,43 @@
+// Command line: `<bin>` (or `<bin> serve`) runs the MCP server for Claude Code; the other commands
+// are for people at a terminal.
+import { resolve } from "node:path";
+import { compilePlan, emptyDesignSystem } from "@cde/core";
+
+const HELP = `Usage:
+  cde                        start the MCP server (Claude Code runs this for you)
+  cde import <file|folder>   convert HTML to a Design Plan and print its summary
+      --viewport 1440,390      viewport widths (default 1440,390)
+      --json                   print the full plan JSON instead of the summary
+      --selector <css>         element to import (default body)
+  cde help`;
+
+export async function importCommand(args: string[], out: (s: string) => void = (s) => process.stdout.write(s + "\n")) {
+  const { renderToPlan } = await import("@cde/html-import");
+  const flag = (name: string) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined; };
+  const path = args.find((a, i) => !a.startsWith("--") && !["--viewport", "--selector"].includes(args[i - 1]));
+  if (!path) { out(HELP); return 2; }
+  const viewports = flag("--viewport")?.split(",").map(Number).filter((n) => n >= 200);
+  const r = await renderToPlan(resolve(path), { viewports, selector: flag("--selector") });
+  if (args.includes("--json")) { out(JSON.stringify(r.plan, null, 2)); return 0; }
+  const c = compilePlan(emptyDesignSystem(), r.plan);
+  const s = c.summary;
+  out(`Plan "${r.plan.name}"`);
+  out(`  screens:    ${s.screens.join(", ")}`);
+  out(`  frames:     ${s.frames}   texts: ${s.texts}   images/icons/dividers: ${s.primitives}`);
+  const roles = r.hints.reduce<Record<string, number>>((m, h) => ((m[h.role] = (m[h.role] ?? 0) + 1), m), {});
+  if (Object.keys(roles).length) out(`  detected:   ${Object.entries(roles).map(([k, v]) => `${v} × ${k}`).join(", ")} (mapped to DS components when a Design System is scanned)`);
+  for (const w of [...r.warnings, ...c.warnings].slice(0, 10)) out(`  warning:    ${w}`);
+  if (!c.ok) { for (const e of c.errors.slice(0, 10)) out(`  error:      ${e.path ?? ""} ${e.message}`); return 1; }
+  out(`\nIn Claude Code, ask: "Import ${path} into Figma" (tool: import_html_to_plan).`);
+  return 0;
+}
+
+export async function main(argv = process.argv.slice(2)) {
+  const [cmd, ...rest] = argv;
+  if (!cmd || cmd === "serve") { await import("./index.ts"); return; }
+  if (cmd === "import") process.exitCode = await importCommand(rest);
+  else if (cmd === "help" || cmd === "--help" || cmd === "-h") process.stdout.write(HELP + "\n");
+  else { process.stderr.write(`Unknown command "${cmd}".\n${HELP}\n`); process.exitCode = 2; }
+}
+
+if (import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith("/cli.ts") || process.argv[1]?.endsWith("/cli.js")) await main();

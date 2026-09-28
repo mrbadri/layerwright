@@ -184,7 +184,16 @@ export interface ResolvedBase {
   height?: number;
   sizingH?: Sizing;
   sizingV?: Sizing;
+  opacity?: number;
+  /** Absolutely positioned inside the parent (also inside Auto Layout). */
+  absolute?: { x: number; y: number };
+  minWidth?: number;
+  maxWidth?: number;
 }
+
+export interface ResolvedShadow { type: "DROP_SHADOW" | "INNER_SHADOW"; x: number; y: number; blur: number; spread: number; hex: string }
+export interface ResolvedGradient { angle: number; stops: { hex: string; position: number }[] }
+export type ResolvedLineHeight = { unit: "PIXELS" | "PERCENT"; value: number } | { unit: "AUTO" };
 
 export interface ResolvedFrame extends ResolvedBase {
   kind: "frame";
@@ -203,6 +212,9 @@ export interface ResolvedFrame extends ResolvedBase {
   strokeSides?: ("top" | "right" | "bottom" | "left")[];
   radius?: Num;
   effectStyleId?: string;
+  shadows?: ResolvedShadow[];
+  strokeWeights?: { top?: number; right?: number; bottom?: number; left?: number };
+  gradient?: ResolvedGradient;
   clip?: boolean;
   children: ResolvedNode[];
 }
@@ -213,7 +225,13 @@ export interface ResolvedText extends ResolvedBase {
   textStyleId?: string;
   textStyleKey?: string;
   fontSize?: number;
-  fontWeight?: "Regular" | "Medium" | "Semi Bold" | "Bold";
+  /** Requested family; the executor falls back to an available one with a warning. Default Inter. */
+  fontFamily?: string;
+  /** Canonical weight name, matched loosely against available styles ("Semi Bold" ≈ "SemiBold"). */
+  fontWeight?: "Thin" | "Extra Light" | "Light" | "Regular" | "Medium" | "Semi Bold" | "Bold" | "Extra Bold" | "Black";
+  italic?: boolean;
+  lineHeight?: ResolvedLineHeight;
+  letterSpacing?: { unit: "PIXELS" | "PERCENT"; value: number };
   fill?: Paint;
   align?: "LEFT" | "CENTER" | "RIGHT" | "JUSTIFIED";
   hyperlink?: string;
@@ -236,9 +254,19 @@ export interface ResolvedRect extends ResolvedBase {
   role: "divider" | "image" | "icon-placeholder";
   fill?: Paint;
   radius?: Num;
+  /** Image bytes as a data: URL (https sources are inlined by the MCP server before execution). */
+  src?: string;
+  fit?: "FILL" | "FIT" | "CROP";
 }
 
-export type ResolvedNode = ResolvedFrame | ResolvedText | ResolvedInstance | ResolvedRect;
+export interface ResolvedSvg extends ResolvedBase {
+  kind: "svg";
+  svg: string;
+  /** Recolor every vector fill/stroke (icons that use currentColor). */
+  fill?: Paint;
+}
+
+export type ResolvedNode = ResolvedFrame | ResolvedText | ResolvedInstance | ResolvedRect | ResolvedSvg;
 
 export interface ResolvedPlan {
   planId: string;

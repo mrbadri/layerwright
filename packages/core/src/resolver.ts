@@ -215,7 +215,8 @@ const PRESETS: Record<string, any> = {
   frame: {},
 };
 const ALIGN: Record<string, "MIN" | "CENTER" | "MAX" | "SPACE_BETWEEN" | "BASELINE"> = { start: "MIN", center: "CENTER", end: "MAX", "space-between": "SPACE_BETWEEN", baseline: "BASELINE" };
-const WEIGHT = { regular: "Regular", medium: "Medium", semibold: "Semi Bold", bold: "Bold" } as const;
+const WEIGHT = { thin: "Thin", extralight: "Extra Light", light: "Light", regular: "Regular", medium: "Medium", semibold: "Semi Bold", bold: "Bold", extrabold: "Extra Bold", black: "Black" } as const;
+const LH_UNIT = { px: "PIXELS", percent: "PERCENT" } as const;
 const ROLE_FALLBACK: Record<string, { size: number; weight: "Regular" | "Medium" | "Semi Bold" | "Bold" }> = {
   display: { size: 40, weight: "Bold" }, heading: { size: 28, weight: "Bold" }, title: { size: 22, weight: "Semi Bold" }, subheading: { size: 18, weight: "Semi Bold" },
   body: { size: 16, weight: "Regular" }, label: { size: 14, weight: "Medium" }, caption: { size: 12, weight: "Regular" }, overline: { size: 11, weight: "Medium" }, code: { size: 14, weight: "Regular" },
@@ -243,6 +244,11 @@ function sizing(v: number | "hug" | "fill" | undefined): { size?: number; mode?:
   if (v === undefined) return {};
   if (typeof v === "number") return { size: v, mode: "fixed" };
   return { mode: v };
+}
+
+/** A Design System with nothing in it: plans compile to plain frames, text and primitives. */
+export function emptyDesignSystem(fileName = ""): DesignSystem {
+  return { fileName, scannedAt: new Date(0).toISOString(), components: [], componentSets: [], variableCollections: [], variables: [], styles: [], typography: [], semanticTokens: [] };
 }
 
 export function compilePlan(ds: DesignSystem, plan: DesignPlan): CompileResult {
@@ -274,8 +280,32 @@ export function compilePlan(ds: DesignSystem, plan: DesignPlan): CompileResult {
     return { top: n(p.top, "padding.top"), right: n(p.right, "padding.right"), bottom: n(p.bottom, "padding.bottom"), left: n(p.left, "padding.left") };
   };
 
-  const build = (node: any, path: string, parentDir: "HORIZONTAL" | "VERTICAL" | "NONE" | null): ResolvedNode | undefined => {
+  /** Colors for effects and gradients must be concrete: hex, or a color variable's value. */
+  const hexOf = (ref: string, path: string): string | undefined => {
+    if (/^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(ref)) return ref;
+    const v = r.findVariable(ref, "COLOR");
+    if (v && typeof v.value === "string" && v.value.startsWith("#")) { tokenSet.add(v.name); return v.value; }
+    errors.push({ type: "TOKEN_NOT_FOUND", path, message: `Color "${ref}" must be a hex value or a color variable with a plain value.` });
+    return undefined;
+  };
+  /** Fields shared by every node type. */
+  const common = (node: any) => ({
+    opacity: node.opacity,
+    absolute: node.position ? { x: node.position.x, y: node.position.y } : undefined,
+    minWidth: node.minWidth, maxWidth: node.maxWidth,
+  });
+
+  const build = (node: any, path: string, parentDir: "HORIZONTAL" | "VERTICAL" | "NONE" | null, rtl = false): ResolvedNode | undefined => {
+    const res = buildInner(node, path, parentDir, rtl);
+    if (res) Object.assign(res, Object.fromEntries(Object.entries(common(node)).filter(([, v]) => v !== undefined)));
+    // An absolutely positioned child doesn't stretch with the flow.
+    if (res && node.position && res.sizingH === "fill" && node.width === undefined) res.sizingH = undefined;
+    return res;
+  };
+
+  const buildInner = (node: any, path: string, parentDir: "HORIZONTAL" | "VERTICAL" | "NONE" | null, rtlIn: boolean): ResolvedNode | undefined => {
     const t = node.type as string;
+    const rtl = node.direction ? node.direction === "rtl" : rtlIn;
     const stretch = parentDir === "VERTICAL" ? "fill" : undefined;
     const w = sizing(node.width), h = sizing(node.height);
     const defaultH = (x: Sizing | undefined) => w.mode ?? x;
@@ -315,6 +345,9 @@ export function compilePlan(ds: DesignSystem, plan: DesignPlan): CompileResult {
         strokeWeight: node.strokeWeight,
         strokeSides: node.strokeSides,
         radius: noteNum(r.resolveNum(node.radius ?? preset.radius, `${path}.radius`, errors, "radius")),
+        strokeWeights: node.strokeWeights,
+        shadows: node.shadows?.map((s: any, i: number) => ({ type: s.type === "inner" ? "INNER_SHADOW" : "DROP_SHADOW", x: s.x, y: s.y, blur: s.blur, spread: s.spread, hex: hexOf(s.color, `${path}.shadows[${i}].color`) ?? "#00000040" })),
+        gradient: node.gradient && { angle: node.gradient.angle, stops: node.gradient.stops.map((s: any, i: number) => ({ hex: hexOf(s.color, `${path}.gradient.stops[${i}].color`) ?? "#000000", position: s.position })) },
         clip: node.clip,
         width: w.size ?? (t === "screen" ? 390 : undefined),
         height: h.size,
@@ -326,7 +359,9 @@ export function compilePlan(ds: DesignSystem, plan: DesignPlan): CompileResult {
         const e = ds.styles.find((s) => s.type === "EFFECT" && norm(s.name).includes(norm(node.effect)));
         if (e) frame.effectStyleId = e.id; else errors.push({ type: "STYLE_NOT_FOUND", path: `${path}.effect`, message: `No effect style matches "${node.effect}".`, suggestions: ds.styles.filter((s) => s.type === "EFFECT").map((s) => s.name).slice(0, 8) });
       }
-      (node.children ?? []).forEach((c: any, i: number) => { const b = build(c, `${path}.children[${i}]`, dir); if (b) frame.children.push(b); });
+      (node.children ?? []).forEach((c: any, i: number) => { const b = build(c, `${path}.children[${i}]`, dir, rtl); if (b) frame.children.push(b); });
+      // RTL: the first child sits on the right. Figma lays out left-to-right, so reverse the order.
+      if (rtl && dir === "HORIZONTAL") frame.children.reverse();
       return frame;
     }
 
@@ -344,12 +379,16 @@ export function compilePlan(ds: DesignSystem, plan: DesignPlan): CompileResult {
       const fb = ROLE_FALLBACK[role] ?? ROLE_FALLBACK.body;
       let color = node.color;
       if (!color && t === "link") color = r.findVariable("link", "COLOR")?.name ?? r.findVariable("primary", "COLOR")?.name;
+      const align = node.align ? node.align.toUpperCase() : rtl ? "RIGHT" : undefined;
       return {
+        fontFamily: node.fontFamily, italic: node.italic,
+        lineHeight: node.lineHeight ? (node.lineHeight.unit === "auto" ? { unit: "AUTO" } : { unit: LH_UNIT[node.lineHeight.unit as "px"], value: node.lineHeight.value }) : undefined,
+        letterSpacing: node.letterSpacing ? { unit: LH_UNIT[node.letterSpacing.unit as "px"], value: node.letterSpacing.value } : undefined,
         kind: "text", path, name: node.name ?? (t === "link" ? "Link" : node.content.slice(0, 40)), content: node.content,
         textStyleId: st?.styleId, textStyleKey: st ? ds.styles.find((s) => s.id === st.styleId && s.remote)?.key : undefined,
         fontSize: st ? undefined : node.fontSize ?? fb.size, fontWeight: node.weight ? WEIGHT[node.weight as keyof typeof WEIGHT] : st ? undefined : fb.weight,
         fill: notePaint(r.resolvePaint(color, `${path}.color`, errors)),
-        align: node.align ? node.align.toUpperCase() : undefined, hyperlink: node.href,
+        align, hyperlink: node.href,
         width: w.size, height: h.size, sizingH: defaultH(stretch), sizingV: h.mode,
       } as ResolvedNode;
     }
@@ -365,9 +404,16 @@ export function compilePlan(ds: DesignSystem, plan: DesignPlan): CompileResult {
       return { kind: "rect", role: "divider", path, name: node.name ?? "Divider", height: 1, sizingH: parentDir === "HORIZONTAL" ? "fixed" : "fill", width: typeof node.width === "number" ? node.width : parentDir === "HORIZONTAL" ? 1 : undefined, fill };
     }
 
+    if (t === "icon" && node.svg) {
+      summary.primitives++;
+      if (!/^\s*<svg[\s>]/i.test(node.svg)) { errors.push({ type: "INVALID_PLAN", path: `${path}.svg`, message: "svg must be inline <svg> markup." }); return undefined; }
+      return { kind: "svg", path, name: node.name ?? "Icon", svg: node.svg, fill: notePaint(r.resolvePaint(node.color, `${path}.color`, errors)), width: w.size ?? 24, height: h.size ?? 24, sizingH: w.mode ?? "fixed", sizingV: h.mode ?? "fixed" };
+    }
+
     if (t === "image") {
       summary.primitives++;
-      return { kind: "rect", role: "image", path, name: node.name ?? `Image${node.alt ? ` – ${node.alt}` : ""}`, width: w.size ?? 120, height: h.size ?? 120, sizingH: w.mode ?? stretch ?? "fixed", sizingV: h.mode ?? "fixed", fill: notePaint(r.resolvePaint(node.fill ?? "#E5E7EB", `${path}.fill`, errors)), radius: noteNum(r.resolveNum(node.radius, `${path}.radius`, errors, "radius")) };
+      if (node.src && !/^(data:image\/|https:\/\/)/.test(node.src)) errors.push({ type: "INVALID_PLAN", path: `${path}.src`, message: "Image src must be a data:image/… URL or an https URL." });
+      return { kind: "rect", role: "image", src: node.src, fit: node.src ? ({ fill: "FILL", fit: "FIT", crop: "CROP" } as const)[node.fit as "fill"] ?? "FILL" : undefined, path, name: node.name ?? `Image${node.alt ? ` – ${node.alt}` : ""}`, width: w.size ?? 120, height: h.size ?? 120, sizingH: w.mode ?? stretch ?? "fixed", sizingV: h.mode ?? "fixed", fill: notePaint(r.resolvePaint(node.fill ?? "#E5E7EB", `${path}.fill`, errors)), radius: noteNum(r.resolveNum(node.radius, `${path}.radius`, errors, "radius")) };
     }
 
     // component / component-instance / button / input / icon / link(component) / divider(component)

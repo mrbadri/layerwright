@@ -12,8 +12,8 @@
   "dependencies": {
     "@cde/core": "*",
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "playwright-core": "^1.63.0",
     "ws": "^8.18.0",
-    "zod": "^3.25.0"
+    "zod": "^3.25.0",
+    "@cde/html-import": "*"
   }
 }

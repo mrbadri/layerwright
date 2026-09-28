@@ -1,0 +1,4 @@
+@font-face { font-family: "Vazirmatn"; font-weight: 400; src: url("./fonts/Vazirmatn-Regular.ttf"); }
+@font-face { font-family: "Vazirmatn"; font-weight: 700; src: url("./fonts/Vazirmatn-Bold.ttf"); }
+* { box-sizing: border-box; }
+body { margin: 0; font-family: "Vazirmatn", sans-serif; color: #172527; background: #F8FCFA; }

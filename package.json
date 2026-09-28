@@ -3,11 +3,14 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "workspaces": ["packages/*", "apps/*"],
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
   "scripts": {
     "build": "npm run build -w @cde/figma-plugin",
-    "typecheck": "tsc -p packages/core && tsc -p apps/mcp-server && tsc -p apps/figma-plugin",
-    "test": "node --import tsx --test packages/core/test/*.test.ts apps/mcp-server/test/*.test.ts apps/figma-plugin/test/*.test.ts",
+    "typecheck": "tsc -p packages/core && tsc -p packages/html-import && tsc -p apps/mcp-server && tsc -p apps/figma-plugin",
+    "test": "node --import tsx --test packages/core/test/*.test.ts packages/html-import/test/*.test.ts apps/mcp-server/test/*.test.ts apps/figma-plugin/test/*.test.ts",
     "mcp": "tsx apps/mcp-server/src/index.ts"
   },
   "devDependencies": {

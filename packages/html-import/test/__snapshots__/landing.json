@@ -1,0 +1,983 @@
+{
+  "version": 1,
+  "name": "Acme",
+  "screenGap": 120,
+  "screens": [
+    {
+      "type": "screen",
+      "name": "Acme – 1440",
+      "width": 1440,
+      "layout": {
+        "direction": "vertical",
+        "gap": 0,
+        "padding": 0,
+        "crossAlign": "start"
+      },
+      "fill": "#F8FCFA",
+      "children": [
+        {
+          "type": "frame",
+          "name": "nav",
+          "width": "fill",
+          "height": "hug",
+          "layout": {
+            "direction": "horizontal",
+            "gap": 0,
+            "padding": {
+              "top": 16,
+              "right": 32,
+              "bottom": 17,
+              "left": 32
+            },
+            "align": "space-between",
+            "crossAlign": "center"
+          },
+          "fill": "#FFFFFF",
+          "stroke": "#E2ECE8",
+          "strokeWeights": {
+            "top": 0,
+            "right": 0,
+            "bottom": 1,
+            "left": 0
+          },
+          "children": [
+            {
+              "type": "text",
+              "name": ".brand",
+              "width": "hug",
+              "content": "Acme",
+              "color": "#172527",
+              "fontSize": 18,
+              "fontFamily": "Vazirmatn",
+              "weight": "bold",
+              "align": "left"
+            },
+            {
+              "type": "frame",
+              "name": ".links",
+              "width": 177.25,
+              "height": "hug",
+              "layout": {
+                "direction": "horizontal",
+                "gap": 24,
+                "padding": 0,
+                "align": "start",
+                "crossAlign": "start"
+              },
+              "children": [
+                {
+                  "type": "frame",
+                  "name": "a",
+                  "width": 54.2,
+                  "height": "fill",
+                  "layout": {
+                    "direction": "vertical",
+                    "gap": 0,
+                    "padding": 0,
+                    "crossAlign": "center"
+                  },
+                  "children": [
+                    {
+                      "type": "text",
+                      "name": "Features",
+                      "width": "fill",
+                      "content": "Features",
+                      "color": "#172527",
+                      "fontSize": 14,
+                      "fontFamily": "Vazirmatn",
+                      "weight": "regular",
+                      "align": "left"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "name": "a",
+                  "width": 43.31,
+                  "height": "fill",
+                  "layout": {
+                    "direction": "vertical",
+                    "gap": 0,
+                    "padding": 0,
+                    "crossAlign": "center"
+                  },
+                  "children": [
+                    {
+                      "type": "text",
+                      "name": "Pricing",
+                      "width": "fill",
+                      "content": "Pricing",
+                      "color": "#172527",
+                      "fontSize": 14,
+                      "fontFamily": "Vazirmatn",
+                      "weight": "regular",
+                      "align": "left"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "name": "a",
+                  "width": 31.73,
+                  "height": "fill",
+                  "layout": {
+                    "direction": "vertical",
+                    "gap": 0,
+                    "padding": 0,
+                    "crossAlign": "center"
+                  },
+                  "children": [
+                    {
+                      "type": "text",
+                      "name": "Docs",
+                      "width": "fill",
+                      "content": "Docs",
+                      "color": "#172527",
+                      "fontSize": 14,
+                      "fontFamily": "Vazirmatn",
+                      "weight": "regular",
+                      "align": "left"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "name": ".hero",
+          "width": "fill",
+          "height": "hug",
+          "layout": {
+            "direction": "vertical",
+            "gap": 16,
+            "padding": {
+              "top": 64,
+              "right": 32,
+              "bottom": 64,
+              "left": 32
+            },
+            "align": "start",
+            "crossAlign": "center"
+          },
+          "gradient": {
+            "type": "linear",
+            "angle": 180,
+            "stops": [
+              {
+                "color": "#CFECE6",
+                "position": 0
+              },
+              {
+                "color": "#F8FCFA",
+                "position": 1
+              }
+            ]
+          },
+          "children": [
+            {
+              "type": "text",
+              "name": "h1",
+              "width": "hug",
+              "content": "Ship designs faster",
+              "color": "#172527",
+              "fontSize": 40,
+              "fontFamily": "Vazirmatn",
+              "weight": "bold",
+              "lineHeight": {
+                "unit": "px",
+                "value": 52
+              },
+              "letterSpacing": {
+                "unit": "px",
+                "value": -0.4
+              },
+              "align": "center"
+            },
+            {
+              "type": "text",
+              "name": "p",
+              "width": "hug",
+              "content": "From prototype to Figma in one step.",
+              "color": "#3D4D4E",
+              "fontSize": 17,
+              "fontFamily": "Vazirmatn",
+              "weight": "regular",
+              "align": "center"
+            },
+            {
+              "type": "frame",
+              "name": ".cta",
+              "width": 244.89,
+              "height": "hug",
+              "layout": {
+                "direction": "horizontal",
+                "gap": 12,
+                "padding": 0,
+                "align": "start",
+                "crossAlign": "start"
+              },
+              "children": [
+                {
+                  "type": "frame",
+                  "name": ".btn",
+                  "width": 114.69,
+                  "height": "fill",
+                  "layout": {
+                    "direction": "vertical",
+                    "gap": 0,
+                    "padding": {
+                      "top": 13,
+                      "right": 20,
+                      "bottom": 13,
+                      "left": 20
+                    },
+                    "crossAlign": "center"
+                  },
+                  "fill": "#176B66",
+                  "radius": 999,
+                  "children": [
+                    {
+                      "type": "text",
+                      "name": "Get started",
+                      "width": "fill",
+                      "content": "Get started",
+                      "color": "#FFFFFF",
+                      "fontSize": 15,
+                      "fontFamily": "Vazirmatn",
+                      "weight": "regular",
+                      "align": "center"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "name": ".btn",
+                  "width": 118.2,
+                  "height": "fill",
+                  "layout": {
+                    "direction": "vertical",
+                    "gap": 0,
+                    "padding": {
+                      "top": 13,
+                      "right": 21,
+                      "bottom": 13,
+                      "left": 21
+                    },
+                    "crossAlign": "center"
+                  },
+                  "fill": "#FFFFFF",
+                  "stroke": "#176B66",
+                  "strokeWeight": 1,
+                  "radius": 999,
+                  "children": [
+                    {
+                      "type": "text",
+                      "name": "Learn more",
+                      "width": "fill",
+                      "content": "Learn more",
+                      "color": "#176B66",
+                      "fontSize": 15,
+                      "fontFamily": "Vazirmatn",
+                      "weight": "regular",
+                      "align": "center"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "name": ".grid",
+          "width": "fill",
+          "height": "hug",
+          "layout": {
+            "direction": "horizontal",
+            "gap": 24,
+            "padding": {
+              "top": 48,
+              "right": 32,
+              "bottom": 48,
+              "left": 32
+            },
+            "align": "start",
+            "crossAlign": "start"
+          },
+          "children": [
+            {
+              "type": "frame",
+              "name": ".card",
+              "width": "fill",
+              "height": "fill",
+              "layout": {
+                "direction": "vertical",
+                "gap": 8,
+                "padding": 20,
+                "align": "start",
+                "crossAlign": "start"
+              },
+              "fill": "#FFFFFF",
+              "radius": 16,
+              "shadows": [
+                {
+                  "type": "drop",
+                  "x": 0,
+                  "y": 8,
+                  "blur": 24,
+                  "spread": -12,
+                  "color": "#1725274D"
+                }
+              ],
+              "children": [
+                {
+                  "type": "icon",
+                  "name": "Icon",
+                  "width": 24,
+                  "height": 24,
+                  "svg": "<svg width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" xmlns=\"http://www.w3.org/2000/svg\"><circle cx=\"12\" cy=\"12\" r=\"10\" fill=\"#0F7F79\"></circle></svg>"
+                },
+                {
+                  "type": "text",
+                  "name": "h3",
+                  "width": "fill",
+                  "content": "Auto Layout",
+                  "color": "#172527",
+                  "fontSize": 17,
+                  "fontFamily": "Vazirmatn",
+                  "weight": "bold",
+                  "align": "left"
+                },
+                {
+                  "type": "text",
+                  "name": "p",
+                  "width": "fill",
+                  "content": "Flexbox becomes native Auto Layout.",
+                  "color": "#61706E",
+                  "fontSize": 14,
+                  "fontFamily": "Vazirmatn",
+                  "weight": "regular",
+                  "lineHeight": {
+                    "unit": "px",
+                    "value": 22
+                  },
+                  "align": "left"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "name": ".card",
+              "width": "fill",
+              "height": "fill",
+              "layout": {
+                "direction": "vertical",
+                "gap": 8,
+                "padding": 20,
+                "align": "start",
+                "crossAlign": "start"
+              },
+              "fill": "#FFFFFF",
+              "radius": 16,
+              "shadows": [
+                {
+                  "type": "drop",
+                  "x": 0,
+                  "y": 8,
+                  "blur": 24,
+                  "spread": -12,
+                  "color": "#1725274D"
+                }
+              ],
+              "children": [
+                {
+                  "type": "icon",
+                  "name": "Icon",
+                  "width": 24,
+                  "height": 24,
+                  "svg": "<svg width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" xmlns=\"http://www.w3.org/2000/svg\"><circle cx=\"12\" cy=\"12\" r=\"10\" fill=\"#F4C44D\"></circle></svg>"
+                },
+                {
+                  "type": "text",
+                  "name": "h3",
+                  "width": "fill",
+                  "content": "Components",
+                  "color": "#172527",
+                  "fontSize": 17,
+                  "fontFamily": "Vazirmatn",
+                  "weight": "bold",
+                  "align": "left"
+                },
+                {
+                  "type": "text",
+                  "name": "p",
+                  "width": "fill",
+                  "content": "Buttons map to your Design System.",
+                  "color": "#61706E",
+                  "fontSize": 14,
+                  "fontFamily": "Vazirmatn",
+                  "weight": "regular",
+                  "lineHeight": {
+                    "unit": "px",
+                    "value": 22
+                  },
+                  "align": "left"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "name": ".card",
+              "width": "fill",
+              "height": "fill",
+              "layout": {
+                "direction": "vertical",
+                "gap": 8,
+                "padding": 20,
+                "align": "start",
+                "crossAlign": "start"
+              },
+              "fill": "#FFFFFF",
+              "radius": 16,
+              "shadows": [
+                {
+                  "type": "drop",
+                  "x": 0,
+                  "y": 8,
+                  "blur": 24,
+                  "spread": -12,
+                  "color": "#1725274D"
+                }
+              ],
+              "children": [
+                {
+                  "type": "icon",
+                  "name": "Icon",
+                  "width": 24,
+                  "height": 24,
+                  "svg": "<svg width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" xmlns=\"http://www.w3.org/2000/svg\"><circle cx=\"12\" cy=\"12\" r=\"10\" fill=\"#D65A68\"></circle></svg>"
+                },
+                {
+                  "type": "text",
+                  "name": "h3",
+                  "width": "fill",
+                  "content": "Tokens",
+                  "color": "#172527",
+                  "fontSize": 17,
+                  "fontFamily": "Vazirmatn",
+                  "weight": "bold",
+                  "align": "left"
+                },
+                {
+                  "type": "text",
+                  "name": "p",
+                  "width": "fill",
+                  "content": "Colors and radii stay consistent.",
+                  "color": "#61706E",
+                  "fontSize": 14,
+                  "fontFamily": "Vazirmatn",
+                  "weight": "regular",
+                  "lineHeight": {
+                    "unit": "px",
+                    "value": 22
+                  },
+                  "align": "left"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "screen",
+      "name": "Acme – 390",
+      "width": 390,
+      "layout": {
+        "direction": "vertical",
+        "gap": 0,
+        "padding": 0,
+        "crossAlign": "start"
+      },
+      "fill": "#F8FCFA",
+      "children": [
+        {
+          "type": "frame",
+          "name": "nav",
+          "width": "fill",
+          "height": "hug",
+          "layout": {
+            "direction": "horizontal",
+            "gap": 0,
+            "padding": {
+              "top": 16,
+              "right": 32,
+              "bottom": 17,
+              "left": 32
+            },
+            "align": "space-between",
+            "crossAlign": "center"
+          },
+          "fill": "#FFFFFF",
+          "stroke": "#E2ECE8",
+          "strokeWeights": {
+            "top": 0,
+            "right": 0,
+            "bottom": 1,
+            "left": 0
+          },
+          "children": [
+            {
+              "type": "text",
+              "name": ".brand",
+              "width": "hug",
+              "content": "Acme",
+              "color": "#172527",
+              "fontSize": 18,
+              "fontFamily": "Vazirmatn",
+              "weight": "bold",
+              "align": "left"
+            },
+            {
+              "type": "frame",
+              "name": ".links",
+              "width": 177.25,
+              "height": "hug",
+              "layout": {
+                "direction": "horizontal",
+                "gap": 24,
+                "padding": 0,
+                "align": "start",
+                "crossAlign": "start"
+              },
+              "children": [
+                {
+                  "type": "frame",
+                  "name": "a",
+                  "width": 54.2,
+                  "height": "fill",
+                  "layout": {
+                    "direction": "vertical",
+                    "gap": 0,
+                    "padding": 0,
+                    "crossAlign": "center"
+                  },
+                  "children": [
+                    {
+                      "type": "text",
+                      "name": "Features",
+                      "width": "fill",
+                      "content": "Features",
+                      "color": "#172527",
+                      "fontSize": 14,
+                      "fontFamily": "Vazirmatn",
+                      "weight": "regular",
+                      "align": "left"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "name": "a",
+                  "width": 43.31,
+                  "height": "fill",
+                  "layout": {
+                    "direction": "vertical",
+                    "gap": 0,
+                    "padding": 0,
+                    "crossAlign": "center"
+                  },
+                  "children": [
+                    {
+                      "type": "text",
+                      "name": "Pricing",
+                      "width": "fill",
+                      "content": "Pricing",
+                      "color": "#172527",
+                      "fontSize": 14,
+                      "fontFamily": "Vazirmatn",
+                      "weight": "regular",
+                      "align": "left"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "name": "a",
+                  "width": 31.73,
+                  "height": "fill",
+                  "layout": {
+                    "direction": "vertical",
+                    "gap": 0,
+                    "padding": 0,
+                    "crossAlign": "center"
+                  },
+                  "children": [
+                    {
+                      "type": "text",
+                      "name": "Docs",
+                      "width": "fill",
+                      "content": "Docs",
+                      "color": "#172527",
+                      "fontSize": 14,
+                      "fontFamily": "Vazirmatn",
+                      "weight": "regular",
+                      "align": "left"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "name": ".hero",
+          "width": "fill",
+          "height": "hug",
+          "layout": {
+            "direction": "vertical",
+            "gap": 16,
+            "padding": {
+              "top": 64,
+              "right": 32,
+              "bottom": 64,
+              "left": 32
+            },
+            "align": "start",
+            "crossAlign": "center"
+          },
+          "gradient": {
+            "type": "linear",
+            "angle": 180,
+            "stops": [
+              {
+                "color": "#CFECE6",
+                "position": 0
+              },
+              {
+                "color": "#F8FCFA",
+                "position": 1
+              }
+            ]
+          },
+          "children": [
+            {
+              "type": "text",
+              "name": "h1",
+              "width": "fill",
+              "content": "Ship designs faster",
+              "color": "#172527",
+              "fontSize": 40,
+              "fontFamily": "Vazirmatn",
+              "weight": "bold",
+              "lineHeight": {
+                "unit": "px",
+                "value": 52
+              },
+              "letterSpacing": {
+                "unit": "px",
+                "value": -0.4
+              },
+              "align": "center"
+            },
+            {
+              "type": "text",
+              "name": "p",
+              "width": "hug",
+              "content": "From prototype to Figma in one step.",
+              "color": "#3D4D4E",
+              "fontSize": 17,
+              "fontFamily": "Vazirmatn",
+              "weight": "regular",
+              "align": "center"
+            },
+            {
+              "type": "frame",
+              "name": ".cta",
+              "width": 244.89,
+              "height": "hug",
+              "layout": {
+                "direction": "horizontal",
+                "gap": 12,
+                "padding": 0,
+                "align": "start",
+                "crossAlign": "start"
+              },
+              "children": [
+                {
+                  "type": "frame",
+                  "name": ".btn",
+                  "width": 114.69,
+                  "height": "fill",
+                  "layout": {
+                    "direction": "vertical",
+                    "gap": 0,
+                    "padding": {
+                      "top": 13,
+                      "right": 20,
+                      "bottom": 13,
+                      "left": 20
+                    },
+                    "crossAlign": "center"
+                  },
+                  "fill": "#176B66",
+                  "radius": 999,
+                  "children": [
+                    {
+                      "type": "text",
+                      "name": "Get started",
+                      "width": "fill",
+                      "content": "Get started",
+                      "color": "#FFFFFF",
+                      "fontSize": 15,
+                      "fontFamily": "Vazirmatn",
+                      "weight": "regular",
+                      "align": "center"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "name": ".btn",
+                  "width": 118.2,
+                  "height": "fill",
+                  "layout": {
+                    "direction": "vertical",
+                    "gap": 0,
+                    "padding": {
+                      "top": 13,
+                      "right": 21,
+                      "bottom": 13,
+                      "left": 21
+                    },
+                    "crossAlign": "center"
+                  },
+                  "fill": "#FFFFFF",
+                  "stroke": "#176B66",
+                  "strokeWeight": 1,
+                  "radius": 999,
+                  "children": [
+                    {
+                      "type": "text",
+                      "name": "Learn more",
+                      "width": "fill",
+                      "content": "Learn more",
+                      "color": "#176B66",
+                      "fontSize": 15,
+                      "fontFamily": "Vazirmatn",
+                      "weight": "regular",
+                      "align": "center"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "name": ".grid",
+          "width": "fill",
+          "height": "hug",
+          "layout": {
+            "direction": "horizontal",
+            "gap": 24,
+            "padding": {
+              "top": 48,
+              "right": 32,
+              "bottom": 48,
+              "left": 32
+            },
+            "align": "start",
+            "crossAlign": "start"
+          },
+          "children": [
+            {
+              "type": "frame",
+              "name": ".card",
+              "width": "fill",
+              "height": "fill",
+              "layout": {
+                "direction": "vertical",
+                "gap": 8,
+                "padding": 20,
+                "align": "start",
+                "crossAlign": "start"
+              },
+              "fill": "#FFFFFF",
+              "radius": 16,
+              "shadows": [
+                {
+                  "type": "drop",
+                  "x": 0,
+                  "y": 8,
+                  "blur": 24,
+                  "spread": -12,
+                  "color": "#1725274D"
+                }
+              ],
+              "children": [
+                {
+                  "type": "icon",
+                  "name": "Icon",
+                  "width": 24,
+                  "height": 24,
+                  "svg": "<svg width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" xmlns=\"http://www.w3.org/2000/svg\"><circle cx=\"12\" cy=\"12\" r=\"10\" fill=\"#0F7F79\"></circle></svg>"
+                },
+                {
+                  "type": "text",
+                  "name": "h3",
+                  "width": "fill",
+                  "content": "Auto Layout",
+                  "color": "#172527",
+                  "fontSize": 17,
+                  "fontFamily": "Vazirmatn",
+                  "weight": "bold",
+                  "align": "left"
+                },
+                {
+                  "type": "text",
+                  "name": "p",
+                  "width": "fill",
+                  "content": "Flexbox becomes native Auto Layout.",
+                  "color": "#61706E",
+                  "fontSize": 14,
+                  "fontFamily": "Vazirmatn",
+                  "weight": "regular",
+                  "lineHeight": {
+                    "unit": "px",
+                    "value": 22
+                  },
+                  "align": "left"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "name": ".card",
+              "width": "fill",
+              "height": "fill",
+              "layout": {
+                "direction": "vertical",
+                "gap": 8,
+                "padding": 20,
+                "align": "start",
+                "crossAlign": "start"
+              },
+              "fill": "#FFFFFF",
+              "radius": 16,
+              "shadows": [
+                {
+                  "type": "drop",
+                  "x": 0,
+                  "y": 8,
+                  "blur": 24,
+                  "spread": -12,
+                  "color": "#1725274D"
+                }
+              ],
+              "children": [
+                {
+                  "type": "icon",
+                  "name": "Icon",
+                  "width": 24,
+                  "height": 24,
+                  "svg": "<svg width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" xmlns=\"http://www.w3.org/2000/svg\"><circle cx=\"12\" cy=\"12\" r=\"10\" fill=\"#F4C44D\"></circle></svg>"
+                },
+                {
+                  "type": "text",
+                  "name": "h3",
+                  "width": "fill",
+                  "content": "Components",
+                  "color": "#172527",
+                  "fontSize": 17,
+                  "fontFamily": "Vazirmatn",
+                  "weight": "bold",
+                  "align": "left"
+                },
+                {
+                  "type": "text",
+                  "name": "p",
+                  "width": "fill",
+                  "content": "Buttons map to your Design System.",
+                  "color": "#61706E",
+                  "fontSize": 14,
+                  "fontFamily": "Vazirmatn",
+                  "weight": "regular",
+                  "lineHeight": {
+                    "unit": "px",
+                    "value": 22
+                  },
+                  "align": "left"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "name": ".card",
+              "width": "fill",
+              "height": "fill",
+              "layout": {
+                "direction": "vertical",
+                "gap": 8,
+                "padding": 20,
+                "align": "start",
+                "crossAlign": "start"
+              },
+              "fill": "#FFFFFF",
+              "radius": 16,
+              "shadows": [
+                {
+                  "type": "drop",
+                  "x": 0,
+                  "y": 8,
+                  "blur": 24,
+                  "spread": -12,
+                  "color": "#1725274D"
+                }
+              ],
+              "children": [
+                {
+                  "type": "icon",
+                  "name": "Icon",
+                  "width": 24,
+                  "height": 24,
+                  "svg": "<svg width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" xmlns=\"http://www.w3.org/2000/svg\"><circle cx=\"12\" cy=\"12\" r=\"10\" fill=\"#D65A68\"></circle></svg>"
+                },
+                {
+                  "type": "text",
+                  "name": "h3",
+                  "width": "fill",
+                  "content": "Tokens",
+                  "color": "#172527",
+                  "fontSize": 17,
+                  "fontFamily": "Vazirmatn",
+                  "weight": "bold",
+                  "align": "left"
+                },
+                {
+                  "type": "text",
+                  "name": "p",
+                  "width": "fill",
+                  "content": "Colors and radii stay consistent.",
+                  "color": "#61706E",
+                  "fontSize": 14,
+                  "fontFamily": "Vazirmatn",
+                  "weight": "regular",
+                  "lineHeight": {
+                    "unit": "px",
+                    "value": 22
+                  },
+                  "align": "left"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

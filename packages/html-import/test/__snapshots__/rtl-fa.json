@@ -1,0 +1,517 @@
+{
+  "version": 1,
+  "name": "لیست آرزو",
+  "screenGap": 120,
+  "screens": [
+    {
+      "type": "screen",
+      "name": "لیست آرزو – 1440",
+      "width": 1440,
+      "layout": {
+        "direction": "vertical",
+        "gap": 0,
+        "padding": 0,
+        "crossAlign": "end"
+      },
+      "fill": "#F8FCFA",
+      "children": [
+        {
+          "type": "frame",
+          "name": "header",
+          "width": "fill",
+          "height": "hug",
+          "layout": {
+            "direction": "horizontal",
+            "gap": 12,
+            "padding": {
+              "top": 16,
+              "right": 20,
+              "bottom": 16,
+              "left": 20
+            },
+            "align": "end",
+            "crossAlign": "center"
+          },
+          "fill": "#CFECE6",
+          "direction": "rtl",
+          "children": [
+            {
+              "type": "text",
+              "name": ".owner",
+              "width": "hug",
+              "content": "لیست آرزوهای سارا",
+              "color": "#176B66",
+              "fontSize": 14,
+              "fontFamily": "Vazirmatn",
+              "weight": "bold",
+              "align": "right",
+              "direction": "rtl"
+            },
+            {
+              "type": "text",
+              "name": ".count",
+              "width": "hug",
+              "content": "۸ آرزو",
+              "color": "#61706E",
+              "fontSize": 13,
+              "fontFamily": "Vazirmatn",
+              "weight": "regular",
+              "align": "right",
+              "direction": "rtl"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "name": "main",
+          "width": "fill",
+          "height": "hug",
+          "layout": {
+            "direction": "vertical",
+            "gap": 12,
+            "padding": 20,
+            "align": "start",
+            "crossAlign": "end"
+          },
+          "children": [
+            {
+              "type": "text",
+              "name": "h1",
+              "width": "fill",
+              "content": "تولد سی‌سالگی سارا",
+              "color": "#172527",
+              "fontSize": 28,
+              "fontFamily": "Vazirmatn",
+              "weight": "bold",
+              "lineHeight": {
+                "unit": "px",
+                "value": 40
+              },
+              "align": "right",
+              "direction": "rtl"
+            },
+            {
+              "type": "frame",
+              "name": ".row",
+              "width": "fill",
+              "height": "hug",
+              "layout": {
+                "direction": "horizontal",
+                "gap": 8,
+                "padding": 0,
+                "align": "end",
+                "crossAlign": "start"
+              },
+              "direction": "rtl",
+              "children": [
+                {
+                  "type": "frame",
+                  "name": ".chip",
+                  "width": 44.44,
+                  "height": "fill",
+                  "layout": {
+                    "direction": "vertical",
+                    "gap": 0,
+                    "padding": {
+                      "top": 6,
+                      "right": 12,
+                      "bottom": 6,
+                      "left": 12
+                    },
+                    "crossAlign": "center"
+                  },
+                  "fill": "#F4C44D",
+                  "radius": 16,
+                  "children": [
+                    {
+                      "type": "text",
+                      "name": "تولد",
+                      "width": "fill",
+                      "content": "تولد",
+                      "color": "#172527",
+                      "fontSize": 13,
+                      "fontFamily": "Vazirmatn",
+                      "weight": "regular",
+                      "align": "right",
+                      "direction": "rtl"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "name": ".chip",
+                  "width": 57.11,
+                  "height": "fill",
+                  "layout": {
+                    "direction": "vertical",
+                    "gap": 0,
+                    "padding": {
+                      "top": 6,
+                      "right": 12,
+                      "bottom": 6,
+                      "left": 12
+                    },
+                    "crossAlign": "center"
+                  },
+                  "fill": "#F4C44D",
+                  "radius": 16,
+                  "children": [
+                    {
+                      "type": "text",
+                      "name": "۱۲ آبان",
+                      "width": "fill",
+                      "content": "۱۲ آبان",
+                      "color": "#172527",
+                      "fontSize": 13,
+                      "fontFamily": "Vazirmatn",
+                      "weight": "regular",
+                      "align": "right",
+                      "direction": "rtl"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "name": ".chip",
+                  "width": 89.77,
+                  "height": "fill",
+                  "layout": {
+                    "direction": "vertical",
+                    "gap": 0,
+                    "padding": {
+                      "top": 6,
+                      "right": 12,
+                      "bottom": 6,
+                      "left": 12
+                    },
+                    "crossAlign": "center"
+                  },
+                  "fill": "#F4C44D",
+                  "radius": 16,
+                  "children": [
+                    {
+                      "type": "text",
+                      "name": "۳۶ روز مونده",
+                      "width": "fill",
+                      "content": "۳۶ روز مونده",
+                      "color": "#172527",
+                      "fontSize": 13,
+                      "fontFamily": "Vazirmatn",
+                      "weight": "regular",
+                      "align": "right",
+                      "direction": "rtl"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "name": "p",
+              "width": "fill",
+              "content": "مرسی که به فکرمی! هر کدوم رو خواستی انتخاب کن.",
+              "color": "#172527",
+              "fontSize": 15,
+              "fontFamily": "Vazirmatn",
+              "weight": "regular",
+              "lineHeight": {
+                "unit": "px",
+                "value": 28
+              },
+              "align": "right",
+              "direction": "rtl"
+            },
+            {
+              "type": "frame",
+              "name": ".tag",
+              "width": 104.08,
+              "height": "hug",
+              "layout": {
+                "direction": "vertical",
+                "gap": 0,
+                "padding": {
+                  "top": 10,
+                  "right": 16,
+                  "bottom": 10,
+                  "left": 16
+                },
+                "crossAlign": "center"
+              },
+              "fill": "#0F7F79",
+              "radius": 20,
+              "children": [
+                {
+                  "type": "text",
+                  "name": "این کادو با من",
+                  "width": "fill",
+                  "content": "این کادو با من",
+                  "color": "#FFFFFF",
+                  "fontSize": 13,
+                  "fontFamily": "Vazirmatn",
+                  "weight": "regular",
+                  "align": "center",
+                  "direction": "rtl"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "screen",
+      "name": "لیست آرزو – 390",
+      "width": 390,
+      "layout": {
+        "direction": "vertical",
+        "gap": 0,
+        "padding": 0,
+        "crossAlign": "end"
+      },
+      "fill": "#F8FCFA",
+      "children": [
+        {
+          "type": "frame",
+          "name": "header",
+          "width": "fill",
+          "height": "hug",
+          "layout": {
+            "direction": "horizontal",
+            "gap": 12,
+            "padding": {
+              "top": 16,
+              "right": 20,
+              "bottom": 16,
+              "left": 20
+            },
+            "align": "end",
+            "crossAlign": "center"
+          },
+          "fill": "#CFECE6",
+          "direction": "rtl",
+          "children": [
+            {
+              "type": "text",
+              "name": ".owner",
+              "width": "hug",
+              "content": "لیست آرزوهای سارا",
+              "color": "#176B66",
+              "fontSize": 14,
+              "fontFamily": "Vazirmatn",
+              "weight": "bold",
+              "align": "right",
+              "direction": "rtl"
+            },
+            {
+              "type": "text",
+              "name": ".count",
+              "width": "hug",
+              "content": "۸ آرزو",
+              "color": "#61706E",
+              "fontSize": 13,
+              "fontFamily": "Vazirmatn",
+              "weight": "regular",
+              "align": "right",
+              "direction": "rtl"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "name": "main",
+          "width": "fill",
+          "height": "hug",
+          "layout": {
+            "direction": "vertical",
+            "gap": 12,
+            "padding": 20,
+            "align": "start",
+            "crossAlign": "end"
+          },
+          "children": [
+            {
+              "type": "text",
+              "name": "h1",
+              "width": "fill",
+              "content": "تولد سی‌سالگی سارا",
+              "color": "#172527",
+              "fontSize": 28,
+              "fontFamily": "Vazirmatn",
+              "weight": "bold",
+              "lineHeight": {
+                "unit": "px",
+                "value": 40
+              },
+              "align": "right",
+              "direction": "rtl"
+            },
+            {
+              "type": "frame",
+              "name": ".row",
+              "width": "fill",
+              "height": "hug",
+              "layout": {
+                "direction": "horizontal",
+                "gap": 8,
+                "padding": 0,
+                "align": "end",
+                "crossAlign": "start"
+              },
+              "direction": "rtl",
+              "children": [
+                {
+                  "type": "frame",
+                  "name": ".chip",
+                  "width": 44.44,
+                  "height": "fill",
+                  "layout": {
+                    "direction": "vertical",
+                    "gap": 0,
+                    "padding": {
+                      "top": 6,
+                      "right": 12,
+                      "bottom": 6,
+                      "left": 12
+                    },
+                    "crossAlign": "center"
+                  },
+                  "fill": "#F4C44D",
+                  "radius": 16,
+                  "children": [
+                    {
+                      "type": "text",
+                      "name": "تولد",
+                      "width": "fill",
+                      "content": "تولد",
+                      "color": "#172527",
+                      "fontSize": 13,
+                      "fontFamily": "Vazirmatn",
+                      "weight": "regular",
+                      "align": "right",
+                      "direction": "rtl"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "name": ".chip",
+                  "width": 57.11,
+                  "height": "fill",
+                  "layout": {
+                    "direction": "vertical",
+                    "gap": 0,
+                    "padding": {
+                      "top": 6,
+                      "right": 12,
+                      "bottom": 6,
+                      "left": 12
+                    },
+                    "crossAlign": "center"
+                  },
+                  "fill": "#F4C44D",
+                  "radius": 16,
+                  "children": [
+                    {
+                      "type": "text",
+                      "name": "۱۲ آبان",
+                      "width": "fill",
+                      "content": "۱۲ آبان",
+                      "color": "#172527",
+                      "fontSize": 13,
+                      "fontFamily": "Vazirmatn",
+                      "weight": "regular",
+                      "align": "right",
+                      "direction": "rtl"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "name": ".chip",
+                  "width": 89.77,
+                  "height": "fill",
+                  "layout": {
+                    "direction": "vertical",
+                    "gap": 0,
+                    "padding": {
+                      "top": 6,
+                      "right": 12,
+                      "bottom": 6,
+                      "left": 12
+                    },
+                    "crossAlign": "center"
+                  },
+                  "fill": "#F4C44D",
+                  "radius": 16,
+                  "children": [
+                    {
+                      "type": "text",
+                      "name": "۳۶ روز مونده",
+                      "width": "fill",
+                      "content": "۳۶ روز مونده",
+                      "color": "#172527",
+                      "fontSize": 13,
+                      "fontFamily": "Vazirmatn",
+                      "weight": "regular",
+                      "align": "right",
+                      "direction": "rtl"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "name": "p",
+              "width": "fill",
+              "content": "مرسی که به فکرمی! هر کدوم رو خواستی انتخاب کن.",
+              "color": "#172527",
+              "fontSize": 15,
+              "fontFamily": "Vazirmatn",
+              "weight": "regular",
+              "lineHeight": {
+                "unit": "px",
+                "value": 28
+              },
+              "align": "right",
+              "direction": "rtl"
+            },
+            {
+              "type": "frame",
+              "name": ".tag",
+              "width": 104.08,
+              "height": "hug",
+              "layout": {
+                "direction": "vertical",
+                "gap": 0,
+                "padding": {
+                  "top": 10,
+                  "right": 16,
+                  "bottom": 10,
+                  "left": 16
+                },
+                "crossAlign": "center"
+              },
+              "fill": "#0F7F79",
+              "radius": 20,
+              "children": [
+                {
+                  "type": "text",
+                  "name": "این کادو با من",
+                  "width": "fill",
+                  "content": "این کادو با من",
+                  "color": "#FFFFFF",
+                  "fontSize": 13,
+                  "fontFamily": "Vazirmatn",
+                  "weight": "regular",
+                  "align": "center",
+                  "direction": "rtl"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

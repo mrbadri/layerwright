@@ -4,7 +4,7 @@ import { scanDesignSystem, snapshot } from "./scan.ts";
 import { executePlan, applyTransformations, ExecError } from "./execute.ts";
 import { importTree, ensurePages, foundations } from "./import.ts";
 
-figma.showUI(__html__, { width: 240, height: 130, themeColors: true });
+figma.showUI(__html__, { width: 260, height: 180, themeColors: true });
 
 async function resolveTarget(target?: string): Promise<BaseNode[]> {
   if (!target || target === "selection") return [...figma.currentPage.selection];
@@ -52,7 +52,14 @@ async function handle(req: BridgeRequest): Promise<unknown> {
 const hello = () => ({ type: "hello", fileName: figma.root.name, fileKey: figma.fileKey, page: figma.currentPage.name, user: figma.currentUser?.name });
 
 figma.ui.onmessage = async (msg: any) => {
-  if (msg?.type === "ui-ready") { figma.ui.postMessage({ type: "hello", hello: hello() }); return; }
+  if (msg?.type === "ui-ready") {
+    figma.ui.postMessage({ type: "hello", hello: hello() });
+    // Remember the bridge port per user (parallel sessions use different ports).
+    const port = await figma.clientStorage.getAsync("bridgePort").catch(() => undefined);
+    if (typeof port === "number" && port !== 7331) figma.ui.postMessage({ type: "port", port });
+    return;
+  }
+  if (msg?.type === "set-port" && typeof msg.port === "number") { await figma.clientStorage.setAsync("bridgePort", msg.port); return; }
   if (msg?.type !== "request") return;
   const req = msg.req as BridgeRequest;
   let res: BridgeResponse;

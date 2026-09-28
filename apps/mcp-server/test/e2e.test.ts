@@ -11,6 +11,11 @@ import { WsBridge } from "../src/bridge.ts";
 import { createServer } from "../src/server.ts";
 import { fixtureDs, loginPlan } from "../../../packages/core/test/fixture.ts";
 import type { NodeSnapshot, ResolvedNode, ResolvedPlan } from "@cde/core";
+import { launch } from "@cde/html-import";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const here = dirname(fileURLToPath(import.meta.url));
 
 const toSnap = (n: ResolvedNode, id: string): NodeSnapshot => {
   if (n.kind === "frame") return { id, type: "FRAME", name: n.name, layout: { mode: n.layout?.direction ?? "NONE", gap: n.layout?.gap?.value }, bound: n.layout?.gap?.variableId ? { itemSpacing: "x" } : undefined, children: n.children.map((c, i) => toSnap(c, `${id}.${i}`)) };
@@ -83,6 +88,19 @@ test("MCP tools: scan → context → preview → execute → verify → code", 
   const exec = await call("figma_execute_plan", { planId: prev.json.planId });
   assert.equal(exec.json.success, true);
   assert.equal(exec.json.verification.passed, true, JSON.stringify(exec.json.verification));
+
+  // HTML import goes through the same planId → execute path (needs a local Chromium; skipped otherwise).
+  let chromium = true;
+  try { await (await launch()).close(); } catch { chromium = false; }
+  if (chromium) {
+    const imp = await call("import_html_to_plan", { path: join(here, "../../../packages/html-import/test/fixtures/login.html"), viewport: 390 });
+    assert.equal(imp.isError, false, JSON.stringify(imp.json));
+    assert.ok(imp.json.planId);
+    assert.ok(Object.keys(imp.json.mappedToDesignSystem).length >= 1, "scanned DS components were used");
+    const run = await call("figma_execute_plan", { planId: imp.json.planId });
+    assert.equal(run.json.success, true);
+    assert.equal(lastPlan!.roots[0].name, "Sign in – 390");
+  }
 
   const denied = await call("figma_apply_transformations", { analysisId: "x", approved: false });
   assert.equal(denied.json.errors[0].type, "NOT_APPROVED");

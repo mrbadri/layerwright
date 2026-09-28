@@ -3,44 +3,101 @@
 <head>
 <meta charset="utf-8" />
 <style>
-  body { font: 12px/1.4 Inter, system-ui, sans-serif; margin: 12px; color: var(--figma-color-text, #111); background: var(--figma-color-bg, #fff); }
+  body { font: 12px/1.45 Inter, system-ui, sans-serif; margin: 12px; color: var(--figma-color-text, #111); background: var(--figma-color-bg, #fff); }
   .row { display: flex; align-items: center; gap: 8px; }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: #d33; }
-  .dot.on { background: #1a9d4b; }
-  #log { margin-top: 8px; color: var(--figma-color-text-secondary, #666); white-space: pre-wrap; max-height: 80px; overflow: auto; }
-  input { width: 60px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #d33; flex: none; }
+  .dot[data-state="connected"] { background: #1a9d4b; }
+  .dot[data-state="running"] { background: #1a73e8; animation: pulse 1s infinite alternate; }
+  @keyframes pulse { to { opacity: .35; } }
+  #detail, #log { color: var(--figma-color-text-secondary, #666); }
+  #error { display: none; margin-top: 8px; padding: 6px 8px; border-radius: 6px; background: var(--figma-color-bg-danger-tertiary, #fdecea); color: var(--figma-color-text-danger, #a50e0e); white-space: pre-wrap; word-break: break-word; }
+  #help { display: none; margin-top: 8px; }
+  #log { margin-top: 8px; white-space: pre-wrap; max-height: 64px; overflow: auto; font-size: 11px; }
+  input { width: 64px; }
+  code { font-size: 11px; }
 </style>
 </head>
 <body>
-  <div class="row"><span id="dot" class="dot"></span><b id="status">Connecting…</b></div>
-  <div class="row" style="margin-top:6px">Bridge port <input id="port" value="7331" /></div>
+  <div class="row"><span id="dot" class="dot" data-state="disconnected"></span><b id="status">Connecting…</b></div>
+  <div id="detail"></div>
+  <div class="row" style="margin-top:6px"><label for="port">Bridge port</label><input id="port" inputmode="numeric" value="7331" /></div>
+  <div id="help">No local server found. Start it from Claude Code (it runs automatically once the MCP server is added), or run <code>npx … doctor</code>. See the project README for setup.</div>
+  <div id="error"></div>
   <div id="log"></div>
 <script>
-  // The UI iframe is only a transport relay: WebSocket <-> plugin main thread.
-  // No secrets, no model calls, no logic.
-  let ws, timer, hello = null;
+  // The UI iframe is only a transport relay: WebSocket (localhost only) <-> plugin main thread.
+  // No secrets, no model calls, no network beyond ws://localhost.
+  let ws = null, gen = 0, timer = null, hello = null, failures = 0;
+  const running = new Map(); // request id -> { method, started }
   const $ = (id) => document.getElementById(id);
   const log = (m) => { const l = $("log"); l.textContent = (m + "\n" + l.textContent).slice(0, 2000); };
+
+  function render() {
+    const open = ws && ws.readyState === 1;
+    const state = !open ? "disconnected" : running.size ? "running" : "connected";
+    $("dot").dataset.state = state;
+    if (state === "running") {
+      const [r] = running.values();
+      $("status").textContent = "Running " + r.method + "…";
+      $("detail").textContent = Math.round((Date.now() - r.started) / 1000) + "s" + (running.size > 1 ? " · " + running.size + " queued" : "");
+    } else if (state === "connected") {
+      $("status").textContent = "Connected to Claude";
+      $("detail").textContent = "ws://localhost:" + $("port").value;
+    } else {
+      $("status").textContent = failures > 1 ? "Disconnected — retrying" : "Connecting…";
+      $("detail").textContent = "ws://localhost:" + $("port").value;
+    }
+    $("help").style.display = !open && failures >= 3 ? "block" : "none";
+  }
+
   function connect() {
     clearTimeout(timer);
-    try { ws = new WebSocket("ws://localhost:" + $("port").value); } catch (e) { return retry(); }
-    ws.onopen = () => { $("dot").classList.add("on"); $("status").textContent = "Connected to Claude"; if (hello) ws.send(JSON.stringify(hello)); };
-    ws.onclose = () => { $("dot").classList.remove("on"); $("status").textContent = "Waiting for bridge…"; retry(); };
-    ws.onerror = () => {};
-    ws.onmessage = (ev) => {
+    const my = ++gen; // every socket belongs to one generation; stale sockets are ignored
+    let sock;
+    try { sock = new WebSocket("ws://localhost:" + $("port").value); } catch (e) { failures++; render(); return retry(); }
+    ws = sock;
+    sock.onopen = () => { if (my !== gen) return sock.close(); failures = 0; if (hello) sock.send(JSON.stringify(hello)); render(); };
+    sock.onclose = () => { if (my !== gen) return; failures++; running.clear(); render(); retry(); };
+    sock.onerror = () => {};
+    sock.onmessage = (ev) => {
+      if (my !== gen) return;
       let req; try { req = JSON.parse(ev.data); } catch { return; }
-      log("→ " + req.method);
+      running.set(req.id, { method: req.method, started: Date.now() });
+      log("→ " + req.method); render();
       parent.postMessage({ pluginMessage: { type: "request", req } }, "*");
     };
+    render();
   }
-  function retry() { clearTimeout(timer); timer = setTimeout(connect, 1500); }
-  $("port").onchange = () => { try { ws && ws.close(); } catch {} connect(); };
+  function retry() { clearTimeout(timer); timer = setTimeout(connect, Math.min(1500 * Math.max(1, failures), 6000)); }
+
+  function setPort(p, save) {
+    const n = Number(p);
+    if (!Number.isInteger(n) || n < 1024 || n > 65535) { $("port").value = String((hello && hello.port) || 7331); return; }
+    $("port").value = String(n);
+    if (save) parent.postMessage({ pluginMessage: { type: "set-port", port: n } }, "*");
+    failures = 0;
+    const old = ws; ws = null;
+    gen++; // invalidate the old socket's handlers before closing it
+    try { old && old.close(); } catch (e) {}
+    connect();
+  }
+  $("port").onchange = () => setPort($("port").value, true);
+
   window.onmessage = (ev) => {
     const msg = ev.data && ev.data.pluginMessage;
     if (!msg) return;
     if (msg.type === "hello") { hello = msg.hello; if (ws && ws.readyState === 1) ws.send(JSON.stringify(hello)); }
-    if (msg.type === "response") { if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg.res)); log((msg.res.ok ? "✓ " : "✗ ") + msg.res.id); }
+    if (msg.type === "port") setPort(msg.port, false);
+    if (msg.type === "response") {
+      running.delete(msg.res.id);
+      if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg.res));
+      log((msg.res.ok ? "✓ " : "✗ ") + msg.res.id);
+      if (!msg.res.ok && msg.res.error) { $("error").style.display = "block"; $("error").textContent = "Last error (" + msg.res.error.type + "): " + msg.res.error.message; }
+      else if (msg.res.ok) $("error").style.display = "none";
+      render();
+    }
   };
+  setInterval(() => { if (running.size) render(); }, 1000);
   parent.postMessage({ pluginMessage: { type: "ui-ready" } }, "*");
   connect();
 </script>

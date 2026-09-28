@@ -156,7 +156,7 @@ function inferAutoLayout(n: NodeSnapshot): { direction: "HORIZONTAL" | "VERTICAL
 
 export interface Mismatch { path: string; nodeId?: string; issue: string; expected?: unknown; actual?: unknown }
 
-const KIND_TYPE: Record<ResolvedNode["kind"], string> = { frame: "FRAME", text: "TEXT", instance: "INSTANCE", rect: "RECTANGLE" };
+const KIND_TYPE: Record<ResolvedNode["kind"], string> = { frame: "FRAME", text: "TEXT", instance: "INSTANCE", rect: "RECTANGLE", svg: "FRAME" };
 
 /** Structural comparison of an executed plan against the inspected Figma result. */
 export function verifyAgainstPlan(expected: ResolvedNode, actual: NodeSnapshot | undefined): Mismatch[] {

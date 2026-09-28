@@ -1,0 +1,461 @@
+{
+  "version": 1,
+  "name": "Sign in",
+  "screenGap": 120,
+  "screens": [
+    {
+      "type": "screen",
+      "name": "Sign in – 1440",
+      "width": 1440,
+      "layout": {
+        "direction": "horizontal",
+        "gap": 0,
+        "padding": {
+          "top": 80,
+          "right": 16,
+          "bottom": 80,
+          "left": 16
+        },
+        "align": "center",
+        "crossAlign": "start"
+      },
+      "fill": "#F8FCFA",
+      "children": [
+        {
+          "type": "frame",
+          "name": "form",
+          "width": 360,
+          "height": "hug",
+          "layout": {
+            "direction": "vertical",
+            "gap": 16,
+            "padding": 33,
+            "align": "start",
+            "crossAlign": "start"
+          },
+          "fill": "#FFFFFF",
+          "stroke": "#E2ECE8",
+          "strokeWeight": 1,
+          "radius": 20,
+          "children": [
+            {
+              "type": "text",
+              "name": "h2",
+              "width": "fill",
+              "content": "Welcome back",
+              "color": "#172527",
+              "fontSize": 24,
+              "fontFamily": "Vazirmatn",
+              "weight": "bold",
+              "align": "left"
+            },
+            {
+              "type": "frame",
+              "name": "label",
+              "width": "fill",
+              "height": "hug",
+              "layout": {
+                "direction": "vertical",
+                "gap": 6,
+                "padding": 0,
+                "align": "start",
+                "crossAlign": "start"
+              },
+              "children": [
+                {
+                  "type": "text",
+                  "name": "Email",
+                  "width": "hug",
+                  "content": "Email",
+                  "color": "#3D4D4E",
+                  "fontSize": 13,
+                  "fontFamily": "Vazirmatn",
+                  "weight": "regular",
+                  "align": "left"
+                },
+                {
+                  "type": "frame",
+                  "name": "input",
+                  "width": "fill",
+                  "height": "hug",
+                  "layout": {
+                    "direction": "vertical",
+                    "gap": 0,
+                    "padding": {
+                      "top": 12.63,
+                      "right": 15,
+                      "bottom": 12.63,
+                      "left": 15
+                    },
+                    "crossAlign": "center"
+                  },
+                  "fill": "#FFFFFF",
+                  "stroke": "#C9D6D2",
+                  "strokeWeight": 1,
+                  "radius": 12,
+                  "children": [
+                    {
+                      "type": "text",
+                      "name": "you@company.com",
+                      "width": "fill",
+                      "content": "you@company.com",
+                      "color": "#757575",
+                      "fontSize": 15,
+                      "fontFamily": "Vazirmatn",
+                      "weight": "regular",
+                      "align": "left"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "name": "label",
+              "width": "fill",
+              "height": "hug",
+              "layout": {
+                "direction": "vertical",
+                "gap": 6,
+                "padding": 0,
+                "align": "start",
+                "crossAlign": "start"
+              },
+              "children": [
+                {
+                  "type": "text",
+                  "name": "Password",
+                  "width": "hug",
+                  "content": "Password",
+                  "color": "#3D4D4E",
+                  "fontSize": 13,
+                  "fontFamily": "Vazirmatn",
+                  "weight": "regular",
+                  "align": "left"
+                },
+                {
+                  "type": "frame",
+                  "name": "input",
+                  "width": "fill",
+                  "height": "hug",
+                  "layout": {
+                    "direction": "vertical",
+                    "gap": 0,
+                    "padding": {
+                      "top": 12.63,
+                      "right": 15,
+                      "bottom": 12.63,
+                      "left": 15
+                    },
+                    "crossAlign": "center"
+                  },
+                  "fill": "#FFFFFF",
+                  "stroke": "#C9D6D2",
+                  "strokeWeight": 1,
+                  "radius": 12,
+                  "children": [
+                    {
+                      "type": "text",
+                      "name": "••••••••",
+                      "width": "fill",
+                      "content": "••••••••",
+                      "color": "#757575",
+                      "fontSize": 15,
+                      "fontFamily": "Vazirmatn",
+                      "weight": "regular",
+                      "align": "left"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "name": "button",
+              "width": "fill",
+              "height": "hug",
+              "layout": {
+                "direction": "vertical",
+                "gap": 0,
+                "padding": {
+                  "top": 12.5,
+                  "right": 6,
+                  "bottom": 12.5,
+                  "left": 6
+                },
+                "crossAlign": "center"
+              },
+              "fill": "#176B66",
+              "radius": 24,
+              "children": [
+                {
+                  "type": "text",
+                  "name": "Sign in",
+                  "width": "hug",
+                  "content": "Sign in",
+                  "color": "#FFFFFF",
+                  "fontSize": 15,
+                  "fontFamily": "Vazirmatn",
+                  "weight": "bold",
+                  "align": "center"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "name": "a",
+              "width": "fill",
+              "height": "hug",
+              "layout": {
+                "direction": "vertical",
+                "gap": 0,
+                "padding": 0,
+                "crossAlign": "center"
+              },
+              "children": [
+                {
+                  "type": "text",
+                  "name": "Forgot password?",
+                  "width": "hug",
+                  "content": "Forgot password?",
+                  "color": "#176B66",
+                  "fontSize": 13,
+                  "fontFamily": "Vazirmatn",
+                  "weight": "regular",
+                  "align": "center"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "screen",
+      "name": "Sign in – 390",
+      "width": 390,
+      "layout": {
+        "direction": "horizontal",
+        "gap": 0,
+        "padding": {
+          "top": 80,
+          "right": 16,
+          "bottom": 80,
+          "left": 16
+        },
+        "align": "center",
+        "crossAlign": "start"
+      },
+      "fill": "#F8FCFA",
+      "children": [
+        {
+          "type": "frame",
+          "name": "form",
+          "width": 358,
+          "height": "hug",
+          "layout": {
+            "direction": "vertical",
+            "gap": 16,
+            "padding": 33,
+            "align": "start",
+            "crossAlign": "start"
+          },
+          "fill": "#FFFFFF",
+          "stroke": "#E2ECE8",
+          "strokeWeight": 1,
+          "radius": 20,
+          "children": [
+            {
+              "type": "text",
+              "name": "h2",
+              "width": "fill",
+              "content": "Welcome back",
+              "color": "#172527",
+              "fontSize": 24,
+              "fontFamily": "Vazirmatn",
+              "weight": "bold",
+              "align": "left"
+            },
+            {
+              "type": "frame",
+              "name": "label",
+              "width": "fill",
+              "height": "hug",
+              "layout": {
+                "direction": "vertical",
+                "gap": 6,
+                "padding": 0,
+                "align": "start",
+                "crossAlign": "start"
+              },
+              "children": [
+                {
+                  "type": "text",
+                  "name": "Email",
+                  "width": "hug",
+                  "content": "Email",
+                  "color": "#3D4D4E",
+                  "fontSize": 13,
+                  "fontFamily": "Vazirmatn",
+                  "weight": "regular",
+                  "align": "left"
+                },
+                {
+                  "type": "frame",
+                  "name": "input",
+                  "width": "fill",
+                  "height": "hug",
+                  "layout": {
+                    "direction": "vertical",
+                    "gap": 0,
+                    "padding": {
+                      "top": 12.63,
+                      "right": 15,
+                      "bottom": 12.63,
+                      "left": 15
+                    },
+                    "crossAlign": "center"
+                  },
+                  "fill": "#FFFFFF",
+                  "stroke": "#C9D6D2",
+                  "strokeWeight": 1,
+                  "radius": 12,
+                  "children": [
+                    {
+                      "type": "text",
+                      "name": "you@company.com",
+                      "width": "fill",
+                      "content": "you@company.com",
+                      "color": "#757575",
+                      "fontSize": 15,
+                      "fontFamily": "Vazirmatn",
+                      "weight": "regular",
+                      "align": "left"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "name": "label",
+              "width": "fill",
+              "height": "hug",
+              "layout": {
+                "direction": "vertical",
+                "gap": 6,
+                "padding": 0,
+                "align": "start",
+                "crossAlign": "start"
+              },
+              "children": [
+                {
+                  "type": "text",
+                  "name": "Password",
+                  "width": "hug",
+                  "content": "Password",
+                  "color": "#3D4D4E",
+                  "fontSize": 13,
+                  "fontFamily": "Vazirmatn",
+                  "weight": "regular",
+                  "align": "left"
+                },
+                {
+                  "type": "frame",
+                  "name": "input",
+                  "width": "fill",
+                  "height": "hug",
+                  "layout": {
+                    "direction": "vertical",
+                    "gap": 0,
+                    "padding": {
+                      "top": 12.63,
+                      "right": 15,
+                      "bottom": 12.63,
+                      "left": 15
+                    },
+                    "crossAlign": "center"
+                  },
+                  "fill": "#FFFFFF",
+                  "stroke": "#C9D6D2",
+                  "strokeWeight": 1,
+                  "radius": 12,
+                  "children": [
+                    {
+                      "type": "text",
+                      "name": "••••••••",
+                      "width": "fill",
+                      "content": "••••••••",
+                      "color": "#757575",
+                      "fontSize": 15,
+                      "fontFamily": "Vazirmatn",
+                      "weight": "regular",
+                      "align": "left"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "name": "button",
+              "width": "fill",
+              "height": "hug",
+              "layout": {
+                "direction": "vertical",
+                "gap": 0,
+                "padding": {
+                  "top": 12.5,
+                  "right": 6,
+                  "bottom": 12.5,
+                  "left": 6
+                },
+                "crossAlign": "center"
+              },
+              "fill": "#176B66",
+              "radius": 24,
+              "children": [
+                {
+                  "type": "text",
+                  "name": "Sign in",
+                  "width": "hug",
+                  "content": "Sign in",
+                  "color": "#FFFFFF",
+                  "fontSize": 15,
+                  "fontFamily": "Vazirmatn",
+                  "weight": "bold",
+                  "align": "center"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "name": "a",
+              "width": "fill",
+              "height": "hug",
+              "layout": {
+                "direction": "vertical",
+                "gap": 0,
+                "padding": 0,
+                "crossAlign": "center"
+              },
+              "children": [
+                {
+                  "type": "text",
+                  "name": "Forgot password?",
+                  "width": "hug",
+                  "content": "Forgot password?",
+                  "color": "#176B66",
+                  "fontSize": 13,
+                  "fontFamily": "Vazirmatn",
+                  "weight": "regular",
+                  "align": "center"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

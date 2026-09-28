@@ -4,12 +4,13 @@ import { z } from "zod";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
-  analyzeDesign, compilePlan, enrichDesignSystem, retrieve, summarize, validatePlan, verifyAgainstPlan,
+  analyzeDesign, compilePlan, emptyDesignSystem, enrichDesignSystem, retrieve, summarize, validatePlan, verifyAgainstPlan,
   type AnalysisResult, type DesignSystem, type ExecutionReport, type NodeSnapshot, type ResolvedPlan, type StructuredError, type TransformReport, type PlanSummary,
 } from "@cde/core";
 import { BridgeError, type FigmaTransport } from "./bridge.ts";
 import { MappingStore, scanCodebase, verifyCodeUsage } from "./code.ts";
-import { importHtml } from "./html-import.ts";
+import { importHtml, renderToPlan } from "@cde/html-import";
+import { inlineImages } from "./images.ts";
 
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
 const ok = (data: unknown): ToolResult => ({ content: [{ type: "text", text: JSON.stringify(data) }] });
@@ -104,6 +105,26 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
     return ok({ success: true, planId: c.plan.planId, summary: c.summary, warnings: [...c.warnings, ...(staleWarning() ?? [])], requiresApproval: destructive, next: destructive ? "Show the summary to the user; call figma_execute_plan with approved=true only after they agree." : "Show the summary; then call figma_execute_plan (creates new frames only)." });
   }));
 
+  server.registerTool("import_html_to_plan", {
+    description: "Convert an HTML page or folder (e.g. a Claude Design standalone HTML export) into an editable Design Plan: flexbox → Auto Layout, colors, borders, radii, shadows, gradients, fonts, text (incl. RTL), images and SVG icons. With a scanned Design System, buttons/inputs/links become real DS components. Returns a planId for figma_execute_plan, exactly like figma_preview_plan. Nothing is sent to Figma yet.",
+    inputSchema: {
+      path: z.string().describe("An .html file, or a folder containing index.html"),
+      viewport: z.union([z.number().int().min(200).max(4000), z.array(z.number().int().min(200).max(4000)).min(1).max(6)]).optional().describe("Viewport width(s). Default [1440, 390] (desktop + mobile)"),
+      useDesignSystem: z.boolean().optional().describe("Map buttons/inputs/links to scanned DS components (default: true when a DS is cached)"),
+      selector: z.string().optional().describe("CSS selector of the element to import (default body)"),
+    },
+  }, async ({ path, viewport, useDesignSystem, selector }) => guard(async () => {
+    const cached = loadDs();
+    const useDs = useDesignSystem ?? !!cached;
+    if (useDs && !cached) return fail([{ type: "DESIGN_SYSTEM_NOT_SCANNED", message: "useDesignSystem needs a scan. Call figma_scan_design_system, or pass useDesignSystem: false." }]);
+    const d = useDs ? cached! : emptyDesignSystem(bridge.info()?.fileName);
+    const r = await renderToPlan(resolve(workdir, path), { viewports: viewport === undefined ? undefined : [viewport].flat(), selector, ds: useDs ? d : undefined });
+    const c = compilePlan(d, r.plan);
+    if (!c.ok || !c.plan) return fail(c.errors, { warnings: [...r.warnings, ...c.warnings], summary: c.summary });
+    plans.set(c.plan.planId, { plan: c.plan, summary: c.summary });
+    return ok({ success: true, planId: c.plan.planId, summary: c.summary, mappedToDesignSystem: r.mapped, warnings: [...r.warnings, ...c.warnings].slice(0, 30), next: "Show the summary; then call figma_execute_plan with this planId." });
+  }));
+
   server.registerTool("figma_execute_plan", {
     description: "Execute a previously previewed plan in Figma (native frames, Auto Layout, component instances, variables, styles). One undo step. Rolls back fully on failure. Automatically verifies the result against the plan. Requires approved=true when the plan writes into an existing node.",
     inputSchema: { planId: z.string(), approved: z.boolean().optional() },
@@ -111,10 +132,11 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
     const entry = plans.get(planId);
     if (!entry) return fail([{ type: "INVALID_PLAN", message: `Unknown planId ${planId}. Call figma_preview_plan first.` }]);
     if (entry.plan.target.parentId && !approved) return fail([{ type: "NOT_APPROVED", message: "This plan modifies an existing node. Ask the user, then call again with approved=true." }]);
-    const report = await bridge.request<ExecutionReport>("executePlan", { plan: entry.plan }, 180_000);
+    const images = await inlineImages(entry.plan);
+    const report = await bridge.request<ExecutionReport>("executePlan", { plan: images.plan }, 180_000);
     entry.report = report;
     const mismatches = await verifyPlan(entry.plan, report);
-    return ok({ success: true, created: report.createdRootIds, nodeCount: Object.keys(report.nodeIds).length, warnings: report.warnings, verification: { mismatches, passed: mismatches.length === 0 } });
+    return ok({ success: true, created: report.createdRootIds, nodeCount: Object.keys(report.nodeIds).length, warnings: [...images.warnings, ...report.warnings], verification: { mismatches, passed: mismatches.length === 0 } });
   }));
 
   const verifyPlan = async (plan: ResolvedPlan, report: ExecutionReport) => {
