@@ -9,6 +9,7 @@ import {
 } from "@cde/core";
 import { BridgeError, type FigmaTransport } from "./bridge.ts";
 import { MappingStore, scanCodebase, verifyCodeUsage } from "./code.ts";
+import { importHtml } from "./html-import.ts";
 
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
 const ok = (data: unknown): ToolResult => ({ content: [{ type: "text", text: JSON.stringify(data) }] });
@@ -141,7 +142,7 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
     inputSchema: { target: z.string().optional().describe("'selection' (default) or node id"), verbose: z.boolean().optional().describe("Include every transformation (default: summary + first 40)") },
   }, async ({ target, verbose }) => guard(async () => {
     const d = needDs();
-    const snap = await bridge.request<{ nodes: NodeSnapshot[] }>("inspect", { target: target ?? "selection", depth: 12, maxNodes: 1500 });
+    const snap = await bridge.request<{ nodes: NodeSnapshot[] }>("inspect", { target: target ?? "selection", depth: 20, maxNodes: 20000 });
     if (!snap.nodes.length) return fail([{ type: "NODE_NOT_FOUND", message: "Nothing selected. Ask the user to select a frame." }]);
     const results = snap.nodes.map((n) => analyzeDesign(d, n));
     const merged: AnalysisResult = { analysisId: results.map((r) => r.analysisId).join("_"), transformations: results.flatMap((r) => r.transformations), summary: results.flatMap((r) => r.summary), unresolved: results.flatMap((r) => r.unresolved) };
@@ -152,20 +153,63 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
 
   server.registerTool("figma_apply_transformations", {
     description: "Apply transformations from figma_analyze_design. REQUIRES approved=true, which you may only set after the user explicitly approved. Pass ids to apply a subset (default all). Replaced originals are hidden and renamed, never deleted. One undo step.",
-    inputSchema: { analysisId: z.string(), approved: z.boolean(), ids: z.array(z.string()).optional() },
-  }, async ({ analysisId, approved, ids }) => guard(async () => {
+    inputSchema: { analysisId: z.string(), approved: z.boolean(), ids: z.array(z.string()).optional(), ops: z.array(z.enum(["bind_fill", "bind_number", "apply_text_style", "convert_auto_layout", "replace_with_instance"])).optional().describe("Apply only these kinds of transformation") },
+  }, async ({ analysisId, approved, ids, ops }) => guard(async () => {
     if (!approved) return fail([{ type: "NOT_APPROVED", message: "Get explicit user approval first." }]);
     const a = analyses.get(analysisId);
     if (!a) return fail([{ type: "INVALID_PLAN", message: "Unknown analysisId; run figma_analyze_design again." }]);
-    const chosen = ids ? a.transformations.filter((t) => ids.includes(t.id)) : a.transformations;
+    const chosen = a.transformations.filter((t) => (!ids || ids.includes(t.id)) && (!ops || ops.includes(t.op)));
     // Replacements first changes structure; bindings on replaced nodes would be wasted, so drop those.
     const replaced = new Set(chosen.filter((t) => t.op === "replace_with_instance").map((t) => t.nodeId));
     const order = { convert_auto_layout: 0, replace_with_instance: 1, bind_number: 2, bind_fill: 3, apply_text_style: 4 } as const;
     const final = chosen.filter((t) => t.op === "replace_with_instance" || !replaced.has(t.nodeId)).sort((x, y) => order[x.op] - order[y.op]);
     const report = await bridge.request<TransformReport>("applyTransformations", { transformations: final }, 180_000);
     analyses.delete(analysisId);
-    return ok({ success: report.failed.length === 0, ...report });
+    const byOp: Record<string, number> = {};
+    for (const t of final) if (report.applied.some((a) => a.id === t.id)) byOp[t.op] = (byOp[t.op] ?? 0) + 1;
+    return ok({ success: report.failed.length === 0, applied: report.applied.length, byOp, failed: report.failed.slice(0, 20), hiddenOriginals: report.hiddenOriginals.length });
   }));
+
+  server.registerTool("figma_pages", {
+    description: "Create (or reorder) pages in the open Figma file, in the given order. Existing pages with the same name are reused; an empty default page is renamed instead of kept.",
+    inputSchema: { pages: z.array(z.string().min(1)).min(1).max(40) },
+  }, async ({ pages }) => guard(async () => ok(await bridge.request("ensurePages", { pages }, 30_000))));
+
+  server.registerTool("figma_import_html", {
+    description: "Import an HTML prototype into Figma at full fidelity for almost no tokens: renders it in headless Chrome, serializes the painted result (boxes, colors, gradients, shadows, radii, text, inline SVG) and builds it on a page. With no targets, every screen on a review board (nested .sc-host) is imported and named by its label. Use dryRun to list screens first.",
+    inputSchema: {
+      file: z.string().describe("Path to the .html file"),
+      root: z.string().optional().describe("Directory to serve (default: the file's grandparent, so ../fonts works)"),
+      targets: z.array(z.object({ selector: z.string(), name: z.string().optional(), index: z.number().int().min(0).optional().describe("Take only the nth match") })).optional().describe("CSS selectors of the elements to import as screens"),
+      swaps: z.array(z.object({ selector: z.string(), component: z.string(), variants: z.array(z.object({ test: z.string(), variant: z.string() })).optional(), default: z.string().optional() })).optional()
+        .describe("Replace matching elements with instances of existing components (variant chosen by rules; content copied as overrides)"),
+      actions: z.array(z.object({ click: z.string(), index: z.number().int().min(0).optional(), waitMs: z.number().min(0).max(10000).optional() })).optional().describe("Clicks to perform before capturing (open menus, advance steps)"),
+      replace: z.boolean().optional().describe("Remove an existing section with the same name on that page first"),
+      components: z.boolean().optional().describe("Turn each imported root into a component. Names like \"Wish card/State=Chosen\" are combined into component sets."),
+      only: z.array(z.string()).optional().describe("Keep only screens whose name contains one of these strings"),
+      page: z.string().optional().describe("Page to build on (created if missing)"),
+      section: z.string().optional().describe("Wrap the screens in a Figma section with this name"),
+      gap: z.number().min(0).max(2000).optional(),
+      dryRun: z.boolean().optional(),
+    },
+  }, async ({ file, root, targets, swaps, actions, replace, components, only, page, section, gap, dryRun }) => guard(async () => {
+    let screens = await importHtml({ file: resolve(workdir, file), root: root && resolve(workdir, root), targets, swaps, actions });
+    if (only?.length) screens = screens.filter((s) => only.some((o) => s.name.includes(o)));
+    const list = screens.map((s) => ({ name: s.name, width: Math.round(s.width), height: Math.round(s.height), nodes: s.nodeCount }));
+    if (dryRun || !screens.length) return ok({ dryRun: true, screens: list });
+    const res = await bridge.request("importTree", { page, section, gap, components, replace, screens: screens.map(({ name, tree }) => ({ name, tree })) }, 300_000);
+    return ok({ imported: list, ...(res as object) });
+  }));
+
+  server.registerTool("figma_foundations", {
+    description: "Create or update Design System foundations in the open file: a variable collection (COLOR and FLOAT variables, e.g. \"color/brand/deep-teal\": \"#176B66\", \"radius/media\": 20) and text styles. Idempotent by name. Rescan the DS afterwards.",
+    inputSchema: {
+      collection: z.string().default("Tokens"),
+      colors: z.record(z.string()).optional(),
+      numbers: z.record(z.number()).optional(),
+      textStyles: z.array(z.object({ name: z.string(), family: z.string(), style: z.string(), size: z.number(), lineHeight: z.number().optional().describe("px"), letterSpacing: z.number().optional().describe("percent") })).optional(),
+    },
+  }, async (p) => guard(async () => ok(await bridge.request("foundations", p, 60_000))));
 
   server.registerTool("figma_select", {
     description: "Select and zoom to node ids in Figma (to show the user what was created or will change).",

@@ -40,6 +40,8 @@ const ContainerStyle = {
   fill: ColorRef.optional(),
   stroke: ColorRef.optional(),
   strokeWeight: z.number().min(0).max(100).optional(),
+  /** Draw the stroke only on these sides (e.g. ["top"] for a footer divider). Default: all sides. */
+  strokeSides: z.array(z.enum(["top", "right", "bottom", "left"])).min(1).optional(),
   radius: NumberOrToken.optional(),
   effect: z.string().optional(), // effect style name
   clip: z.boolean().optional(),

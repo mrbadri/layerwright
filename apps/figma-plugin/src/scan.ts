@@ -28,10 +28,17 @@ function componentDef(c: ComponentNode): ComponentDefinition {
   try { if (!inSet) properties = propDefs(c.componentPropertyDefinitions); } catch { /* not accessible */ }
   let textLayers: string[] = [];
   try { textLayers = c.findAllWithCriteria({ types: ["TEXT"] }).slice(0, 12).map((t) => t.name); } catch { /* remote */ }
+  let variants: Record<string, string> | undefined;
+  if (inSet) {
+    // A component set with errors (e.g. duplicate variants) throws here; fall back to the "Key=Value, …" name.
+    try { variants = c.variantProperties ?? undefined; } catch {
+      variants = Object.fromEntries(c.name.split(",").map((p) => p.split("=").map((s) => s.trim())).filter((kv) => kv.length === 2 && kv[0]));
+    }
+  }
   return {
     id: c.id, key: c.key, name: c.name, description: c.description || undefined, remote: c.remote, page: pageOf(c),
     componentSetId: inSet ? c.parent!.id : undefined, componentSet: inSet ? c.parent!.name : undefined,
-    variants: inSet ? c.variantProperties ?? undefined : undefined, properties,
+    variants, properties,
     dimensions: { width: c.width, height: c.height }, layout: layoutOf(c), textLayers,
   };
 }
@@ -65,8 +72,11 @@ export async function scanDesignSystem(opts: { includeLibraries?: boolean; maxIn
 
   // Library components actually used in this file (reachable through instances).
   const warnings: string[] = [];
-  const instances = figma.root.findAllWithCriteria({ types: ["INSTANCE"] });
-  const cap = opts.maxInstances ?? 3000;
+  // Current page first: the components the user is working with are the ones that must resolve.
+  const onPage = figma.currentPage.findAllWithCriteria({ types: ["INSTANCE"] });
+  const pageIds = new Set(onPage.map((i) => i.id));
+  const instances = [...onPage, ...figma.root.findAllWithCriteria({ types: ["INSTANCE"] }).filter((i) => !pageIds.has(i.id))];
+  const cap = opts.maxInstances ?? Math.max(3000, Math.min(onPage.length, 30000));
   const mains = new Set<string>();
   for (const inst of instances.slice(0, cap)) {
     try {
@@ -181,7 +191,8 @@ export async function snapshot(node: BaseNode, opts: { depth?: number; maxNodes?
     }
     if (n.type === "TEXT") {
       const t = n as TextNode;
-      s.text = { chars: t.characters.length > 300 ? `${t.characters.slice(0, 300)}…` : t.characters, fontSize: typeof t.fontSize === "number" ? t.fontSize : undefined, font: t.fontName !== figma.mixed ? `${t.fontName.family} ${t.fontName.style}` : "mixed" };
+      s.text = { chars: t.characters.length > 300 ? `${t.characters.slice(0, 300)}…` : t.characters, fontSize: typeof t.fontSize === "number" ? t.fontSize : undefined, font: t.fontName !== figma.mixed ? `${t.fontName.family} ${t.fontName.style}` : "mixed",
+        lineHeight: t.lineHeight === figma.mixed ? "mixed" : t.lineHeight.unit === "AUTO" ? "AUTO" : t.lineHeight.unit === "PIXELS" ? Math.round(t.lineHeight.value * 10) / 10 : `${t.lineHeight.value}%` };
       if (typeof t.textStyleId === "string" && t.textStyleId) { s.text.styleId = t.textStyleId; s.text.style = (await figma.getStyleByIdAsync(t.textStyleId))?.name; }
     }
     if (n.type === "INSTANCE") {

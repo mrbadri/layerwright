@@ -49,8 +49,11 @@ export function analyzeDesign(ds: DesignSystem, root: NodeSnapshot): AnalysisRes
     const size = n.text?.fontSize;
     if (!size) return undefined;
     const font = (n.text?.font ?? "").toLowerCase();
-    const same = ds.typography.filter((t) => Math.abs(t.fontSize - size) <= 0.5);
-    return same.find((t) => font && `${t.fontFamily} ${t.fontStyle}`.toLowerCase() === font) ?? same.find((t) => font.includes(t.fontStyle.toLowerCase())) ?? same[0];
+    // Only exact matches: a style that changes size, weight or leading would change how the text looks.
+    const norm = (s: string) => s.toLowerCase().replace(/\s+/g, "");
+    const lh = (v: unknown) => (typeof v === "number" ? Math.round(v * 10) / 10 : v ?? "AUTO");
+    return ds.typography.find((t) => t.fontSize === size && font && norm(`${t.fontFamily}${t.fontStyle}`) === norm(font)
+      && (n.text?.lineHeight === undefined || lh(t.lineHeight) === lh(n.text.lineHeight)));
   };
 
   const tryReplace = (n: NodeSnapshot, role: string, label?: string): boolean => {
@@ -63,11 +66,13 @@ export function analyzeDesign(ds: DesignSystem, root: NodeSnapshot): AnalysisRes
     return true;
   };
 
-  const visit = (n: NodeSnapshot, insideInstance: boolean) => {
+  // Instances are left alone entirely. Components are the source: their layers get tokens, but never nested replacements.
+  const visit = (n: NodeSnapshot, insideInstance: boolean, insideComponent = false) => {
     if (n.visible === false) return;
-    if (n.type === "INSTANCE" || n.type === "COMPONENT" || n.type === "COMPONENT_SET") insideInstance = true;
+    if (n.type === "INSTANCE") insideInstance = true;
+    if (n.type === "COMPONENT" || n.type === "COMPONENT_SET") insideComponent = true;
     const nm = norm(n.name);
-    if (!insideInstance && (n.type === "FRAME" || n.type === "GROUP")) {
+    if (!insideInstance && !insideComponent && (n.type === "FRAME" || n.type === "GROUP")) {
       const t = texts(n);
       const hasFill = (n.fills ?? []).length > 0;
       const filledDark = (n.fills ?? []).some((f) => f.startsWith("#") && !isLight(f));
@@ -115,7 +120,7 @@ export function analyzeDesign(ds: DesignSystem, root: NodeSnapshot): AnalysisRes
         if (conv) out.push({ id: id(), op: "convert_auto_layout", nodeId: n.id, nodeName: n.name, ...conv, reason: `manual layout → ${conv.direction.toLowerCase()} Auto Layout (gap ${conv.gap})` });
       }
     }
-    for (const c of n.children ?? []) visit(c, insideInstance);
+    for (const c of n.children ?? []) visit(c, insideInstance, insideComponent);
   };
   visit(root, false);
 

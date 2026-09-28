@@ -131,3 +131,35 @@ test("verification detects structural mismatches", () => {
   assert.ok(m.some((x) => x.issue === "child count differs"));
   assert.ok(m.some((x) => x.issue === "missing node"));
 });
+
+test("layout defaults: instances stretch, form rows align top, stroke sides pass through", () => {
+  const ds = fixtureDs();
+  const plan = { name: "x", screens: [{ type: "screen", name: "S", children: [
+    { type: "component", component: "Logo" },
+    { type: "component", component: "Link" },
+    { type: "row", children: [{ type: "input", props: { label: "A" } }, { type: "input", props: { label: "B" } }] },
+    { type: "row", stroke: "#EAECF0", strokeSides: ["top"], children: [{ type: "button", width: "hug", props: { label: "Go" } }] },
+  ] }] };
+  const v = validatePlan(plan);
+  assert.ok(v.success);
+  const c = compilePlan(ds, v.plan);
+  assert.deepEqual(c.errors, []);
+  const [logo, link, fields, footer] = (c.plan!.roots[0] as ResolvedFrame).children as any[];
+  assert.equal(logo.sizingH, "fill");
+  assert.equal(link.sizingH, "fill");
+  assert.equal(fields.layout.counterAlign, "MIN");
+  assert.deepEqual(footer.strokeSides, ["top"]);
+  assert.equal(footer.children[0].sizingH, "hug");
+});
+
+test("a text value for a show/hide property turns it on and sets the matching text layer", () => {
+  const ds = fixtureDs();
+  const set = ds.componentSets.find((s) => s.name === "Forms/Input")!;
+  set.properties.push({ key: "Hint#20:9", name: "Hint", type: "BOOLEAN", defaultValue: false });
+  ds.components.find((c) => c.id === "2:2")!.textLayers!.push("Hint");
+  const v = validatePlan({ name: "x", screens: [{ type: "screen", children: [{ type: "input", props: { hint: "Use your work email" } }] }] });
+  assert.ok(v.success);
+  const input = (compilePlan(ds, v.plan).plan!.roots[0] as ResolvedFrame).children[0] as ResolvedInstance;
+  assert.equal(input.properties["Hint#20:9"], true);
+  assert.equal(input.textOverrides["Hint"], "Use your work email");
+});

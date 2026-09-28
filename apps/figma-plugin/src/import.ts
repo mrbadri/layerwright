@@ -1,0 +1,298 @@
+// Builds node trees serialized from rendered HTML (see apps/mcp-server/src/html-import.ts), and manages pages.
+import type { ImportNode, ImportPaint } from "@cde/core";
+import { ExecError } from "./execute.ts";
+
+const rgb = (hex: string) => ({ r: parseInt(hex.slice(1, 3), 16) / 255, g: parseInt(hex.slice(3, 5), 16) / 255, b: parseInt(hex.slice(5, 7), 16) / 255 });
+const solid = (p: ImportPaint): SolidPaint => ({ type: "SOLID", color: rgb(p.hex), opacity: p.a });
+const BLEND: Record<string, BlendMode> = { multiply: "MULTIPLY", screen: "SCREEN", overlay: "OVERLAY", darken: "DARKEN", lighten: "LIGHTEN", "color-burn": "COLOR_BURN", "color-dodge": "COLOR_DODGE", luminosity: "LUMINOSITY", color: "COLOR", hue: "HUE", saturation: "SATURATION" };
+const FALLBACKS = ["Vazirmatn", "Noto Sans Arabic", "Inter"];
+
+export async function ensurePages(names: string[]): Promise<{ pages: { name: string; id: string; created: boolean }[] }> {
+  await figma.loadAllPagesAsync();
+  const out = [];
+  for (const [i, name] of names.entries()) {
+    let page = figma.root.children.find((p) => p.name === name);
+    const created = !page;
+    if (!page) {
+      // Reuse an empty default page ("Page 1") for the first entry instead of leaving it behind.
+      const blank = i === 0 && figma.root.children.length === 1 && figma.root.children[0].children.length === 0 ? figma.root.children[0] : null;
+      // Plans with a page limit (Starter = 3): rename a page at this slot that isn't in the requested list.
+      const spare = figma.root.children.slice(i).find((pg) => !names.includes(pg.name));
+      try { page = blank ?? figma.createPage(); }
+      catch (e) { if (!spare) throw e; page = spare; }
+      page.name = name;
+    }
+    figma.root.insertChild(Math.min(i, figma.root.children.length - 1), page);
+    out.push({ name, id: page.id, created });
+  }
+  return { pages: out };
+}
+
+async function pageByName(name?: string): Promise<PageNode> {
+  if (!name) return figma.currentPage;
+  await figma.loadAllPagesAsync();
+  const page = figma.root.children.find((p) => p.name === name) ?? (await ensurePages([name]), figma.root.children.find((p) => p.name === name)!);
+  await figma.setCurrentPageAsync(page);
+  return page;
+}
+
+function collectFonts(n: ImportNode, set: Map<string, FontName>) {
+  if (n.type === "text") set.set(`${n.font.family}|${n.font.style}`, n.font);
+  if (n.type === "frame") n.children.forEach((c) => collectFonts(c, set));
+}
+
+/** Loads every font used, substituting unavailable families. Returns a resolver and warnings. */
+async function loadFonts(trees: ImportNode[]) {
+  const wanted = new Map<string, FontName>();
+  trees.forEach((t) => collectFonts(t, wanted));
+  const available = await figma.listAvailableFontsAsync();
+  const has = (f: FontName) => available.some((a) => a.fontName.family === f.family && a.fontName.style === f.style);
+  const styles = (family: string) => available.filter((a) => a.fontName.family === family).map((a) => a.fontName.style);
+  const map = new Map<string, FontName>();
+  const warnings = new Set<string>();
+  for (const [key, f] of wanted) {
+    let use: FontName | undefined = has(f) ? f : undefined;
+    for (const fam of [f.family, ...FALLBACKS]) {
+      if (use) break;
+      const st = styles(fam);
+      if (!st.length) continue;
+      const style = st.find((s) => s.replace(/\s/g, "") === f.style) ?? st.find((s) => /regular/i.test(s)) ?? st[0];
+      use = { family: fam, style };
+    }
+    use ??= { family: "Inter", style: "Regular" };
+    if (use.family !== f.family) warnings.add(`Font "${f.family}" is not installed; used "${use.family}". Install it and re-run to match the design.`);
+    await figma.loadFontAsync(use);
+    map.set(key, use);
+  }
+  return { font: (f: FontName) => map.get(`${f.family}|${f.style}`)!, warnings: [...warnings] };
+}
+
+function gradientPaint(g: { angle: number; stops: (ImportPaint & { pos: number })[] }): GradientPaint {
+  const t = ((g.angle - 90) * Math.PI) / 180, c = Math.cos(t), s = Math.sin(t);
+  return {
+    type: "GRADIENT_LINEAR",
+    gradientTransform: [[c, s, 0.5 - 0.5 * c - 0.5 * s], [-s, c, 0.5 + 0.5 * s - 0.5 * c]],
+    gradientStops: g.stops.map((st) => ({ position: Math.min(1, Math.max(0, st.pos)), color: { ...rgb(st.hex), a: st.a } })),
+  };
+}
+
+type Fonts = Awaited<ReturnType<typeof loadFonts>> & { components?: Map<string, ComponentNode | ComponentSetNode> };
+
+/** Index local components/sets by name and pre-load their fonts so overrides can be applied synchronously. */
+async function componentIndex(trees: ImportNode[]) {
+  const wanted = new Set<string>();
+  const visit = (n: ImportNode) => { if (n.type === "frame") { if (n.swap) wanted.add(n.swap.component); n.children.forEach(visit); } };
+  trees.forEach(visit);
+  const map = new Map<string, ComponentNode | ComponentSetNode>();
+  if (!wanted.size) return map;
+  await figma.loadAllPagesAsync();
+  for (const c of figma.root.findAllWithCriteria({ types: ["COMPONENT_SET", "COMPONENT"] })) {
+    if (wanted.has(c.name) && !(c.type === "COMPONENT" && c.parent?.type === "COMPONENT_SET")) map.set(c.name, c);
+  }
+  const missing = [...wanted].filter((w) => !map.has(w));
+  if (missing.length) throw new ExecError({ type: "COMPONENT_NOT_FOUND", message: `No local component named ${missing.map((m) => `"${m}"`).join(", ")}.` });
+  const fonts = new Set<string>();
+  for (const c of map.values()) for (const t of c.findAllWithCriteria({ types: ["TEXT"] })) if (t.fontName !== figma.mixed) fonts.add(JSON.stringify(t.fontName));
+  await Promise.all([...fonts].map((f) => figma.loadFontAsync(JSON.parse(f))));
+  return map;
+}
+
+function variantOf(c: ComponentNode | ComponentSetNode, variant?: string): ComponentNode {
+  if (c.type === "COMPONENT") return c;
+  const kids = c.children as ComponentNode[];
+  return kids.find((k) => k.name === variant) ?? (c.defaultVariant as ComponentNode) ?? kids[0];
+}
+
+/** Copy the serialized element's content onto an instance: match children by type and position, set text and fills,
+ *  hide instance layers the element doesn't have (e.g. a missing price). */
+function override(inst: SceneNode, src: ImportNode) {
+  if (inst.type === "TEXT" && src.type === "text") { if (inst.characters !== src.content) inst.characters = src.content; return; }
+  if (src.type !== "frame" || !("children" in inst)) return;
+  if ("fills" in inst && (src.fill || src.gradient)) {
+    const fills: Paint[] = [];
+    if (src.fill) fills.push(solid(src.fill));
+    if (src.gradient) fills.push(gradientPaint(src.gradient));
+    if (JSON.stringify((inst as FrameNode).fills) !== JSON.stringify(fills)) (inst as FrameNode).fills = fills;
+  }
+  const used = new Set<ImportNode>();
+  for (const c of inst.children) {
+    const kind = c.type === "TEXT" ? ["text"] : ["frame", "svg"];
+    let best: ImportNode | undefined, d = 8;
+    for (const s of src.children) {
+      if (used.has(s) || !kind.includes(s.type)) continue;
+      const dist = Math.abs(s.x - c.x) + Math.abs(s.y - c.y) - (s.type === "svg" ? 0 : 0.5);
+      if (dist < d) { d = dist; best = s; }
+    }
+    if (!best) { if (c.type === "TEXT" || c.type === "FRAME") c.visible = false; continue; }
+    used.add(best);
+    if (best.type !== "svg") override(c, best);
+  }
+}
+
+function build(n: ImportNode, parent: BaseNode & ChildrenMixin, fonts: Fonts): SceneNode {
+  if (n.type === "svg") {
+    const node = figma.createNodeFromSvg(n.svg);
+    node.name = n.name;
+    parent.appendChild(node);
+    node.x = n.x; node.y = n.y;
+    if (n.w > 0 && n.h > 0) node.resize(n.w, n.h);
+    return node;
+  }
+  if (n.type === "text") {
+    const t = figma.createText();
+    parent.appendChild(t);
+    t.fontName = fonts.font(n.font);
+    t.characters = n.content;
+    t.name = n.name;
+    t.fontSize = n.size;
+    if (n.lineHeight) t.lineHeight = { unit: "PIXELS", value: n.lineHeight };
+    if (n.letterSpacing) t.letterSpacing = { unit: "PIXELS", value: n.letterSpacing };
+    if (n.color) t.fills = [{ type: "SOLID", color: rgb(n.color), opacity: n.opacity ?? 1 }];
+    t.textAlignHorizontal = n.wrap ? n.align : n.align === "CENTER" ? "CENTER" : n.align;
+    // Single lines get a little slack so a substituted font doesn't wrap; the anchor edge stays put.
+    const slack = n.wrap ? 1 : 4;
+    t.textAutoResize = "HEIGHT";
+    t.resize(Math.max(1, n.w + slack), Math.max(1, n.h));
+    t.x = n.align === "RIGHT" ? n.x - slack : n.align === "CENTER" ? n.x - slack / 2 : n.x;
+    t.y = n.y;
+    return t;
+  }
+  if (n.swap && fonts.components?.has(n.swap.component)) {
+    const inst = variantOf(fonts.components.get(n.swap.component)!, n.swap.variant).createInstance();
+    parent.appendChild(inst);
+    inst.x = n.x; inst.y = n.y;
+    if (Math.abs(inst.width - n.w) > 0.5 || Math.abs(inst.height - n.h) > 0.5) inst.resize(n.w, n.h);
+    override(inst, n);
+    return inst;
+  }
+  const f = figma.createFrame();
+  parent.appendChild(f);
+  f.name = n.placeholder ? `image · ${n.placeholder}` : n.name;
+  f.x = n.x; f.y = n.y;
+  f.resize(Math.max(0.01, n.w), Math.max(0.01, n.h));
+  const fills: Paint[] = [];
+  if (n.fill) fills.push(solid(n.fill));
+  if (n.gradient) fills.push(gradientPaint(n.gradient));
+  f.fills = fills;
+  if (n.stroke) {
+    f.strokes = [solid(n.stroke)];
+    f.strokeAlign = "INSIDE";
+    const [top, right, bottom, left] = n.stroke.weights;
+    f.strokeTopWeight = top; f.strokeRightWeight = right; f.strokeBottomWeight = bottom; f.strokeLeftWeight = left;
+  }
+  if (n.radius) [f.topLeftRadius, f.topRightRadius, f.bottomRightRadius, f.bottomLeftRadius] = n.radius.map((r) => Math.min(r, n.w / 2, n.h / 2));
+  f.clipsContent = !!n.clip;
+  if (n.blend && BLEND[n.blend]) f.blendMode = BLEND[n.blend];
+  if (n.opacity !== undefined) f.opacity = n.opacity;
+  if (n.shadows?.length) {
+    f.effects = n.shadows.map((s) => ({
+      type: s.inset ? "INNER_SHADOW" : "DROP_SHADOW", color: { ...rgb(s.hex), a: s.a }, offset: { x: s.x, y: s.y },
+      radius: s.blur, spread: s.spread, visible: true, blendMode: "NORMAL", ...(s.inset ? {} : { showShadowBehindNode: false }),
+    }) as Effect);
+  }
+  for (const c of n.children) build(c, f, fonts);
+  return f;
+}
+
+export async function importTree(p: { page?: string; section?: string; gap?: number; components?: boolean; replace?: boolean; screens: { name: string; tree: ImportNode }[] }) {
+  const page = await pageByName(p.page);
+  const fonts: Fonts = await loadFonts(p.screens.map((s) => s.tree));
+  fonts.components = await componentIndex(p.screens.map((s) => s.tree));
+  // Only the importer's own previous output is replaced: a section with exactly this name.
+  let old: SectionNode | undefined;
+  if (p.replace && p.section) old = page.children.find((c): c is SectionNode => c.type === "SECTION" && c.name === p.section);
+  const oldPos = old && { x: old.x, y: old.y };
+  const gap = p.gap ?? 80, pad = 80;
+  const right = page.children.reduce((m, c) => Math.max(m, c.x + c.width), 0);
+  const top = page.children.length ? Math.min(...page.children.map((c) => c.y)) : 0;
+  let container: BaseNode & ChildrenMixin = page;
+  let section: SectionNode | undefined;
+  if (p.section) {
+    section = figma.createSection();
+    section.name = p.section;
+    page.appendChild(section);
+    section.x = oldPos ? oldPos.x : page.children.length > 1 ? right + 200 : 0;
+    section.y = oldPos ? oldPos.y : top;
+    container = section;
+  }
+  const created: SceneNode[] = [];
+  try {
+    let x = section ? pad : page.children.length ? right + 200 : 0;
+    const y0 = section ? pad : top;
+    // Components: "Set/Prop=Value" roots become variants of one component set, laid out in a row.
+    const groups = new Map<string, SceneNode[]>();
+    for (const s of p.screens) {
+      let node = build(s.tree, container, fonts);
+      const slash = s.name.lastIndexOf("/");
+      if (p.components) {
+        node = figma.createComponentFromNode(node);
+        const key = slash > 0 && s.name.includes("=") ? s.name.slice(0, slash) : s.name;
+        node.name = slash > 0 && s.name.includes("=") ? s.name.slice(slash + 1) : s.name;
+        groups.set(key, [...(groups.get(key) ?? []), node]);
+      } else {
+        node.name = s.name;
+        node.x = x; node.y = y0;
+        x += node.width + gap;
+        created.push(node);
+      }
+    }
+    for (const [key, nodes] of groups) {
+      let out: SceneNode;
+      if (nodes.length > 1 || nodes[0].name.includes("=")) {
+        let vx = 0;
+        for (const n of nodes) { n.x = vx; n.y = 0; vx += n.width + 40; }
+        const set = figma.combineAsVariants(nodes as ComponentNode[], container);
+        set.name = key;
+        set.layoutMode = "HORIZONTAL"; set.itemSpacing = 40; set.paddingLeft = set.paddingRight = set.paddingTop = set.paddingBottom = 32;
+        set.primaryAxisSizingMode = "AUTO"; set.counterAxisSizingMode = "AUTO"; set.counterAxisAlignItems = "MIN";
+        set.fills = []; set.strokes = [{ type: "SOLID", color: { r: 0.59, g: 0.28, b: 1 } }]; set.dashPattern = [6, 4]; set.cornerRadius = 16;
+        out = set;
+      } else { out = nodes[0]; out.name = key; }
+      out.x = x; out.y = y0;
+      x += out.width + gap;
+      created.push(out);
+    }
+    if (section) section.resizeWithoutConstraints(x - gap + pad, Math.max(...created.map((c) => c.height)) + pad * 2);
+  } catch (e) {
+    (section ? [section] : created).forEach((n) => n.remove());
+    throw new ExecError({ type: "FIGMA_API_ERROR", message: `Import failed and was rolled back: ${(e as Error).message}` });
+  }
+  old?.remove();
+  figma.commitUndo();
+  const shown = section ? [section] : created;
+  figma.currentPage.selection = shown;
+  figma.viewport.scrollAndZoomIntoView(shown);
+  return { page: page.name, sectionId: section?.id, screens: created.map((c) => ({ id: c.id, name: c.name, width: c.width, height: c.height })), warnings: fonts.warnings };
+}
+
+export async function foundations(p: { collection?: string; colors?: Record<string, string>; numbers?: Record<string, number>;
+  textStyles?: { name: string; family: string; style: string; size: number; lineHeight?: number; letterSpacing?: number }[] }) {
+  const cols = await figma.variables.getLocalVariableCollectionsAsync();
+  const name = p.collection ?? "Tokens";
+  const col = cols.find((c) => c.name === name) ?? figma.variables.createVariableCollection(name);
+  const mode = col.modes[0].modeId;
+  const existing = await figma.variables.getLocalVariablesAsync();
+  const upsert = (vname: string, type: VariableResolvedDataType, value: VariableValue) => {
+    let v = existing.find((e) => e.name === vname && e.variableCollectionId === col.id);
+    if (!v) v = figma.variables.createVariable(vname, col, type);
+    v.setValueForMode(mode, value);
+    if (type === "FLOAT") v.scopes = vname.startsWith("radius") ? ["CORNER_RADIUS"] : vname.startsWith("spacing") ? ["GAP", "WIDTH_HEIGHT"] : ["ALL_SCOPES"];
+    return v;
+  };
+  let colors = 0, numbers = 0, styles = 0;
+  for (const [k, hex] of Object.entries(p.colors ?? {})) { upsert(k, "COLOR", { ...rgb(hex), a: 1 }); colors++; }
+  for (const [k, n] of Object.entries(p.numbers ?? {})) { upsert(k, "FLOAT", n); numbers++; }
+  const local = await figma.getLocalTextStylesAsync();
+  const warnings: string[] = [];
+  for (const t of p.textStyles ?? []) {
+    const font = { family: t.family, style: t.style };
+    try { await figma.loadFontAsync(font); } catch { warnings.push(`Font ${t.family} ${t.style} not available; skipped style "${t.name}".`); continue; }
+    const st = local.find((l) => l.name === t.name) ?? figma.createTextStyle();
+    st.name = t.name; st.fontName = font; st.fontSize = t.size;
+    if (t.lineHeight) st.lineHeight = { unit: "PIXELS", value: t.lineHeight };
+    if (t.letterSpacing) st.letterSpacing = { unit: "PERCENT", value: t.letterSpacing };
+    styles++;
+  }
+  figma.commitUndo();
+  return { collection: col.name, colors, numbers, textStyles: styles, warnings };
+}

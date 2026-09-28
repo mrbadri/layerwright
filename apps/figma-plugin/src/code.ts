@@ -2,6 +2,7 @@
 import type { BridgeRequest, BridgeResponse, ResolvedPlan, Transformation } from "@cde/core";
 import { scanDesignSystem, snapshot } from "./scan.ts";
 import { executePlan, applyTransformations, ExecError } from "./execute.ts";
+import { importTree, ensurePages, foundations } from "./import.ts";
 
 figma.showUI(__html__, { width: 240, height: 130, themeColors: true });
 
@@ -31,6 +32,12 @@ async function handle(req: BridgeRequest): Promise<unknown> {
       return executePlan(p.plan as ResolvedPlan);
     case "applyTransformations":
       return applyTransformations(p.transformations as Transformation[]);
+    case "importTree":
+      return importTree(p);
+    case "foundations":
+      return foundations(p);
+    case "ensurePages":
+      return ensurePages(p.pages as string[]);
     case "select": {
       const nodes = (await Promise.all((p.nodeIds as string[]).map((id) => figma.getNodeByIdAsync(id)))).filter((n): n is SceneNode => !!n && "x" in n);
       figma.currentPage.selection = nodes;

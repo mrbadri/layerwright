@@ -178,7 +178,17 @@ export class Resolver {
         if (texts.length === 1) p = texts[0];
       }
       if (p && p.type === "TEXT") { properties[p.key] = String(raw); continue; }
-      if (p && p.type === "BOOLEAN") { properties[p.key] = raw === true || raw === "true"; continue; }
+      if (p && p.type === "BOOLEAN") {
+        const isFlag = typeof raw === "boolean" || raw === "true" || raw === "false";
+        properties[p.key] = isFlag ? raw === true || raw === "true" : true;
+        // A text value for a visibility toggle (e.g. Label: "Email") means "show it, with this text".
+        if (!isFlag) {
+          const layer = (def.textLayers ?? []).find((l) => norm(l) === nk);
+          if (layer) textOverrides[layer] = String(raw);
+          else warnings.push(`${path}: "${p.name}" is a show/hide toggle; turned it on but found no text layer named "${k}" for "${raw}".`);
+        }
+        continue;
+      }
       if (p && p.type === "INSTANCE_SWAP") { warnings.push(`${path}: instance-swap property "${p.name}" is not supported yet; ignored.`); continue; }
       // Fallback: override a text layer by name.
       const layers = def.textLayers ?? [];
@@ -285,6 +295,8 @@ export function compilePlan(ds: DesignSystem, plan: DesignPlan): CompileResult {
       const preset = PRESETS[t] ?? {};
       const layoutIn = { ...(preset.layout ?? {}), ...(node.layout ?? {}) };
       const dir = layoutIn.direction === "horizontal" ? "HORIZONTAL" : layoutIn.direction === "none" ? "NONE" : "VERTICAL";
+      // Side-by-side form fields have labels/hints of different heights; centring misaligns them.
+      if (dir === "HORIZONTAL" && !node.layout?.crossAlign && (node.children ?? []).some((c: any) => c.type === "input")) layoutIn.crossAlign = "start";
       summary.frames++;
       let fill = notePaint(r.resolvePaint(node.fill, `${path}.fill`, errors));
       if (!fill && (t === "screen" || t === "card" || t === "modal")) fill = { hex: "#FFFFFF" };
@@ -301,6 +313,7 @@ export function compilePlan(ds: DesignSystem, plan: DesignPlan): CompileResult {
         fill,
         stroke: notePaint(r.resolvePaint(node.stroke, `${path}.stroke`, errors)),
         strokeWeight: node.strokeWeight,
+        strokeSides: node.strokeSides,
         radius: noteNum(r.resolveNum(node.radius ?? preset.radius, `${path}.radius`, errors, "radius")),
         clip: node.clip,
         width: w.size ?? (t === "screen" ? 390 : undefined),
@@ -371,7 +384,9 @@ export function compilePlan(ds: DesignSystem, plan: DesignPlan): CompileResult {
       errors.push(inst.error);
       return undefined;
     }
-    if (!inst.sizingH && stretch && (t === "input" || t === "button" || t === "divider" || inst.componentName.toLowerCase().includes("input"))) inst.sizingH = "fill";
+    // Children of vertical containers stretch (the DSL contract). Keep small inline pieces (icons,
+    // badges, avatars, toggles) at their natural size; pass width: "hug" to opt out.
+    if (!inst.sizingH && stretch && !["icon"].includes(t) && !/badge|avatar|icon|toggle|switch|checkbox|radio/i.test(inst.componentName)) inst.sizingH = "fill";
     return inst;
   };
 

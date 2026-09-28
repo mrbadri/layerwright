@@ -112,7 +112,16 @@ async function buildFrame(n: ResolvedFrame, parent: BaseNode & ChildrenMixin, ct
     if (n.layout.wrap && n.layout.direction === "HORIZONTAL") f.layoutWrap = "WRAP";
   }
   await ctx.fill(f, n.fill);
-  if (n.stroke) { await ctx.fill(f, n.stroke, "stroke"); f.strokeWeight = n.strokeWeight ?? 1; }
+  if (n.stroke) {
+    await ctx.fill(f, n.stroke, "stroke");
+    const w = n.strokeWeight ?? 1;
+    f.strokeAlign = "INSIDE";
+    if (n.strokeSides) {
+      const on = new Set(n.strokeSides);
+      f.strokeTopWeight = on.has("top") ? w : 0; f.strokeRightWeight = on.has("right") ? w : 0;
+      f.strokeBottomWeight = on.has("bottom") ? w : 0; f.strokeLeftWeight = on.has("left") ? w : 0;
+    } else f.strokeWeight = w;
+  }
   await ctx.radius(f, n.radius);
   if (n.effectStyleId) await f.setEffectStyleIdAsync(n.effectStyleId);
   applySizing(f, n, ctx);
@@ -148,7 +157,12 @@ async function buildText(n: ResolvedText, parent: BaseNode & ChildrenMixin, ctx:
 
 async function getComponent(id: string, key: string | undefined, remote: boolean, path: string): Promise<ComponentNode> {
   let c: BaseNode | null = null;
-  try { c = remote && key ? await figma.importComponentByKeyAsync(key) : await figma.getNodeByIdAsync(id); } catch (e) { throw new ExecError({ type: "COMPONENT_NOT_FOUND", path, message: `Could not load component ${id}: ${(e as Error).message}` }); }
+  let importError: unknown;
+  // Library import fails when the source library isn't enabled/published (e.g. in a copied file);
+  // the remote component is usually still present in this file, so fall back to it by id.
+  if (remote && key) { try { c = await figma.importComponentByKeyAsync(key); } catch (e) { importError = e; } }
+  if (!c) { try { c = await figma.getNodeByIdAsync(id); } catch (e) { importError ??= e; } }
+  if (!c) throw new ExecError({ type: "COMPONENT_NOT_FOUND", path, message: `Could not load component ${id}: ${importError instanceof Error ? importError.message : String(importError ?? "not in this file")}` });
   if (!c || c.type !== "COMPONENT") throw new ExecError({ type: "COMPONENT_NOT_FOUND", path, message: `Component ${id} no longer exists (rescan the Design System).` });
   return c;
 }

@@ -3,11 +3,16 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "bin": { "cde-mcp": "src/index.ts" },
-  "scripts": { "start": "tsx src/index.ts" },
+  "bin": {
+    "cde-mcp": "src/index.ts"
+  },
+  "scripts": {
+    "start": "tsx src/index.ts"
+  },
   "dependencies": {
     "@cde/core": "*",
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "playwright-core": "^1.63.0",
     "ws": "^8.18.0",
     "zod": "^3.25.0"
   }

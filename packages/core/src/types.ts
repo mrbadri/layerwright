@@ -165,7 +165,7 @@ export interface NodeSnapshot {
   radius?: number;
   bound?: Record<string, string>; // field -> variable name/id
   fillStyle?: string;
-  text?: { chars: string; fontSize?: number; font?: string; styleId?: string; style?: string };
+  text?: { chars: string; fontSize?: number; font?: string; lineHeight?: number | "AUTO" | string; styleId?: string; style?: string };
   instance?: { componentId?: string; component?: string; componentSet?: string; variants?: Record<string, string>; props?: Record<string, unknown> };
   children?: NodeSnapshot[];
   truncated?: number;
@@ -200,6 +200,7 @@ export interface ResolvedFrame extends ResolvedBase {
   fill?: Paint;
   stroke?: Paint;
   strokeWeight?: number;
+  strokeSides?: ("top" | "right" | "bottom" | "left")[];
   radius?: Num;
   effectStyleId?: string;
   clip?: boolean;
@@ -275,8 +276,21 @@ export type BridgeMethod =
   | "inspect"
   | "executePlan"
   | "applyTransformations"
-  | "select";
+  | "select"
+  | "importTree"
+  | "ensurePages"
+  | "foundations";
 
 export interface BridgeRequest { id: string; method: BridgeMethod; params?: unknown }
 export interface BridgeResponse { id: string; ok: boolean; result?: unknown; error?: StructuredError }
 export interface BridgeHello { type: "hello"; fileName: string; fileKey?: string; page: string; user?: string }
+
+/** A node serialized from rendered HTML (absolute boxes, relative to the parent node). */
+export interface ImportPaint { hex: string; a: number }
+export type ImportNode =
+  | { type: "frame"; name: string; x: number; y: number; w: number; h: number; fill?: ImportPaint; gradient?: { angle: number; stops: (ImportPaint & { pos: number })[] };
+      shadows?: (ImportPaint & { inset: boolean; x: number; y: number; blur: number; spread: number })[]; stroke?: ImportPaint & { weights: number[] };
+      radius?: number[]; clip?: boolean; blend?: string; opacity?: number; placeholder?: string; swap?: { component: string; variant?: string }; children: ImportNode[] }
+  | { type: "text"; name: string; x: number; y: number; w: number; h: number; content: string; font: { family: string; style: string }; size: number;
+      lineHeight?: number; letterSpacing?: number; color?: string; opacity?: number; align: "LEFT" | "RIGHT" | "CENTER"; wrap: boolean }
+  | { type: "svg"; name: string; x: number; y: number; w: number; h: number; svg: string };

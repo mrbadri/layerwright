@@ -31,6 +31,15 @@ Don't use it for code-only tasks (bugs, refactors, APIs) unless the user brings 
 Claude Design Engineer Bridge*. Then run `figma_scan_design_system` (it's cached; pass `refresh: true` after the DS changes).
 The scan summary lists component sets with their variants, variable collections and roles. Read it once.
 
+## Mode 0 — HTML prototype → Figma (cheapest; prefer it whenever an HTML handoff exists)
+
+Don't re-type a prototype as a Design Plan. The bridge renders it in headless Chrome and rebuilds exactly what was painted.
+1. `figma_pages({ pages: ["Cover", "Foundations", "Components", "Flow – …", "Specs & notes"] })` sets up the project structure.
+2. `figma_import_html({ file, dryRun: true })` lists the screens. A review board (nested `.sc-host`) is split into one screen per state, named by its label.
+3. `figma_import_html({ file, page, section, only? })` builds them: frames, text, gradients, shadows, radii, blend modes and inline SVG art. Pass `targets: [{ selector, name }]` for non-board pages.
+4. Fonts must be installed for Figma. Missing families fall back (Vazirmatn → Noto Sans Arabic → Inter) with a warning.
+5. The layers are absolutely positioned. Afterwards, Mode B (`figma_analyze_design`) can bind colours to variables and convert layout to Auto Layout.
+
 ## Mode A — requirement → Figma design
 
 1. **Understand the flow.** List the screens and the states each one needs (default, loading, error, empty, success), plus how the user moves between them. Keep this short and in your own head or reply.
@@ -67,7 +76,7 @@ The scan summary lists component sets with their variants, variable collections 
 ```
 
 **Containers.** `screen` (fixed width, 390 by default), `frame`, `section`, `stack` (vertical), `row` (horizontal), `card`, `modal`, `navigation` and `list` share these fields:
-`name, width (number|"hug"|"fill"), height, layout { direction: vertical|horizontal|none, gap, padding (n | {x,y} | {top,right,bottom,left}), align: start|center|end|space-between, crossAlign, wrap }, fill, stroke, strokeWeight, radius, effect, clip, children[]`.
+`name, width (number|"hug"|"fill"), height, layout { direction: vertical|horizontal|none, gap, padding (n | {x,y} | {top,right,bottom,left}), align: start|center|end|space-between, crossAlign, wrap }, fill, stroke, strokeWeight, strokeSides (e.g. ["top"] for a footer divider), radius, effect, clip, children[]`.
 Each type comes with a sensible default layout (for example, `screen` uses padding 24 and gap 16, and `card` uses padding 16, gap 12 and radius 12).
 A container that has `component` or `role` set becomes a DS instance instead, which is useful for a card, modal or navigation bar from the DS.
 
