@@ -107,7 +107,7 @@
                 {
                   "type": "frame",
                   "name": ".chip",
-                  "width": 44.44,
+                  "width": "hug",
                   "height": "fill",
                   "layout": {
                     "direction": "vertical",
@@ -126,7 +126,7 @@
                     {
                       "type": "text",
                       "name": "تولد",
-                      "width": "fill",
+                      "width": "hug",
                       "content": "تولد",
                       "color": "#172527",
                       "fontSize": 13,
@@ -140,7 +140,7 @@
                 {
                   "type": "frame",
                   "name": ".chip",
-                  "width": 57.11,
+                  "width": "hug",
                   "height": "fill",
                   "layout": {
                     "direction": "vertical",
@@ -159,7 +159,7 @@
                     {
                       "type": "text",
                       "name": "۱۲ آبان",
-                      "width": "fill",
+                      "width": "hug",
                       "content": "۱۲ آبان",
                       "color": "#172527",
                       "fontSize": 13,
@@ -173,7 +173,7 @@
                 {
                   "type": "frame",
                   "name": ".chip",
-                  "width": 89.77,
+                  "width": "hug",
                   "height": "fill",
                   "layout": {
                     "direction": "vertical",
@@ -192,7 +192,7 @@
                     {
                       "type": "text",
                       "name": "۳۶ روز مونده",
-                      "width": "fill",
+                      "width": "hug",
                       "content": "۳۶ روز مونده",
                       "color": "#172527",
                       "fontSize": 13,
@@ -224,7 +224,7 @@
             {
               "type": "frame",
               "name": ".tag",
-              "width": 104.08,
+              "width": "hug",
               "height": "hug",
               "layout": {
                 "direction": "vertical",
@@ -243,7 +243,7 @@
                 {
                   "type": "text",
                   "name": "این کادو با من",
-                  "width": "fill",
+                  "width": "hug",
                   "content": "این کادو با من",
                   "color": "#FFFFFF",
                   "fontSize": 13,
@@ -362,7 +362,7 @@
                 {
                   "type": "frame",
                   "name": ".chip",
-                  "width": 44.44,
+                  "width": "hug",
                   "height": "fill",
                   "layout": {
                     "direction": "vertical",
@@ -381,7 +381,7 @@
                     {
                       "type": "text",
                       "name": "تولد",
-                      "width": "fill",
+                      "width": "hug",
                       "content": "تولد",
                       "color": "#172527",
                       "fontSize": 13,
@@ -395,7 +395,7 @@
                 {
                   "type": "frame",
                   "name": ".chip",
-                  "width": 57.11,
+                  "width": "hug",
                   "height": "fill",
                   "layout": {
                     "direction": "vertical",
@@ -414,7 +414,7 @@
                     {
                       "type": "text",
                       "name": "۱۲ آبان",
-                      "width": "fill",
+                      "width": "hug",
                       "content": "۱۲ آبان",
                       "color": "#172527",
                       "fontSize": 13,
@@ -428,7 +428,7 @@
                 {
                   "type": "frame",
                   "name": ".chip",
-                  "width": 89.77,
+                  "width": "hug",
                   "height": "fill",
                   "layout": {
                     "direction": "vertical",
@@ -447,7 +447,7 @@
                     {
                       "type": "text",
                       "name": "۳۶ روز مونده",
-                      "width": "fill",
+                      "width": "hug",
                       "content": "۳۶ روز مونده",
                       "color": "#172527",
                       "fontSize": 13,
@@ -479,7 +479,7 @@
             {
               "type": "frame",
               "name": ".tag",
-              "width": 104.08,
+              "width": "hug",
               "height": "hug",
               "layout": {
                 "direction": "vertical",
@@ -498,7 +498,7 @@
                 {
                   "type": "text",
                   "name": "این کادو با من",
-                  "width": "fill",
+                  "width": "hug",
                   "content": "این کادو با من",
                   "color": "#FFFFFF",
                   "fontSize": 13,

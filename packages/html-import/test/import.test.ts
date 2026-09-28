@@ -106,3 +106,16 @@ maybe("end to end: HTML export → plan → execute on the strict Figma mock →
   // "Vazirmatn" Bold resolves against the mock's installed fonts; nothing fell back silently.
   assert.ok(report.warnings.every((w) => !/could be loaded/.test(w)));
 });
+
+maybe("single-line labels (buttons, links) hug their text so Figma's font metrics can't wrap them", async () => {
+  const { plan } = await renderToPlan(fixture("landing.html"), { viewports: [1440] });
+  const texts: any[] = [];
+  const walk = (n: any, parent?: any) => { if (n.type === "text") texts.push({ n, parent }); (n.children ?? []).forEach((c: any) => walk(c, n)); };
+  walk(plan.screens[0]);
+  for (const label of ["Features", "Get started", "Learn more"]) {
+    const t = texts.find((x) => x.n.content === label);
+    assert.ok(t, label);
+    assert.equal(t.n.width, "hug", `${label} label`);
+    assert.equal(t.parent.width, "hug", `${label} container`);
+  }
+});

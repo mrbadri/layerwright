@@ -68,7 +68,7 @@
                 {
                   "type": "frame",
                   "name": "a",
-                  "width": 54.2,
+                  "width": "hug",
                   "height": "fill",
                   "layout": {
                     "direction": "vertical",
@@ -80,7 +80,7 @@
                     {
                       "type": "text",
                       "name": "Features",
-                      "width": "fill",
+                      "width": "hug",
                       "content": "Features",
                       "color": "#172527",
                       "fontSize": 14,
@@ -93,7 +93,7 @@
                 {
                   "type": "frame",
                   "name": "a",
-                  "width": 43.31,
+                  "width": "hug",
                   "height": "fill",
                   "layout": {
                     "direction": "vertical",
@@ -105,7 +105,7 @@
                     {
                       "type": "text",
                       "name": "Pricing",
-                      "width": "fill",
+                      "width": "hug",
                       "content": "Pricing",
                       "color": "#172527",
                       "fontSize": 14,
@@ -118,7 +118,7 @@
                 {
                   "type": "frame",
                   "name": "a",
-                  "width": 31.73,
+                  "width": "hug",
                   "height": "fill",
                   "layout": {
                     "direction": "vertical",
@@ -130,7 +130,7 @@
                     {
                       "type": "text",
                       "name": "Docs",
-                      "width": "fill",
+                      "width": "hug",
                       "content": "Docs",
                       "color": "#172527",
                       "fontSize": 14,
@@ -222,7 +222,7 @@
                 {
                   "type": "frame",
                   "name": ".btn",
-                  "width": 114.69,
+                  "width": "hug",
                   "height": "fill",
                   "layout": {
                     "direction": "vertical",
@@ -241,7 +241,7 @@
                     {
                       "type": "text",
                       "name": "Get started",
-                      "width": "fill",
+                      "width": "hug",
                       "content": "Get started",
                       "color": "#FFFFFF",
                       "fontSize": 15,
@@ -254,7 +254,7 @@
                 {
                   "type": "frame",
                   "name": ".btn",
-                  "width": 118.2,
+                  "width": "hug",
                   "height": "fill",
                   "layout": {
                     "direction": "vertical",
@@ -275,7 +275,7 @@
                     {
                       "type": "text",
                       "name": "Learn more",
-                      "width": "fill",
+                      "width": "hug",
                       "content": "Learn more",
                       "color": "#176B66",
                       "fontSize": 15,
@@ -556,7 +556,7 @@
                 {
                   "type": "frame",
                   "name": "a",
-                  "width": 54.2,
+                  "width": "hug",
                   "height": "fill",
                   "layout": {
                     "direction": "vertical",
@@ -568,7 +568,7 @@
                     {
                       "type": "text",
                       "name": "Features",
-                      "width": "fill",
+                      "width": "hug",
                       "content": "Features",
                       "color": "#172527",
                       "fontSize": 14,
@@ -581,7 +581,7 @@
                 {
                   "type": "frame",
                   "name": "a",
-                  "width": 43.31,
+                  "width": "hug",
                   "height": "fill",
                   "layout": {
                     "direction": "vertical",
@@ -593,7 +593,7 @@
                     {
                       "type": "text",
                       "name": "Pricing",
-                      "width": "fill",
+                      "width": "hug",
                       "content": "Pricing",
                       "color": "#172527",
                       "fontSize": 14,
@@ -606,7 +606,7 @@
                 {
                   "type": "frame",
                   "name": "a",
-                  "width": 31.73,
+                  "width": "hug",
                   "height": "fill",
                   "layout": {
                     "direction": "vertical",
@@ -618,7 +618,7 @@
                     {
                       "type": "text",
                       "name": "Docs",
-                      "width": "fill",
+                      "width": "hug",
                       "content": "Docs",
                       "color": "#172527",
                       "fontSize": 14,
@@ -710,7 +710,7 @@
                 {
                   "type": "frame",
                   "name": ".btn",
-                  "width": 114.69,
+                  "width": "hug",
                   "height": "fill",
                   "layout": {
                     "direction": "vertical",
@@ -729,7 +729,7 @@
                     {
                       "type": "text",
                       "name": "Get started",
-                      "width": "fill",
+                      "width": "hug",
                       "content": "Get started",
                       "color": "#FFFFFF",
                       "fontSize": 15,
@@ -742,7 +742,7 @@
                 {
                   "type": "frame",
                   "name": ".btn",
-                  "width": 118.2,
+                  "width": "hug",
                   "height": "fill",
                   "layout": {
                     "direction": "vertical",
@@ -763,7 +763,7 @@
                     {
                       "type": "text",
                       "name": "Learn more",
-                      "width": "fill",
+                      "width": "hug",
                       "content": "Learn more",
                       "color": "#176B66",
                       "fontSize": 15,

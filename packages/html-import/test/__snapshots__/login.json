@@ -97,7 +97,7 @@
                     {
                       "type": "text",
                       "name": "you@company.com",
-                      "width": "fill",
+                      "width": "hug",
                       "content": "you@company.com",
                       "color": "#757575",
                       "fontSize": 15,
@@ -157,7 +157,7 @@
                     {
                       "type": "text",
                       "name": "••••••••",
-                      "width": "fill",
+                      "width": "hug",
                       "content": "••••••••",
                       "color": "#757575",
                       "fontSize": 15,
@@ -324,7 +324,7 @@
                     {
                       "type": "text",
                       "name": "you@company.com",
-                      "width": "fill",
+                      "width": "hug",
                       "content": "you@company.com",
                       "color": "#757575",
                       "fontSize": 15,
@@ -384,7 +384,7 @@
                     {
                       "type": "text",
                       "name": "••••••••",
-                      "width": "fill",
+                      "width": "hug",
                       "content": "••••••••",
                       "color": "#757575",
                       "fontSize": 15,

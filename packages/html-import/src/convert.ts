@@ -158,6 +158,11 @@ export function toPlan(screens: { name: string; width: number; dom: DomNode }[],
     order.forEach((k, i) => pushChild(k, i, !auto));
     if (auto) kids.filter(isOut).forEach((k, i) => pushChild(k, i, true));
     out.children = children;
+    // A single line of text inside a container (buttons, links, chips, tags): container and label hug,
+    // like a real Figma button. Fixed browser widths would wrap the label on tiny font metric differences.
+    const only = children.length === 1 ? children[0] : undefined;
+    const onlyDom = order.length === 1 ? order[0] : undefined;
+    if (auto && only?.type === "text" && !only.position && onlyDom && (onlyDom.lines ?? 1) <= 1) { only.width = "hug"; out._hugText = true; }
     if (!auto) { out.width = round(d.box.w); out.height = round(d.box.h); }
     return out;
   };
@@ -166,9 +171,12 @@ export function toPlan(screens: { name: string; width: number; dom: DomNode }[],
   const place = (c: any, k: DomNode, p: { auto: boolean; horizontal: boolean; inner: { x: number; y: number; w: number; h: number }; absolute: boolean; stretch: boolean }) => {
     const b = c._box as { x: number; y: number; w: number; h: number };
     delete c._box;
+    const hugText = !!c._hugText;
+    delete c._hugText;
     const w = round(Math.max(1, b.w)), h = round(Math.max(1, b.h));
     if (p.absolute || !p.auto) {
       c.position = { type: "absolute", x: round(b.x), y: round(b.y) };
+      if (hugText) { c.width = "hug"; c.height = "hug"; return; }
       c.width = c.type === "text" && (k.lines ?? 1) <= 1 && c.align !== "center" && c.align !== "right" ? "hug" : w;
       if (c.type !== "text") c.height = c.layout?.direction && c.layout.direction !== "none" ? "hug" : h;
       if (c.type === "frame" && c.layout.direction !== "none") c.height = "hug";
@@ -176,10 +184,10 @@ export function toPlan(screens: { name: string; width: number; dom: DomNode }[],
     }
     const fullMain = p.horizontal ? false : Math.abs(b.w - p.inner.w) < 1;
     if (p.horizontal) {
-      c.width = (k.style.flexGrow ?? 0) > 0 ? "fill" : c.type === "text" && (k.lines ?? 1) <= 1 ? "hug" : w;
+      c.width = (k.style.flexGrow ?? 0) > 0 ? "fill" : hugText || (c.type === "text" && (k.lines ?? 1) <= 1) ? "hug" : w;
       if (c.type !== "text") c.height = p.stretch && Math.abs(b.h - p.inner.h) < 1 ? "fill" : c.type === "frame" && c.layout.direction !== "none" ? "hug" : h;
     } else {
-      c.width = fullMain ? "fill" : c.type === "text" && (k.lines ?? 1) <= 1 ? "hug" : w;
+      c.width = fullMain ? "fill" : hugText || (c.type === "text" && (k.lines ?? 1) <= 1) ? "hug" : w;
       if (c.type !== "text") c.height = c.type === "frame" && c.layout.direction !== "none" ? "hug" : h;
     }
   };
@@ -188,7 +196,7 @@ export function toPlan(screens: { name: string; width: number; dom: DomNode }[],
     version: 1, name: opts.name ?? "HTML import", screenGap: 120,
     screens: screens.map((sc, i) => {
       const f = container(sc.dom, `screens[${i}]`);
-      delete f._box;
+      delete f._box; delete f._hugText;
       return { ...f, type: "screen", name: sc.name, width: sc.width, height: f.layout.direction === "none" ? f.height : undefined, fill: f.fill ?? "#FFFFFF" };
     }),
   } as DesignPlan;

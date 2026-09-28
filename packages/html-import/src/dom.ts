@@ -149,7 +149,7 @@ const SERIALIZE_DOM = (selector: string) => {
         let text = raw.replace(/\s+/g, " ").trim();
         if (cs.textTransform === "uppercase") text = text.toUpperCase();
         else if (cs.textTransform === "lowercase") text = text.toLowerCase();
-        base.children.push({ kind: "text", tag: "#text", name: text.slice(0, 40), box: { x: tr.left - r.left, y: tr.top - r.top, w: tr.width, h: tr.height }, style: base.style, text, lines: range.getClientRects().length, attrs: {}, children: [] });
+        base.children.push({ kind: "text", tag: "#text", name: text.slice(0, 40), box: { x: tr.left - r.left, y: tr.top - r.top, w: tr.width, h: tr.height }, style: base.style, text, lines: new Set([...range.getClientRects()].filter((q) => q.width > 0).map((q) => Math.round(q.top))).size || 1, attrs: {}, children: [] });
       } else if (n.nodeType === 1) {
         const c = walk(n as Element, r.left, r.top);
         if (c) base.children.push(c);
