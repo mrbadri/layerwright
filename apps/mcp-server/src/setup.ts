@@ -49,7 +49,7 @@ export async function init(o: InitOptions = {}): Promise<number> {
     try { mcp = JSON.parse(readFileSync(mcpPath, "utf8")); } catch { out(`✗ ${mcpPath} is not valid JSON; fix or remove it and run init again.`); return 1; }
   }
   mcp.mcpServers ??= {};
-  mcp.mcpServers[BIN] = { ...serverEntry(), env: { CDE_PORT: String(port) } };
+  mcp.mcpServers[BIN] = { ...serverEntry(), env: { LAYERWRIGHT_PORT: String(port) } };
   writeFileSync(mcpPath, JSON.stringify(mcp, null, 2) + "\n");
   out(`✓ MCP server "${BIN}" registered in ${mcpPath}`);
 
@@ -59,7 +59,7 @@ export async function init(o: InitOptions = {}): Promise<number> {
   out(`✓ Skill copied to ${skillDir}`);
 
   const gi = join(dir, ".gitignore");
-  const line = ".design-engineer/cache";
+  const line = ".layerwright/cache";
   const cur = existsSync(gi) ? readFileSync(gi, "utf8") : "";
   if (!cur.split(/\r?\n/).includes(line)) writeFileSync(gi, cur + (cur && !cur.endsWith("\n") ? "\n" : "") + line + "\n");
 
@@ -100,7 +100,7 @@ export async function doctor(o: { dir?: string; port?: number; out?: Out; skipBr
   let port = o.port ?? DEFAULT_PORT;
   try {
     const entry = JSON.parse(readFileSync(mcpPath, "utf8")).mcpServers?.[BIN];
-    if (entry) { pass(`.mcp.json registers "${BIN}"`); port = o.port ?? Number(entry.env?.CDE_PORT ?? DEFAULT_PORT); }
+    if (entry) { pass(`.mcp.json registers "${BIN}"`); port = o.port ?? Number(entry.env?.LAYERWRIGHT_PORT ?? DEFAULT_PORT); }
     else failWith(`.mcp.json has no "${BIN}" server`, `run: npx ${PKG_NAME} init`);
   } catch { failWith(`no .mcp.json in ${dir}`, `run: npx ${PKG_NAME} init   (in your project folder)`); }
 

@@ -19,3 +19,6 @@ cpSync("../figma-plugin/manifest.json", "dist/figma-plugin/manifest.json");
 cpSync("../figma-plugin/dist", "dist/figma-plugin/dist", { recursive: true });
 mkdirSync("dist/skill", { recursive: true });
 cpSync("../../skills/figma-design/SKILL.md", "dist/skill/SKILL.md");
+// npm shows the package README; ship the repo README and LICENSE with it.
+cpSync("../../README.md", "README.md");
+cpSync("../../LICENSE", "LICENSE");

@@ -20,7 +20,7 @@ export const REPO_ROOT = FROM_SOURCE ? resolve(here, "../../..") : undefined;
 
 /** Built Figma plugin (manifest.json + dist/). */
 export function pluginSource(): string {
-  if (process.env.CDE_PLUGIN_SRC) return resolve(process.env.CDE_PLUGIN_SRC);
+  if (process.env.LAYERWRIGHT_PLUGIN_SRC) return resolve(process.env.LAYERWRIGHT_PLUGIN_SRC);
   return FROM_SOURCE ? resolve(here, "../../figma-plugin") : join(here, "figma-plugin");
 }
 export function skillSource(): string {
@@ -28,6 +28,6 @@ export function skillSource(): string {
 }
 /** Stable per-user location for the plugin, so the manifest path Figma remembers survives npx updates. */
 export function pluginHome(): string {
-  return join(process.env.CDE_HOME ?? join(homedir(), `.${BIN}`), "figma-plugin");
+  return join(process.env.LAYERWRIGHT_HOME ?? join(homedir(), `.${BIN}`), "figma-plugin");
 }
 export const DEFAULT_PORT = 7331;

@@ -1,3 +1,5 @@
 node_modules
 dist
-.design-engineer/cache
+.layerwright/cache
+# legacy name, never commit caches
+.design-engineer/

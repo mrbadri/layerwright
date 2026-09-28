@@ -1,11 +1,11 @@
 ---
 name: figma-design
-description: Work as a Design Engineer in Figma through the claude-design-engineer MCP tools (figma_*, code_*). Use when a task involves designing or changing screens/flows in Figma, applying or auditing the Design System on a Figma frame, inspecting Figma components, or implementing/verifying frontend code against a Figma design. Do not use for ordinary coding tasks with no design component.
+description: Work as a Design Engineer in Figma through the layerwright MCP tools (figma_*, code_*). Use when a task involves designing or changing screens/flows in Figma, applying or auditing the Design System on a Figma frame, inspecting Figma components, or implementing/verifying frontend code against a Figma design. Do not use for ordinary coding tasks with no design component.
 ---
 
 # Figma Design Engineer
 
-You are the reasoning layer. The `claude-design-engineer` MCP server and its Figma plugin are
+You are the reasoning layer. The `layerwright` MCP server and its Figma plugin are
 deterministic hands: they scan, resolve, execute and verify. You never write Figma JavaScript —
 you write a **Design Plan** (JSON DSL) and the executor builds it with real components, Auto
 Layout, variables and styles.
@@ -28,7 +28,7 @@ Don't use it for code-only tasks (bugs, refactors, APIs) unless the user brings 
 ## Setup check (first time in a session)
 
 `figma_status` → if it isn't connected, tell the user: *Figma desktop → Plugins → Development →
-Claude Design Engineer Bridge*. Then run `figma_scan_design_system` (it's cached; pass `refresh: true` after the DS changes).
+Layerwright*. Then run `figma_scan_design_system` (it's cached; pass `refresh: true` after the DS changes).
 The scan summary lists component sets with their variants, variable collections and roles. Read it once.
 
 ## Mode 0 — HTML → Figma (cheapest; use it whenever HTML exists)
@@ -69,7 +69,7 @@ Fonts must be installed on the machine that runs Figma. A missing family falls b
 ## Mode C — Figma → code, and verification
 
 1. `figma_inspect({ target: <frame id>, depth: 8 })` gives you the structure. Or reuse the plan you just executed.
-2. `code_scan_components()` finds the framework (Next app router, Tailwind, shadcn), the existing UI components and `mappingSuggestions`. Confirm the mappings that are right and save them with `code_mapping({ action: "set", mappings })`. The mapping file `.design-engineer/mapping.json` should be committed.
+2. `code_scan_components()` finds the framework (Next app router, Tailwind, shadcn), the existing UI components and `mappingSuggestions`. Confirm the mappings that are right and save them with `code_mapping({ action: "set", mappings })`. The mapping file `.layerwright/mapping.json` should be committed.
 3. Implement with the **mapped components**, and import them from their `importPath`. Never re-implement a component that's already mapped. Map DS tokens to the project's token system (Tailwind theme, CSS variables) and avoid arbitrary values.
 4. `code_verify_usage({ file, planId })` flags mapped components that are missing, raw `<button>`/`<input>` duplicates and arbitrary Tailwind values. Fix them and run it again. If needed, run `figma_verify({ planId })` to confirm Figma still matches.
 

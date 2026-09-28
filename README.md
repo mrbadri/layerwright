@@ -1,73 +1,164 @@
-# Claude Design Engineer
+# Layerwright
 
-Internal tooling that turns Claude Code into a Design Engineer. Claude does the reasoning. A local
-MCP server and a Figma plugin do the execution, and they are deterministic: Claude writes a typed
-**Design Plan**, the tools validate it, resolve it against your real Design System and build native
-Figma nodes (component instances, Auto Layout, variables, styles). Claude never writes Figma
-JavaScript.
+**Turn Claude Design and Claude Code designs into native, editable Figma files.**
 
-```
-Claude Code ──stdio/MCP──▶ apps/mcp-server ──ws://localhost:7331──▶ apps/figma-plugin (UI relay → main thread) ──▶ Figma Plugin API
-     │                        │  validate (Zod) · resolve · retrieve · analyze · verify   (packages/core, pure TS)
-     └── codebase ◀───────────┘  code_scan_components · code_mapping · code_verify_usage
-```
+Layerwright is an open-source MCP server and Figma plugin that works with Claude Code. It imports
+HTML (for example a Claude Design "standalone HTML" export) into Figma as real frames with Auto
+Layout, text, images and vector icons, and it lets Claude build new screens from your own Design
+System: real component instances, variables and text styles. It is not a screenshot and it is not a
+flat SVG.
 
-## Setup (about 5 minutes)
+[![CI](https://github.com/shayan-m81/layerwright/actions/workflows/ci.yml/badge.svg)](https://github.com/shayan-m81/layerwright/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/layerwright.svg)](https://www.npmjs.com/package/layerwright)
+[![MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
+![Demo: a Claude Design HTML export becomes an editable Figma frame](docs/assets/demo.gif)
+<!-- TODO: record docs/assets/demo.gif (see docs/figma-community-plan.md → demo script) -->
+
+## Why
+
+Claude Design exports to HTML, PDF, PPTX and Canva, but not to Figma. Claude Code can write UI code,
+but it has no native way to put a design into a Figma file your team can edit. Most "HTML to Figma"
+tools either paste a flat picture or need a cloud account.
+
+Layerwright closes that gap locally:
+
+- **Claude Design to Figma:** export standalone HTML, run one command, and you get editable Figma frames.
+- **Claude Code to Figma:** ask Claude for a screen or a flow, and it is built from your Design System's components.
+- **No API keys, no cloud, no account.** Everything runs on your machine. The plugin only talks to `localhost`.
+
+## Features
+
+- **HTML to Figma import** (`import_html_to_plan`)
+  - Flexbox becomes Auto Layout: direction, gap, padding, alignment and wrap.
+  - Colours, borders, radii, shadows, gradients, fonts, line height and letter spacing come across.
+  - Images and inline SVG icons are imported as real images and vectors.
+  - Desktop (1440) and mobile (390) screens are rendered side by side.
+  - RTL is supported (Persian, Arabic, Hebrew). Rows keep their visual order and text stays right-aligned.
+- **Design System automation.** Buttons, inputs and links in the HTML are swapped for your real Figma components after a Design System scan.
+- **AI design to Figma from a prompt.** Claude writes a typed Design Plan (a JSON DSL). The plan is validated and resolved against your components, variables and text styles, then built deterministically. Claude never writes Figma plugin code.
+- **Safe by default.**
+  - Every run is one undo step.
+  - A failed run rolls back completely.
+  - Results are checked against the plan.
+  - Existing nodes change only after you approve.
+- **Audit and fix existing frames.** Hard-coded colours become variables, raw text gets text styles, and custom buttons become component instances. Originals are hidden, never deleted.
+- **Design to code.** Map Figma components to your React components and check that the implementation uses them.
+- **Pixel-faithful mode** (`figma_import_html`) for review boards and art-heavy pages: exact layers, variant sets built from states, and instance swaps.
+
+## Quickstart (3 steps)
+
+Requirements: Node.js 20+, Figma desktop, Claude Code.
 
 ```bash
-npm install
-npm run build          # bundles the Figma plugin into apps/figma-plugin/dist
-npm test               # 13 tests: DSL, resolver, analyzer, MCP e2e over the real bridge, executor on a strict Figma API mock
+# 1. In your project folder
+npx layerwright init
 ```
 
-1. **Figma desktop:** Plugins → Development → *Import plugin from manifest…* → `apps/figma-plugin/manifest.json`.
-   Run **Claude Design Engineer Bridge** in the file that holds (or uses) your Design System. Keep the small window open.
-2. **Claude Code:**
-   - To work in this repo: `.mcp.json` and `.claude/skills/figma-design` are already here.
-   - To work in your app repo: `./scripts/install-into-project.sh /path/to/your-next-app`. This registers the MCP server with the app as its working directory and copies the skill.
-3. In Claude Code, ask for example: *"Create a login screen in Figma using our existing Design System."*
+2. In **Figma desktop**, go to **Plugins → Development → Import plugin from manifest…** and pick the path `init` printed (`~/.layerwright/figma-plugin/manifest.json`). Open your file and run **Layerwright**. Keep its small window open.
+3. Restart **Claude Code** in the project and ask:
+   - *"Import ./design.html into Figma"*: a Claude Design HTML export becomes editable frames.
+   - *"Create a sign-up flow in Figma using our Design System"*: new screens built from your components.
 
-No API keys are involved anywhere. The plugin only talks to `localhost`. It is a development
-plugin and is never published.
+Something not working? Run `npx layerwright doctor`.
 
-## Tools
+For HTML import, Layerwright needs a Chromium. It uses Google Chrome if you have it installed. Otherwise run `npx playwright install chromium`.
 
-| Tool | Purpose |
+Want to try the conversion without Figma? `npx layerwright import ./design.html` prints what would be built.
+
+## How it works
+
+```mermaid
+flowchart LR
+  A[Claude Code] -- MCP / stdio --> B[layerwright server]
+  H[HTML file or folder] -- headless Chromium --> B
+  B -- "Zod-validated Design Plan<br/>resolved against your DS" --> B
+  B -- ws://localhost --> C[Figma plugin]
+  C -- "fixed Plugin API calls<br/>one undo step" --> D[(Figma file)]
+```
+
+1. **Plan.** Claude, or the HTML importer, produces a **Design Plan**: a small, typed JSON DSL of screens, frames, text, components, tokens and images.
+2. **Validate and resolve.** The server checks the plan with Zod. It then resolves every component, variant, property, variable and text style against a cached scan of *your* Figma file. Unknown names come back as errors with suggestions and never reach Figma.
+3. **Execute.** The plugin builds the resolved plan with fixed Plugin API calls. There is no `eval` and no model-written code.
+4. **Verify.** The result is re-inspected and compared with the plan.
+
+Read more in [docs/architecture.md](docs/architecture.md). The DSL is documented in [docs/dsl.md](docs/dsl.md).
+
+## MCP tools
+
+| Tool | What it does |
 |---|---|
-| `figma_status` | Connection, file/page, selection, cache state |
-| `figma_scan_design_system` | Scans components, sets, variants, props, variables and modes, styles, and library components used in the file. It normalizes them, infers semantic roles (e.g. `Button / Primary → primary-action`), caches the result in `.design-engineer/cache/` and returns a compact summary |
-| `figma_get_design_context` | Deterministic retrieval of only the relevant components, tokens and text styles for a task, plus their code mappings |
-| `figma_inspect` | Compact semantic snapshot of the selection, the page or a node |
-| `figma_preview_plan` | Zod validation plus resolution into a `planId` and summary. Unresolved names come back as structured errors with suggestions |
-| `figma_execute_plan` | Builds the plan in Figma as one undo step, with full rollback on failure and automatic structural verification |
-| `figma_verify` | Re-checks the Figma result against the plan |
-| `figma_analyze_design` | Mode B: proposes custom → DS component, raw → token/style and manual → Auto Layout changes |
-| `figma_apply_transformations` | Applies the approved transformations (`approved: true` is required). Replaced originals are hidden, not deleted |
-| `figma_select` | Selects and zooms to nodes |
-| `code_scan_components` | Finds React/Next UI components, detects Tailwind/shadcn and suggests Figma↔code mappings |
-| `code_mapping` | Reads or writes `.design-engineer/mapping.json` (commit this file) |
-| `code_verify_usage` | Checks that the implementation uses the mapped components, and flags raw `<button>`/`<input>` and arbitrary Tailwind values |
+| `import_html_to_plan` | HTML file or folder → editable Design Plan (Auto Layout, DS components). Returns a `planId` |
+| `figma_execute_plan` | Builds a plan in Figma: one undo step, rollback on failure, automatic verification |
+| `figma_preview_plan` | Validates and resolves a hand-written plan and returns a summary |
+| `figma_status` / `figma_scan_design_system` / `figma_get_design_context` | Connection, Design System scan (components, variants, variables, styles), task-scoped context |
+| `figma_inspect` / `figma_verify` / `figma_select` | Compact snapshots, plan-vs-canvas checks, select and zoom |
+| `figma_analyze_design` / `figma_apply_transformations` | Audit a frame against the DS and apply approved fixes |
+| `figma_import_html` / `figma_pages` / `figma_foundations` | Pixel-faithful import, page setup, variables and text styles |
+| `code_scan_components` / `code_mapping` / `code_verify_usage` | Design to code: component mapping and usage checks |
 
-## Layout
+## FAQ
 
+**Is this an official Anthropic or Figma product?**
+No. It is an independent open-source project that works with Claude Code and Figma.
+
+**Does it need an API key, an account or a server?**
+No. Claude Code runs the MCP server locally, and the Figma plugin connects to it on `localhost`. Nothing is uploaded.
+
+**Can I use it without Claude Code?**
+Yes, partly. `npx layerwright import` converts HTML to a plan from the command line, and any MCP client can call the tools. The skill and the workflow are written for Claude Code.
+
+**Does the output use Auto Layout?**
+Yes, where the HTML uses flexbox or evenly spaced stacks. Grid and overlapping layers become frames with absolutely positioned children, so the result still looks right.
+
+**Will it use my Design System?**
+Yes. Scan the file that has your components (`figma_scan_design_system`), and imported buttons, inputs and links become instances of them. Anything that doesn't match stays a styled frame.
+
+**Does it work with right-to-left languages?**
+Yes. Direction, text alignment and row order are preserved. Fonts such as Vazirmatn are matched to their real style names.
+
+**Does it work in the Figma browser app?**
+Development plugins need Figma desktop.
+
+## Troubleshooting
+
+Start with `npx layerwright doctor`. It checks Node, `.mcp.json`, the skill, the plugin files, the running server, the plugin connection and Chromium, and it prints a fix for each problem. More cases are covered in [docs/troubleshooting.md](docs/troubleshooting.md).
+
+## Limitations
+
+- CSS grid, floats and transforms are imported as positioned layers, not as Auto Layout.
+- Only linear gradients are supported. Radial and conic gradients, filters and blend modes are dropped in plan mode (the pixel-faithful mode keeps blend modes).
+- The largest corner radius is used when the four corners differ.
+- Fonts must be installed on the machine that runs Figma. A missing family falls back to Inter, with a warning.
+- Images must be PNG, JPEG or GIF (a Figma limit), up to 10 MB each.
+- Library components are found only when an instance of them exists in the open file.
+- Verification is structural, not visual.
+- One Figma plugin connection per port. Parallel sessions need separate ports (`LAYERWRIGHT_PORT`).
+
+## Roadmap
+
+- Per-corner radii, CSS grid → Auto Layout wrap, radial gradients
+- Visual diff (screenshot) verification
+- Design tokens export (W3C format) and import
+- Figma Community listing ([plan](docs/figma-community-plan.md))
+- Instance-swap properties and nested overrides
+
+## Contributing
+
+Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md). To develop from a clone:
+
+```bash
+git clone https://github.com/shayan-m81/layerwright && cd layerwright
+npm install && npm run build && npm test
+npx tsx apps/mcp-server/src/cli.ts init   # wires this checkout into the current folder
 ```
-packages/core        types, Design DSL (Zod), semantic inference, retrieval, resolver/compiler, analyzer, verifier (pure TS, no I/O)
-apps/mcp-server      MCP tools + WebSocket bridge (transport behind the FigmaTransport interface) + code scanning/mapping
-apps/figma-plugin    scanner/inspector (scan.ts), executor/transformations (execute.ts), relay UI (ui.html)
-skills/figma-design  the Claude Code skill: when to use the tools and how to plan, approve and verify
-```
 
-## Safety and cost
+## License
 
-- Invalid or unresolved plans never reach Figma. Component, variant, property and token names are resolved before execution.
-- Creating new screens is non-destructive. Writing into existing nodes (`target.parentId`) or applying transformations requires `approved: true`, which the skill tells Claude to set only after you agree. For a hard gate, leave `figma_execute_plan` and `figma_apply_transformations` off the auto-allow list in Claude Code permissions.
-- Every run commits a single undo step (`figma.commitUndo`). If a plan fails partway, it removes only the nodes it created.
-- Tokens: one plan per flow, a compact cached DS, task-scoped retrieval, and no per-node model calls.
+[MIT](LICENSE) © Shayan Montazeri
 
-## Known limits (v0.1)
+---
 
-- Library **components** are discovered only when an instance of them exists in the open file. Library **variables** come from enabled libraries. Library **text/paint styles** only come from local styles. Run the scan in the DS source file, or place one instance of each library component in the file.
-- Instance-swap properties and nested instance overrides are not set yet (they produce a warning).
-- `role` inference is keyword- and structure-based (English plus a few Persian terms). Write descriptions on your components to make it more reliable.
-- Verification is structural, not visual. Screenshot diffing is a later milestone.
-- One Figma plugin connection per bridge port. For parallel sessions, set `CDE_PORT` and change the port in the plugin window.
+*Keywords: claude design to figma, export claude design, claude code figma, html to figma, figma mcp, ai design to figma, design system automation.*
+
+Not affiliated with, endorsed or sponsored by Anthropic or Figma. Claude is a trademark of Anthropic; Figma is a trademark of Figma, Inc.

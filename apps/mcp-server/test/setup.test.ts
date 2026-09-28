@@ -16,8 +16,8 @@ const fakePlugin = () => {
   writeFileSync(join(d, "dist", "ui.html"), "");
   return d;
 };
-process.env.CDE_HOME = tmp();
-process.env.CDE_PLUGIN_SRC = fakePlugin();
+process.env.LAYERWRIGHT_HOME = tmp();
+process.env.LAYERWRIGHT_PLUGIN_SRC = fakePlugin();
 const { init, doctor } = await import("../src/setup.ts");
 const { BIN, pluginHome } = await import("../src/meta.ts");
 
@@ -28,14 +28,14 @@ test("init: plugin copied to a stable home, .mcp.json merged (other servers kept
   assert.equal(await init({ dir, port: 7444, skipInstall: true, skipBrowserCheck: true, out: (s) => lines.push(s) }), 0);
   const mcp = JSON.parse(readFileSync(join(dir, ".mcp.json"), "utf8"));
   assert.ok(mcp.mcpServers.other, "existing servers are preserved");
-  assert.equal(mcp.mcpServers[BIN].env.CDE_PORT, "7444");
+  assert.equal(mcp.mcpServers[BIN].env.LAYERWRIGHT_PORT, "7444");
   assert.ok(existsSync(join(dir, ".claude/skills/figma-design/SKILL.md")));
   assert.ok(existsSync(join(pluginHome(), "manifest.json")));
-  assert.match(readFileSync(join(dir, ".gitignore"), "utf8"), /\.design-engineer\/cache/);
+  assert.match(readFileSync(join(dir, ".gitignore"), "utf8"), /\.layerwright\/cache/);
   assert.match(lines.join("\n"), /Next steps:[\s\S]*1\. Figma desktop[\s\S]*2\.[\s\S]*3\./);
   // Running init twice is safe.
   assert.equal(await init({ dir, port: 7444, skipInstall: true, skipBrowserCheck: true, out: () => {} }), 0);
-  assert.equal(readFileSync(join(dir, ".gitignore"), "utf8").match(/design-engineer/g)!.length, 1);
+  assert.equal(readFileSync(join(dir, ".gitignore"), "utf8").match(/\.layerwright/g)!.length, 1);
 });
 
 test("init refuses to overwrite a broken .mcp.json", async () => {

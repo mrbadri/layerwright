@@ -22,14 +22,14 @@ export class WsBridge implements FigmaTransport {
   startError?: string;
 
   version = "0";
-  constructor(public port = Number(process.env.CDE_PORT ?? 7331), private log: (m: string) => void = (m) => { process.stderr.write(`[cde-bridge] ${m}\n`); }) {}
+  constructor(public port = Number(process.env.LAYERWRIGHT_PORT ?? process.env.CDE_PORT ?? 7331), private log: (m: string) => void = (m) => { process.stderr.write(`[layerwright] ${m}\n`); }) {}
 
   start(): Promise<void> {
     return new Promise((resolve) => {
       const wss = (this.wss = new WebSocketServer({ host: "127.0.0.1", port: this.port }));
       wss.on("listening", () => { this.log(`listening on ws://localhost:${this.port}`); resolve(); });
       wss.on("error", (e: any) => {
-        this.startError = e.code === "EADDRINUSE" ? `Port ${this.port} is already in use (another Claude session running the bridge?). Set CDE_PORT to a different port and change it in the plugin window.` : String(e.message ?? e);
+        this.startError = e.code === "EADDRINUSE" ? `Port ${this.port} is already in use (another Claude session running the bridge?). Set LAYERWRIGHT_PORT to a different port and change it in the plugin window.` : String(e.message ?? e);
         this.log(this.startError);
         resolve();
       });
@@ -74,7 +74,7 @@ export class WsBridge implements FigmaTransport {
 
   request<T>(method: BridgeMethod, params?: unknown, timeoutMs = 60_000): Promise<T> {
     if (!this.connected()) {
-      return Promise.reject(new BridgeError({ type: "PLUGIN_DISCONNECTED", message: this.startError ?? `Figma plugin is not connected. In Figma desktop: Plugins → Development → "Claude Design Engineer Bridge" (it connects to ws://localhost:${this.port}).` }));
+      return Promise.reject(new BridgeError({ type: "PLUGIN_DISCONNECTED", message: this.startError ?? `Figma plugin is not connected. In Figma desktop: Plugins → Development → "Layerwright" (it connects to ws://localhost:${this.port}).` }));
     }
     const id = `r${++this.seq}`;
     return new Promise<T>((resolve, reject) => {

@@ -1,10 +1,37 @@
 {
-  "name": "@cde/mcp-server",
+  "name": "layerwright",
   "version": "0.1.0",
-  "private": true,
+  "description": "Turn Claude Design and Claude Code designs into native, editable Figma files: HTML to Figma import (Auto Layout, Design System components) and an MCP server for Claude Code.",
+  "keywords": [
+    "claude design to figma",
+    "export claude design",
+    "claude code figma",
+    "html to figma",
+    "figma mcp",
+    "ai design to figma",
+    "design system automation",
+    "figma",
+    "figma-plugin",
+    "mcp",
+    "model-context-protocol",
+    "claude-code",
+    "design-to-code",
+    "auto-layout"
+  ],
+  "homepage": "https://github.com/shayan-m81/layerwright#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shayan-m81/layerwright.git",
+    "directory": "apps/mcp-server"
+  },
+  "bugs": {
+    "url": "https://github.com/shayan-m81/layerwright/issues"
+  },
+  "license": "MIT",
+  "author": "Shayan Montazeri",
   "type": "module",
   "bin": {
-    "cde": "dist/cli.js"
+    "layerwright": "dist/cli.js"
   },
   "scripts": {
     "start": "tsx src/cli.ts",

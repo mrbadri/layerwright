@@ -13,7 +13,7 @@ export interface DesignCodeMapping {
   notes?: string;
 }
 
-const SKIP = new Set(["node_modules", ".git", ".next", "dist", "build", "out", ".turbo", "coverage", ".design-engineer", "storybook-static"]);
+const SKIP = new Set(["node_modules", ".git", ".next", "dist", "build", "out", ".turbo", "coverage", ".layerwright", "storybook-static"]);
 
 function walk(dir: string, files: string[], limit = 5000) {
   if (files.length > limit) return;

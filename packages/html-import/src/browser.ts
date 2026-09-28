@@ -40,12 +40,12 @@ export async function resolveEntry(path: string): Promise<string> {
 export async function launch(): Promise<Browser> {
   const { chromium } = await import("playwright-core");
   const errors: string[] = [];
-  const exe = process.env.CDE_CHROMIUM_PATH;
+  const exe = process.env.LAYERWRIGHT_CHROMIUM_PATH;
   for (const opts of [exe ? { executablePath: exe } : undefined, {}, { channel: "chrome" }, { channel: "msedge" }]) {
     if (!opts) continue;
     try { return await chromium.launch(opts); } catch (e) { errors.push((e as Error).message.split("\n")[0]); }
   }
-  throw new Error(`No Chromium found. Run "npx playwright install chromium" or install Google Chrome, or set CDE_CHROMIUM_PATH.\n${errors.join("\n")}`);
+  throw new Error(`No Chromium found. Run "npx playwright install chromium" or install Google Chrome, or set LAYERWRIGHT_CHROMIUM_PATH.\n${errors.join("\n")}`);
 }
 
 export interface PageOptions { root?: string; width?: number; height?: number; waitMs?: number; reducedMotion?: boolean }

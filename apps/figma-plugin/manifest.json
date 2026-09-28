@@ -1,6 +1,6 @@
 {
-  "name": "Claude Design Engineer Bridge",
-  "id": "claude-design-engineer-bridge-local",
+  "name": "Layerwright",
+  "id": "layerwright-local",
   "api": "1.0.0",
   "main": "dist/code.js",
   "ui": "dist/ui.html",
@@ -10,6 +10,6 @@
   "networkAccess": {
     "allowedDomains": ["none"],
     "devAllowedDomains": ["ws://localhost:7331"],
-    "reasoning": "Connects only to the local Claude Design Engineer MCP bridge on localhost."
+    "reasoning": "Connects only to the local Layerwright MCP server on localhost (started by Claude Code). No other network access."
   }
 }

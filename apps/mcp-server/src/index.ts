@@ -10,4 +10,4 @@ bridge.version = PKG_VERSION;
 await bridge.start();
 const server = createServer(bridge);
 await server.connect(new StdioServerTransport());
-process.stderr.write("[cde] MCP server ready\n");
+process.stderr.write("[layerwright] MCP server ready\n");

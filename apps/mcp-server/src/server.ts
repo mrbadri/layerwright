@@ -11,6 +11,7 @@ import { BridgeError, type FigmaTransport } from "./bridge.ts";
 import { MappingStore, scanCodebase, verifyCodeUsage } from "./code.ts";
 import { importHtml, renderToPlan } from "@cde/html-import";
 import { inlineImages } from "./images.ts";
+import { PKG_VERSION } from "./meta.ts";
 
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
 const ok = (data: unknown): ToolResult => ({ content: [{ type: "text", text: JSON.stringify(data) }] });
@@ -26,8 +27,8 @@ async function guard(fn: () => Promise<ToolResult>): Promise<ToolResult> {
 export interface ServerOptions { workdir?: string }
 
 export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
-  const workdir = resolve(opts.workdir ?? process.env.CDE_WORKDIR ?? process.cwd());
-  const home = join(workdir, ".design-engineer");
+  const workdir = resolve(opts.workdir ?? process.env.LAYERWRIGHT_WORKDIR ?? process.cwd());
+  const home = join(workdir, ".layerwright");
   const cacheDir = join(home, "cache");
   const mappings = new MappingStore(join(home, "mapping.json"));
   const plans = new Map<string, { plan: ResolvedPlan; summary: PlanSummary; report?: ExecutionReport }>();
@@ -51,14 +52,14 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
     return ds && f && ds.fileName !== f ? [`Cached Design System is from "${ds.fileName}" but Figma has "${f}" open. Rescan if this file has its own components.`] : undefined;
   };
 
-  const server = new McpServer({ name: "claude-design-engineer", version: "0.1.0" });
+  const server = new McpServer({ name: "layerwright", version: "0.1.0" });
 
   server.registerTool("figma_status", {
     description: "Check whether the Figma bridge plugin is connected, which file/page is open, the current selection, and whether a Design System scan is cached. Cheap; call first.",
     inputSchema: {},
   }, async () => guard(async () => {
     const base = { connected: bridge.connected(), file: bridge.info()?.fileName, designSystemCached: !!loadDs(), designSystemScannedAt: ds?.scannedAt, workdir };
-    if (!bridge.connected()) return ok({ ...base, hint: "Open Figma desktop → Plugins → Development → Claude Design Engineer Bridge." });
+    if (!bridge.connected()) return ok({ ...base, hint: "Open Figma desktop → Plugins → Development → Layerwright." });
     const ping = await bridge.request("ping", {}, 10_000);
     return ok({ ...base, ...(ping as object) });
   }));
@@ -244,7 +245,7 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
   }, async ({ root }) => guard(async () => ok({ ...scanCodebase(resolve(root ?? workdir), loadDs()), savedMappings: mappings.read() })));
 
   server.registerTool("code_mapping", {
-    description: "Read or upsert the Figma component → code component mapping stored in .design-engineer/mapping.json (commit it to share with the team).",
+    description: "Read or upsert the Figma component → code component mapping stored in .layerwright/mapping.json (commit it to share with the team).",
     inputSchema: {
       action: z.enum(["get", "set"]),
       mappings: z.array(z.object({ figmaComponent: z.string(), codeComponent: z.string().optional(), importPath: z.string().optional(), props: z.record(z.string()).optional(), variants: z.record(z.string()).optional(), notes: z.string().optional() })).optional(),

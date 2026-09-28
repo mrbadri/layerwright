@@ -1,5 +1,5 @@
 {
-  "name": "claude-design-engineer",
+  "name": "layerwright-monorepo",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -8,7 +8,7 @@
     "apps/*"
   ],
   "scripts": {
-    "build": "npm run build -w @cde/figma-plugin && npm run build -w @cde/mcp-server",
+    "build": "npm run build -w @cde/figma-plugin && npm run build -w layerwright",
     "typecheck": "tsc -p packages/core && tsc -p packages/html-import && tsc -p apps/mcp-server && tsc -p apps/figma-plugin",
     "test": "node --import tsx --test packages/core/test/*.test.ts packages/html-import/test/*.test.ts apps/mcp-server/test/*.test.ts apps/figma-plugin/test/*.test.ts",
     "mcp": "tsx apps/mcp-server/src/cli.ts"
@@ -18,5 +18,11 @@
     "@types/ws": "^8.5.12",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0"
+  },
+  "description": "Layerwright monorepo: HTML/Claude Design to editable Figma, MCP server + Figma plugin",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shayan-m81/layerwright.git"
   }
 }

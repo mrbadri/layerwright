@@ -1,13 +1,13 @@
 {
   "mcpServers": {
-    "claude-design-engineer": {
+    "layerwright": {
       "command": "npx",
       "args": [
         "tsx",
         "apps/mcp-server/src/cli.ts"
       ],
       "env": {
-        "CDE_PORT": "7331"
+        "LAYERWRIGHT_PORT": "7331"
       }
     }
   }
