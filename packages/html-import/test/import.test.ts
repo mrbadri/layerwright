@@ -1,7 +1,7 @@
 // HTML → Design DSL snapshot tests (landing page, login form, RTL Persian page), DS mapping, and the
 // whole pipeline HTML → plan → compile → execute on the strict Figma mock.
-// Snapshots compare numbers with a ±2px tolerance so font rasterization differences between
-// operating systems don't fail the suite. Update with: UPDATE_SNAPSHOTS=1 npm test
+// Snapshots compare numbers with a tolerance of ±2px or ±3% (whichever is larger), so text shaping
+// differences between operating systems don't fail the suite. Update with: UPDATE_SNAPSHOTS=1 npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -21,7 +21,7 @@ const maybe = browserOk ? test : test.skip;
 if (!browserOk) console.warn("html-import tests skipped: no Chromium (run `npx playwright install chromium`).");
 
 function close(actual: unknown, expected: unknown, path = "$"): string[] {
-  if (typeof expected === "number" && typeof actual === "number") return Math.abs(actual - expected) <= 2 ? [] : [`${path}: ${actual} ≠ ${expected}`];
+  if (typeof expected === "number" && typeof actual === "number") return Math.abs(actual - expected) <= Math.max(2, Math.abs(expected) * 0.03) ? [] : [`${path}: ${actual} ≠ ${expected}`];
   if (Array.isArray(expected)) {
     if (!Array.isArray(actual) || actual.length !== expected.length) return [`${path}: array length ${Array.isArray(actual) ? actual.length : typeof actual} ≠ ${expected.length}`];
     return expected.flatMap((e, i) => close(actual[i], e, `${path}[${i}]`));
