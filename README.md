@@ -12,7 +12,7 @@ flat SVG.
 [![npm](https://img.shields.io/npm/v/layerwright.svg)](https://www.npmjs.com/package/layerwright)
 [![MIT](https://img.shields.io/badge/license-MIT-green.svg)](https://github.com/shayan-m81/layerwright/blob/main/LICENSE)
 
-<!-- Demo GIF goes here once recorded: docs/assets/demo.gif (script in docs/figma-community-plan.md) -->
+![Demo: an HTML page imported into Figma as editable Auto Layout frames, desktop and mobile](https://github.com/shayan-m81/layerwright/raw/main/docs/assets/demo.gif)
 
 ## Why
 
