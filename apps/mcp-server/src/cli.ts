@@ -1,6 +1,8 @@
 // Command line: `<bin>` (or `<bin> serve`) runs the MCP server for Claude Code; the other commands
 // are for people at a terminal.
 import { resolve } from "node:path";
+import { realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { compilePlan, emptyDesignSystem } from "@cde/core";
 
 import { BIN } from "./meta.ts";
@@ -48,4 +50,8 @@ export async function main(argv = process.argv.slice(2)) {
   else { process.stderr.write(`Unknown command "${cmd}".\n${HELP()}\n`); process.exitCode = 2; }
 }
 
-if (import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith("/cli.ts") || process.argv[1]?.endsWith("/cli.js")) await main();
+// Run when executed directly. npm/npx start us through a .bin symlink, so compare real paths.
+const isEntry = (() => {
+  try { return !!process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url)); } catch { return false; }
+})();
+if (isEntry) await main();

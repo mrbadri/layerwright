@@ -5,6 +5,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-28
+
+### Fixed
+- `npx layerwright …` did nothing. The CLI didn't recognise itself when started through npm's `.bin` symlink.
+- The MCP server now exits and frees its port when Claude Code closes the connection, so a later session no longer fails with "port already in use".
+
 ## [0.1.0] - 2026-09-28
 
 ### Added
@@ -22,5 +28,6 @@ All notable changes to this project are documented here. The format follows
 ### Fixed
 - The plugin no longer opens a duplicate connection after the port is changed.
 
-[Unreleased]: https://github.com/shayan-m81/layerwright/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/shayan-m81/layerwright/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/shayan-m81/layerwright/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/shayan-m81/layerwright/releases/tag/v0.1.0

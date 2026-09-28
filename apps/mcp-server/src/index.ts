@@ -11,3 +11,9 @@ await bridge.start();
 const server = createServer(bridge);
 await server.connect(new StdioServerTransport());
 process.stderr.write("[layerwright] MCP server ready\n");
+// When Claude Code goes away (stdin closes), release the port instead of lingering as an orphan.
+const shutdown = () => { bridge.close(); process.exit(0); };
+process.stdin.on("end", shutdown);
+process.stdin.on("close", shutdown);
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);
