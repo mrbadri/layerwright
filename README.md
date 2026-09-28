@@ -10,10 +10,9 @@ flat SVG.
 
 [![CI](https://github.com/shayan-m81/layerwright/actions/workflows/ci.yml/badge.svg)](https://github.com/shayan-m81/layerwright/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/layerwright.svg)](https://www.npmjs.com/package/layerwright)
-[![MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![MIT](https://img.shields.io/badge/license-MIT-green.svg)](https://github.com/shayan-m81/layerwright/blob/main/LICENSE)
 
-![Demo: a Claude Design HTML export becomes an editable Figma frame](docs/assets/demo.gif)
-<!-- TODO: record docs/assets/demo.gif (see docs/figma-community-plan.md → demo script) -->
+<!-- Demo GIF goes here once recorded: docs/assets/demo.gif (script in docs/figma-community-plan.md) -->
 
 ## Why
 
@@ -82,7 +81,7 @@ flowchart LR
 3. **Execute.** The plugin builds the resolved plan with fixed Plugin API calls. There is no `eval` and no model-written code.
 4. **Verify.** The result is re-inspected and compared with the plan.
 
-Read more in [docs/architecture.md](docs/architecture.md). The DSL is documented in [docs/dsl.md](docs/dsl.md).
+Read more in [docs/architecture.md](https://github.com/shayan-m81/layerwright/blob/main/docs/architecture.md). The DSL is documented in [docs/dsl.md](https://github.com/shayan-m81/layerwright/blob/main/docs/dsl.md).
 
 ## MCP tools
 
@@ -122,7 +121,7 @@ Development plugins need Figma desktop.
 
 ## Troubleshooting
 
-Start with `npx layerwright doctor`. It checks Node, `.mcp.json`, the skill, the plugin files, the running server, the plugin connection and Chromium, and it prints a fix for each problem. More cases are covered in [docs/troubleshooting.md](docs/troubleshooting.md).
+Start with `npx layerwright doctor`. It checks Node, `.mcp.json`, the skill, the plugin files, the running server, the plugin connection and Chromium, and it prints a fix for each problem. More cases are covered in [docs/troubleshooting.md](https://github.com/shayan-m81/layerwright/blob/main/docs/troubleshooting.md).
 
 ## Limitations
 
@@ -140,12 +139,12 @@ Start with `npx layerwright doctor`. It checks Node, `.mcp.json`, the skill, the
 - Per-corner radii, CSS grid → Auto Layout wrap, radial gradients
 - Visual diff (screenshot) verification
 - Design tokens export (W3C format) and import
-- Figma Community listing ([plan](docs/figma-community-plan.md))
+- Figma Community listing ([plan](https://github.com/shayan-m81/layerwright/blob/main/docs/figma-community-plan.md))
 - Instance-swap properties and nested overrides
 
 ## Contributing
 
-Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md). To develop from a clone:
+Issues and pull requests are welcome. See [CONTRIBUTING.md](https://github.com/shayan-m81/layerwright/blob/main/CONTRIBUTING.md). To develop from a clone:
 
 ```bash
 git clone https://github.com/shayan-m81/layerwright && cd layerwright
@@ -155,7 +154,7 @@ npx tsx apps/mcp-server/src/cli.ts init   # wires this checkout into the current
 
 ## License
 
-[MIT](LICENSE) © Shayan Montazeri
+[MIT](https://github.com/shayan-m81/layerwright/blob/main/LICENSE) © Shayan Montazeri
 
 ---
 

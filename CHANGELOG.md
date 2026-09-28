@@ -5,6 +5,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-09-28
+
+### Fixed
+- README on npmjs.com: removed the demo GIF placeholder (it pointed at a file that doesn't exist yet), and links now work there too.
+
 ## [0.1.1] - 2026-09-28
 
 ### Fixed
@@ -28,6 +33,7 @@ All notable changes to this project are documented here. The format follows
 ### Fixed
 - The plugin no longer opens a duplicate connection after the port is changed.
 
-[Unreleased]: https://github.com/shayan-m81/layerwright/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/shayan-m81/layerwright/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/shayan-m81/layerwright/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/shayan-m81/layerwright/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/shayan-m81/layerwright/releases/tag/v0.1.0
