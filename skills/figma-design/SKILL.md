@@ -31,6 +31,24 @@ Don't use it for code-only tasks (bugs, refactors, APIs) unless the user brings 
 Claude Design Engineer Bridge*. Then run `figma_scan_design_system` (it's cached; pass `refresh: true` after the DS changes).
 The scan summary lists component sets with their variants, variable collections and roles. Read it once.
 
+## Mode 0 — HTML → Figma (cheapest; use it whenever HTML exists)
+
+Never re-type an HTML design (a Claude Design "standalone HTML" export, a prototype, a local page) as a Design Plan by hand. Let the tools read it.
+
+**Editable import (default):** `import_html_to_plan({ path, viewport?, useDesignSystem? })`
+- `path` is an .html file or a folder with index.html. The default viewports are `[1440, 390]` (desktop and mobile screens side by side).
+- Flexbox becomes Auto Layout. Evenly spaced block stacks become vertical Auto Layout. Grid and overlapping layers become frames with absolutely positioned children. Colours, borders, radii, shadows, gradients, fonts, text (including RTL), images and SVG icons are all carried over.
+- When a Design System is scanned (the default when one is cached), buttons, inputs and links become real DS components. `mappedToDesignSystem` in the result says which ones.
+- It returns a `planId`. Show the summary, then call `figma_execute_plan({ planId })`. Undo, rollback and verification work as in Mode A.
+
+**Pixel-faithful import (review boards, heavy art):** `figma_import_html({ file, page?, section?, dryRun? })`
+- This rebuilds exactly what was painted, as absolutely positioned layers.
+- On a review board (nested `.sc-host`), each state becomes its own screen, named by its label.
+- `targets: [{ selector, name, index? }]` picks elements. `components: true` plus names like `"Card/State=Chosen"` builds variant sets. `swaps` turns matched elements into instances of those components, with their content as overrides. `actions: [{ click }]` captures opened menus and later steps.
+- `figma_pages({ pages })` sets up the file structure. `figma_foundations({ colors, numbers, textStyles })` creates variables and text styles. Afterwards, Mode B binds the layers to them.
+
+Fonts must be installed on the machine that runs Figma. A missing family falls back to Inter, with a warning.
+
 ## Mode A — requirement → Figma design
 
 1. **Understand the flow.** List the screens and the states each one needs (default, loading, error, empty, success), plus how the user moves between them. Keep this short and in your own head or reply.
@@ -67,17 +85,20 @@ The scan summary lists component sets with their variants, variable collections 
 ```
 
 **Containers.** `screen` (fixed width, 390 by default), `frame`, `section`, `stack` (vertical), `row` (horizontal), `card`, `modal`, `navigation` and `list` share these fields:
-`name, width (number|"hug"|"fill"), height, layout { direction: vertical|horizontal|none, gap, padding (n | {x,y} | {top,right,bottom,left}), align: start|center|end|space-between, crossAlign, wrap }, fill, stroke, strokeWeight, radius, effect, clip, children[]`.
+`name, width (number|"hug"|"fill"), height, minWidth, maxWidth, layout { direction: vertical|horizontal|none, gap, padding (n | {x,y} | {top,right,bottom,left}), align: start|center|end|space-between, crossAlign, wrap }, fill, gradient { angle, stops:[{color, position 0–1}] }, stroke, strokeWeight, strokeSides (e.g. ["top"]), strokeWeights {top,right,bottom,left}, radius, effect (an effect style) or shadows [{type: drop|inner, x, y, blur, spread, color}], opacity, clip, direction: "rtl" (reverses horizontal children and right-aligns text: Persian, Arabic, Hebrew), children[]`.
+Any node takes `position: { type: "absolute", x, y }` to leave the Auto Layout flow (for badges and overlays).
 Each type comes with a sensible default layout (for example, `screen` uses padding 24 and gap 16, and `card` uses padding 16, gap 12 and radius 12).
 A container that has `component` or `role` set becomes a DS instance instead, which is useful for a card, modal or navigation bar from the DS.
 
 **Content.**
-- `text`: `content`, `role` (display|heading|title|subheading|body|label|caption|overline|code, which picks the matching DS text style), `style` (an explicit text style name), `color`, `fontSize`, `weight`, `align`.
+- `text`: `content`, `role` (display|heading|title|subheading|body|label|caption|overline|code, which picks the matching DS text style), `style` (an explicit text style name), `color`, `fontSize`, `fontFamily` (for example "Vazirmatn"), `weight` (thin…black; matched to the font's real style names), `italic`, `lineHeight` `{unit: px|percent, value}` or `{unit: "auto"}`, `letterSpacing` `{unit, value}`, `align`, `direction`.
 - `link`: `content`, `href`. It uses the DS Link component if one exists and otherwise renders as link-colored text.
 - `button`: the default role is `primary-action`. `input`: the default role is `text-input`. `icon`, `component` and `component-instance` are the others. All of them take:
   `component` (a name such as `"Button"` or `"Forms/Input"`), `role` (such as `primary-action`, `secondary-action`, `destructive-action`, `text-input`, `password-input`, `otp-input`, `checkbox`, `switch`, `select`, `dialog`, `toast`, `alert`, `card`, `navigation`, `tabs`, `list-item`, `avatar` or `badge`),
   `variant` (`"Secondary"`, `"Primary, Small"` or `{ "Type": "Primary", "Size": "Small" }`) and `props` (`{ "label": "Email", "placeholder": "you@x.com", "disabled": true }`). Props map to component properties by name and fall back to text layer names.
-- `divider`: uses the DS divider component, or a 1px rule if there isn't one. `image`: a placeholder rectangle with `alt`.
+- `divider`: uses the DS divider component, or a 1px rule if there isn't one.
+- `image`: `src` (a `data:image/…` URL or an https URL, which the server fetches; the plugin never goes online), `fit` (fill|fit|crop), `alt`, `radius`. If an image fails to load, it stays a placeholder and you get a warning.
+- `icon`: either a DS icon component (`component`/`role`) or `svg` (inline `<svg>` markup), plus an optional `color` that recolours it.
 
 **Tokens.** A numeric field accepts a number or a variable name (`"spacing/md"`). A color accepts a variable name, a paint style name or a hex value.
 **Sizing.** Children of vertical containers stretch (`fill`) by default. Use `width: "hug"` to stop that, for example on an inline button.

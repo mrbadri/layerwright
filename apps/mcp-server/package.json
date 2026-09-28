@@ -4,16 +4,29 @@
   "private": true,
   "type": "module",
   "bin": {
-    "cde-mcp": "src/index.ts"
+    "cde": "dist/cli.js"
   },
   "scripts": {
-    "start": "tsx src/index.ts"
+    "start": "tsx src/cli.ts",
+    "build": "node build.mjs"
   },
   "dependencies": {
-    "@cde/core": "*",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "ws": "^8.18.0",
     "zod": "^3.25.0",
+    "playwright-core": "1.63.0"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0",
+    "@cde/core": "*",
     "@cde/html-import": "*"
   }
 }

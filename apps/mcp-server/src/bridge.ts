@@ -21,6 +21,7 @@ export class WsBridge implements FigmaTransport {
   private pending = new Map<string, { resolve: (v: any) => void; reject: (e: any) => void; timer: NodeJS.Timeout }>();
   startError?: string;
 
+  version = "0";
   constructor(public port = Number(process.env.CDE_PORT ?? 7331), private log: (m: string) => void = (m) => { process.stderr.write(`[cde-bridge] ${m}\n`); }) {}
 
   start(): Promise<void> {
@@ -32,7 +33,13 @@ export class WsBridge implements FigmaTransport {
         this.log(this.startError);
         resolve();
       });
-      wss.on("connection", (ws) => {
+      wss.on("connection", (ws, req) => {
+        // `doctor` probes on /doctor: answer with status and close, never displacing the plugin.
+        if (req.url?.startsWith("/doctor")) {
+          ws.send(JSON.stringify({ type: "doctor", version: this.version, port: this.port, pluginConnected: this.connected(), hello: this.hello }));
+          ws.close();
+          return;
+        }
         if (this.socket && this.socket !== ws) this.socket.close(4000, "replaced by a newer plugin connection");
         this.socket = ws;
         this.log("plugin connected");

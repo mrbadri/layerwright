@@ -2,8 +2,13 @@
   "mcpServers": {
     "claude-design-engineer": {
       "command": "npx",
-      "args": ["tsx", "apps/mcp-server/src/index.ts"],
-      "env": { "CDE_PORT": "7331" }
+      "args": [
+        "tsx",
+        "apps/mcp-server/src/cli.ts"
+      ],
+      "env": {
+        "CDE_PORT": "7331"
+      }
     }
   }
 }
