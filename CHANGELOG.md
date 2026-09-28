@@ -5,6 +5,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-09-28
+
+### Fixed
+- HTML import: single-line labels (buttons, links, chips) no longer wrap in Figma. The label and its container now hug their text, so small differences between Figma's and Chrome's font metrics can't break the line.
+
+### Added
+- Demo GIF in the README.
+
 ## [0.1.2] - 2026-09-28
 
 ### Fixed
@@ -33,7 +41,8 @@ All notable changes to this project are documented here. The format follows
 ### Fixed
 - The plugin no longer opens a duplicate connection after the port is changed.
 
-[Unreleased]: https://github.com/shayan-m81/layerwright/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/shayan-m81/layerwright/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/shayan-m81/layerwright/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/shayan-m81/layerwright/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/shayan-m81/layerwright/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/shayan-m81/layerwright/releases/tag/v0.1.0
