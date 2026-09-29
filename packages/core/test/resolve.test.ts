@@ -105,3 +105,14 @@ test("the scan summary lists component sets that share a name", async () => {
   const d = summarize(dupDs()).duplicateNames!;
   assert.deepEqual(d.map((x) => [x.name, x.candidates.map((c) => c.id)]), [["Accordion", ["8:1", "9:1"]]]);
 });
+
+test("analyzer: suggestions come in groups; an odd one-off spacing variable isn't suggested on an even scale", async () => {
+  const { analyzeDesign, enrichDesignSystem } = await import("../src/index.ts");
+  const base = fixtureDs();
+  const ds = enrichDesignSystem({ ...base, variables: [...base.variables, { id: "v9", key: "k9", name: "item spacing/9", collection: "Tokens", type: "FLOAT", remote: false, value: 9 }] });
+  const snap: any = { id: "1", type: "FRAME", name: "Card", w: 300, h: 200, layout: { mode: "VERTICAL", gap: 9, padding: { top: 16, right: 16, bottom: 16, left: 16 } }, children: [] };
+  const r = analyzeDesign(ds, snap);
+  assert.ok(!r.transformations.some((t: any) => t.variableName === "item spacing/9"));
+  assert.ok(r.transformations.some((t: any) => t.variableName === "spacing/md"));
+  assert.deepEqual(r.groups!.map((g) => [g.id, g.label, g.count]), [["g1", "spacing value → spacing token", 4]]);
+});

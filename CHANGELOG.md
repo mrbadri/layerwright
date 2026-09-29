@@ -14,6 +14,7 @@ All notable changes to this project are documented here. The format follows
 - HTML import: `display: contents` wrappers no longer become frames with page-sized padding, and boxes whose CSS size is bigger than their content stay fixed instead of hugging.
 - A plan root with `position: absolute` inside `target.parentId` keeps its x/y.
 
+- Mode B analyzer: suggestions come in groups (`g1`, `g2`, …) that `figma_apply_transformations` can include (`groups`) or leave out (`excludeGroups`), and a one-off odd spacing variable (e.g. `item spacing/9`) is no longer suggested on an even spacing scale.
 - HTML import mapped buttons to any component that merely looked like one (one text layer, 28–64px tall), e.g. an accordion. Automatic Design System mapping now needs a real role match from the name or description, skips private components (`_…`, `.…`), needs a text slot for the label and a similar height; skipped candidates are listed in the warnings. The Mode B analyzer uses the same check.
 - HTML import: text with `line-height: normal` gets the rendered line height, so Figma's taller AUTO line height no longer shifts the layout.
 

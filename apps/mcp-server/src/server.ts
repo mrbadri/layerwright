@@ -233,19 +233,27 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
     if (!snap.nodes.length) return fail([{ type: "NODE_NOT_FOUND", message: "Nothing selected. Ask the user to select a frame." }]);
     const results = snap.nodes.map((n) => analyzeDesign(d, n));
     const merged: AnalysisResult = { analysisId: results.map((r) => r.analysisId).join("_"), transformations: results.flatMap((r) => r.transformations), summary: results.flatMap((r) => r.summary), unresolved: results.flatMap((r) => r.unresolved) };
+    // Groups across all analysed nodes, by label.
+    const byLabel = new Map<string, string[]>();
+    for (const r of results) for (const g of r.groups ?? []) byLabel.set(g.label, [...(byLabel.get(g.label) ?? []), ...g.ids]);
+    merged.groups = [...byLabel].map(([label, ids], i) => ({ id: `g${i + 1}`, label, count: ids.length, ids }));
     analyses.set(merged.analysisId, merged);
     const list = merged.transformations.map((t) => ({ id: t.id, op: t.op, node: t.nodeName, reason: t.reason }));
-    return ok({ analysisId: merged.analysisId, summary: merged.summary, transformations: verbose ? list : list.slice(0, 40), total: list.length, unresolved: merged.unresolved.slice(0, 10), next: "Present the summary to the user and ask which to apply. Originals of replaced nodes are hidden, not deleted." });
+    return ok({ analysisId: merged.analysisId, groups: merged.groups!.map(({ ids, ...g }) => g), transformations: verbose ? list : list.slice(0, 40), total: list.length, unresolved: merged.unresolved.slice(0, 10),
+      next: "Present the groups (with their reasons) to the user and ask which to apply; pass groups or excludeGroups to figma_apply_transformations. Originals of replaced nodes are hidden, not deleted." });
   }));
 
   server.registerTool("figma_apply_transformations", {
     description: "Apply transformations from figma_analyze_design. REQUIRES approved=true, which you may only set after the user explicitly approved. Pass ids to apply a subset (default all). Replaced originals are hidden and renamed, never deleted. One undo step.",
-    inputSchema: { analysisId: z.string(), approved: z.boolean(), ids: z.array(z.string()).optional(), ops: z.array(z.enum(["bind_fill", "bind_number", "apply_text_style", "convert_auto_layout", "replace_with_instance"])).optional().describe("Apply only these kinds of transformation") },
-  }, async ({ analysisId, approved, ids, ops }) => guard(async () => {
+    inputSchema: { analysisId: z.string(), approved: z.boolean(), ids: z.array(z.string()).optional(), ops: z.array(z.enum(["bind_fill", "bind_number", "apply_text_style", "convert_auto_layout", "replace_with_instance"])).optional().describe("Apply only these kinds of transformation"),
+      groups: z.array(z.string()).optional().describe("Apply only these groups (ids from figma_analyze_design, e.g. g1)"), excludeGroups: z.array(z.string()).optional().describe("Apply everything except these groups") },
+  }, async ({ analysisId, approved, ids, ops, groups, excludeGroups }) => guard(async () => {
     if (!approved) return fail([{ type: "NOT_APPROVED", message: "Get explicit user approval first." }]);
     const a = analyses.get(analysisId);
     if (!a) return fail([{ type: "INVALID_PLAN", message: "Unknown analysisId; run figma_analyze_design again." }]);
-    const chosen = a.transformations.filter((t) => (!ids || ids.includes(t.id)) && (!ops || ops.includes(t.op)));
+    const inGroups = (gs?: string[]) => new Set((a.groups ?? []).filter((g) => gs?.includes(g.id)).flatMap((g) => g.ids));
+    const only = groups ? inGroups(groups) : undefined, skip = inGroups(excludeGroups);
+    const chosen = a.transformations.filter((t) => (!ids || ids.includes(t.id)) && (!ops || ops.includes(t.op)) && (!only || only.has(t.id)) && !skip.has(t.id));
     // Replacements first changes structure; bindings on replaced nodes would be wasted, so drop those.
     const replaced = new Set(chosen.filter((t) => t.op === "replace_with_instance").map((t) => t.nodeId));
     const order = { convert_auto_layout: 0, replace_with_instance: 1, bind_number: 2, bind_fill: 3, apply_text_style: 4 } as const;

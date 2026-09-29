@@ -23,6 +23,8 @@ export interface AnalysisResult {
   analysisId: string;
   transformations: Transformation[];
   summary: string[];
+  /** The summary as groups the user can pick or exclude by id (g1, g2, …). */
+  groups?: { id: string; label: string; count: number; ids: string[] }[];
   unresolved: StructuredError[];
 }
 
@@ -35,7 +37,12 @@ export function analyzeDesign(ds: DesignSystem, root: NodeSnapshot): AnalysisRes
   const warnings: string[] = [];
 
   const floatVars = ds.variables.filter((v) => v.type === "FLOAT" && typeof v.value === "number");
-  const spacingVars = floatVars.filter((v) => /space|spacing|gap|padding|inset|stack|gutter/i.test(`${v.collection} ${v.name}`) || v.scopes?.includes("GAP"));
+  const spacingAll = floatVars.filter((v) => /space|spacing|gap|padding|inset|stack|gutter/i.test(`${v.collection} ${v.name}`) || v.scopes?.includes("GAP"));
+  // A spacing scale is mostly multiples of 2 (4, 8, 12, 16, …). An odd one-off (e.g. "item spacing/9", made while
+  // matching an import) is not a token to spread through a design, so it's never suggested on such a scale.
+  const even = spacingAll.filter((v) => (v.value as number) % 2 === 0).length;
+  const onScale = even >= 3 && even >= spacingAll.length * 0.7;
+  const spacingVars = onScale ? spacingAll.filter((v) => (v.value as number) % 2 === 0) : spacingAll;
   const radiusVars = floatVars.filter((v) => /radius|radii|corner|rounded/i.test(`${v.collection} ${v.name}`) || v.scopes?.includes("CORNER_RADIUS"));
   const colorVars = ds.variables.filter((v) => v.type === "COLOR" && typeof v.value === "string");
   const pickNum = (pool: VariableDefinition[], value: number) => pool.filter((v) => v.value === value).sort((a, b) => a.name.length - b.name.length)[0];
@@ -133,7 +140,9 @@ export function analyzeDesign(ds: DesignSystem, root: NodeSnapshot): AnalysisRes
     groups.set(key, (groups.get(key) ?? 0) + 1);
   }
   const summary = [...groups].map(([k, n]) => `${n} × ${k}`);
-  return { analysisId: `an_${hash(JSON.stringify(out) + root.id)}`, transformations: out, summary, unresolved };
+  const keyOf = (t: Transformation) => t.op === "replace_with_instance" ? `custom element → ${t.componentName}` : t.op === "bind_number" ? `${t.field === "cornerRadius" ? "radius" : "spacing"} value → ${t.field === "cornerRadius" ? "radius" : "spacing"} token` : t.op === "bind_fill" ? "raw color → color token" : t.op === "apply_text_style" ? `raw text → ${t.styleName}` : "manual layout → Auto Layout";
+  const grouped = [...groups.keys()].map((label, i) => { const ids = out.filter((t) => keyOf(t) === label).map((t) => t.id); return { id: `g${i + 1}`, label, count: ids.length, ids }; });
+  return { analysisId: `an_${hash(JSON.stringify(out) + root.id)}`, transformations: out, summary, groups: grouped, unresolved };
 }
 
 function inferAutoLayout(n: NodeSnapshot): { direction: "HORIZONTAL" | "VERTICAL"; gap: number; padding: { top: number; right: number; bottom: number; left: number } } | undefined {
