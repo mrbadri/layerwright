@@ -61,7 +61,7 @@ export async function toFigma(path: string, o: { viewports?: number[]; selector?
   port ??= 7331;
   const bridge = new WsBridge(port, () => {});
   await bridge.start();
-  if (bridge.startError) { out(`✗ ${bridge.startError}\n  If Claude Code is running in this project, its server already holds the port: ask Claude instead, or close that session.`); return 1; }
+  if (bridge.startError) { out(`✗ ${bridge.startError}${/already in use/.test(bridge.startError) ? "\n  If Claude Code is running in this project, its server holds the port: ask Claude instead, or close that session." : ""}`); return 1; }
   try {
     out(`Waiting for the Figma plugin on ws://localhost:${port}… (Figma desktop → Plugins → Development → Layerwright)`);
     const until = Date.now() + (o.waitMs ?? 120_000);
