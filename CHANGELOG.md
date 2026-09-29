@@ -6,6 +6,9 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Fixed
+- `figma_inspect` failed on a whole frame when one instance's component set has errors ("Component set for node has existing errors"); such instances now report their variant from the component name.
+- Componentize kept DS instances linked but wrapped them in an Auto Layout frame, which in real Figma threw right-aligned text out of the box; the wrapper is now a plain frame of the instance's size.
+- `figma_preview_plan` no longer needs a Design System scan for plans that use only raw values; plans that reference components or tokens say so. The scan timeout is 10 minutes for very large files.
 - Text that should hug inside a frame without Auto Layout made Figma throw ("node must be an auto-layout frame or a child of an auto-layout frame") and rolled the whole import back.
 - Another port than 7331 could never work: the plugin manifest only allowed `ws://localhost:7331`. It now allows 7331–7340, and the plugin window, `init --port` and the server refuse ports outside that range with a clear message. `doctor` also flags a plugin window that still runs an older build than the installed one.
 - Text: explicit `fontSize`/`fontFamily`/`weight` are no longer replaced by an inferred text style, and a style is only inferred from a `role`. HTML imports used to get the body style on every text once a Design System was scanned. `style: null` opts out.

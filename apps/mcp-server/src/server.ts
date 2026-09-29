@@ -80,7 +80,7 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
   }, async ({ refresh, includeLibraries, reload, maxInstances }) => guard(async () => {
     if (reload) { ds = undefined; if (!loadDs()) return fail([{ type: "DESIGN_SYSTEM_NOT_SCANNED", message: "No cache file for this Figma file; scan instead." }]); return ok({ cached: true, reloaded: true, ...summarize(ds!) }); }
     if (!refresh && loadDs() && !staleWarning()) return ok({ cached: true, ...summarize(ds!) });
-    const raw: any = await bridge.request("scanDesignSystem", { includeLibraries, maxInstances }, 180_000);
+    const raw: any = await bridge.request("scanDesignSystem", { includeLibraries, maxInstances }, 600_000);
     const { warnings, ...rest } = raw;
     ds = enrichDesignSystem(rest);
     mkdirSync(cacheDir, { recursive: true });
@@ -136,9 +136,14 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
   }, async ({ plan }) => guard(async () => {
     const v = validatePlan(plan);
     if (!v.success) return fail(v.errors);
-    const d = needDs();
+    // A plan with only raw values needs no scan; one that references components or tokens gets a clear hint.
+    const cachedDs = loadDs();
+    const d = cachedDs ?? emptyDesignSystem(bridge.info()?.fileName);
     const c = compilePlan(d, v.plan);
-    if (!c.ok || !c.plan) return fail(c.errors, { warnings: c.warnings, summary: c.summary });
+    if (!c.ok || !c.plan) {
+      const needsScan = !cachedDs && c.errors.some((e) => ["COMPONENT_NOT_FOUND", "TOKEN_NOT_FOUND", "STYLE_NOT_FOUND", "INVALID_VARIANT"].includes(e.type));
+      return fail(needsScan ? [{ type: "DESIGN_SYSTEM_NOT_SCANNED", message: "This plan uses components, tokens or styles; call figma_scan_design_system first." }, ...c.errors] : c.errors, { warnings: c.warnings, summary: c.summary });
+    }
     plans.set(c.plan.planId, { plan: c.plan, summary: c.summary });
     const destructive = !!c.plan.target.parentId || !!c.plan.inserts?.length;
     return ok({ success: true, planId: c.plan.planId, summary: c.summary, warnings: [...c.warnings, ...(staleWarning() ?? [])], requiresApproval: destructive, next: destructive ? "Show the summary to the user; call figma_execute_plan with approved=true only after they agree." : "Show the summary; then call figma_execute_plan (creates new frames only)." });

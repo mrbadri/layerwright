@@ -216,10 +216,17 @@ export async function snapshot(node: BaseNode, opts: { depth?: number; maxNodes?
     }
     if (n.type === "INSTANCE") {
       const i = n as InstanceNode;
-      const main = await i.getMainComponentAsync();
+      let main: ComponentNode | null = null;
+      try { main = await i.getMainComponentAsync(); } catch { /* unavailable library */ }
       const props: Record<string, unknown> = {};
       const variants: Record<string, string> = {};
-      for (const [k, p] of Object.entries(i.componentProperties)) (p.type === "VARIANT" ? (variants[k] = String(p.value)) : (props[k] = p.value));
+      try {
+        for (const [k, p] of Object.entries(i.componentProperties)) (p.type === "VARIANT" ? (variants[k] = String(p.value)) : (props[k] = p.value));
+      } catch {
+        // A component set with errors (e.g. duplicate variants) can't report properties: read "Key=Value, …" from the name.
+        for (const kv of (main?.name ?? "").split(",")) { const [k, v] = kv.split("=").map((x) => x.trim()); if (k && v) variants[k] = v; }
+        s.warnings = [...(s.warnings ?? []), "component set has errors; variants read from the component name"];
+      }
       s.instance = { componentId: main?.id, component: main?.name, componentSet: main?.parent?.type === "COMPONENT_SET" ? main.parent.name : undefined, componentSetId: main?.parent?.type === "COMPONENT_SET" ? main.parent.id : undefined, variants: Object.keys(variants).length ? variants : undefined, props: Object.keys(props).length ? props : undefined };
       if (!opts.expandInstances || depth <= 0) return s; // instance internals only on request
       // What differs from the main component: which layers have overrides, and which fields.

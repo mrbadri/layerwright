@@ -175,6 +175,7 @@ export interface NodeSnapshot {
   instance?: { componentId?: string; component?: string; componentSet?: string; componentSetId?: string; variants?: Record<string, string>; props?: Record<string, unknown>; overrides?: Record<string, string[]> };
   children?: NodeSnapshot[];
   truncated?: number;
+  warnings?: string[];
 }
 
 // ---------- Resolved plan (what the plugin executes) ----------

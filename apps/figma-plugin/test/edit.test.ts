@@ -175,3 +175,17 @@ test("prototype via figma_edit on existing frames: a nested frame is refused as 
   assert.equal(r2.failed, undefined);
   assert.deepEqual(page.flowStartingPoints, [{ nodeId: a.id, name: "Main" }]);
 });
+
+test("componentize keeps a Design System instance linked: it is wrapped, not detached", async () => {
+  const page = resetFigma();
+  // An instance that filled its Auto Layout parent: it must keep its 300px, not collapse in the hugging wrapper.
+  const col = F().createFrame(); col.layoutMode = "VERTICAL"; page.appendChild(col);
+  const inst: any = new (page.constructor as any)("INSTANCE"); inst.name = "Alert"; inst.width = 300; inst.height = 100;
+  inst.detachInstance = () => { throw new Error("must not detach"); };
+  col.appendChild(inst); inst.layoutSizingHorizontal = "FILL";
+  const r = await editNodes({ ops: [{ op: "componentize", nodes: [inst.id], name: "AI Alert", autoLayout: false }] });
+  assert.equal(r.failed, undefined);
+  const comp = page.children.find((c: any) => c.type === "COMPONENT");
+  assert.equal(comp.children[0].type, "INSTANCE");
+  assert.deepEqual([comp.width, comp.children[0].width, comp.children[0].x], [300, 300, 0]);
+});

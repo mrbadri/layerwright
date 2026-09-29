@@ -129,7 +129,22 @@ async function componentize(o: Extract<EditOp, { op: "componentize" }>, results:
   const comps: ComponentNode[] = [];
   for (const [i, s] of sources.entries()) {
     let n: SceneNode = duplicate ? s.clone() : s;
-    if (n.type === "INSTANCE") n = n.detachInstance();
+    if (n.type === "INSTANCE") {
+      // Keep a Design System instance linked: wrap it in a hugging frame instead of detaching it.
+      const inst = n;
+      const w = inst.width, h = inst.height;
+      const wrap = figma.createFrame();
+      wrap.name = inst.name; wrap.fills = []; wrap.clipsContent = false;
+      const host = inst.parent as BaseNode & ChildrenMixin;
+      host.insertChild(host.children.indexOf(inst), wrap);
+      // A plain frame of the instance's size: an Auto Layout wrapper re-lays the instance and, in real Figma, can
+      // throw its right-aligned text out of place.
+      wrap.resize(w, h);
+      wrap.x = inst.x; wrap.y = inst.y;
+      wrap.appendChild(inst);
+      inst.x = 0; inst.y = 0;
+      n = wrap;
+    }
     if (dest && n.parent !== dest) dest.appendChild(n);
     if (o.autoLayout !== false && n.type === "FRAME") { await loadFontsIn([n]); stackify(n); }
     const c = figma.createComponentFromNode(n);
