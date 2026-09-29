@@ -5,6 +5,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-29
+
 ### Added
 - **Design System sync after an import:** `figma_analyze_design({ mode: "sync" })` matches a fresh import to the DS like a designer: buttons and pills become DS components with the closest-looking variant (size by height, hierarchy and colour by fill, text colour and border; resting state), text gets the style with the same size and weight in the same script (even when the import used a stand-in font), colours get variables or colour styles.
 - **Scan works on big library files:** main components are looked up in parallel (a real file went from over 5 minutes to about 12 seconds), library text/colour/effect styles and variables used in the file are found through the layers that use them, each variant's look and each set's usage are recorded, and copies of one library set resolve to the one the file uses most. Progress shows in the plugin window.
@@ -102,7 +104,8 @@ All notable changes to this project are documented here. The format follows
 ### Fixed
 - The plugin no longer opens a duplicate connection after the port is changed.
 
-[Unreleased]: https://github.com/shayan-m81/layerwright/compare/v0.1.4...HEAD
+[Unreleased]: https://github.com/shayan-m81/layerwright/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/shayan-m81/layerwright/compare/v0.1.4...v0.2.0
 [0.1.4]: https://github.com/shayan-m81/layerwright/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/shayan-m81/layerwright/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/shayan-m81/layerwright/compare/v0.1.1...v0.1.2

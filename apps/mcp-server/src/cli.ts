@@ -24,7 +24,7 @@ const HELP = () => `Usage:
   ${BIN} fonts <folder>          list the fonts an export ships (TTF/OTF can be installed; WOFF/WOFF2 can't)
       --install                copy the TTF/OTF files to your user fonts folder (restart Figma afterwards)
       --only <text>            only files whose name contains this (e.g. --only IRANYekanX)
-  ${BIN} report                 draft a GitHub issue from this project's recurring problems (redacted; you review and send it)
+  ${BIN} report                  draft a GitHub issue from this project's recurring problems (redacted; you review and send it)
   ${BIN} help`;
 
 const VALUE_FLAGS = ["--viewport", "--selector", "--page", "--section", "--port"];
