@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Fixed
+- HTML import, found on a real Claude Design export:
+  - Colours written as `oklch()`, `lab()`, `hsl()`, `color-mix()` and the like (Claude Design's default) were dropped; any CSS colour is now converted to sRGB.
+  - An absolutely positioned overlay on a one-child box was imported twice (once in the flow).
+  - Progress rings (SVG `stroke-dasharray` + `stroke-dashoffset`, rotated with CSS) became full circles; they are now real arcs, and a CSS transform on an `<svg>` is kept.
+  - An empty frame stretched in a hugging row came out 100px tall; a frame whose width was just its content now hugs (so a wider fallback font widens it instead of wrapping); a single line of text in a column hugs unless the column's width is fixed.
+  - One line of text in two fonts counted as two lines, which fixed its width and made it wrap in Figma.
+  - Absolutely positioned layers that come before the flow in the HTML (a stepper's connector line) stay behind it.
+- `import_html_to_plan` takes `targets` (several elements, each its own screen, e.g. the cards of a review board) and `target` (build inside a section or node, with approval).
 - `figma_inspect` failed on a whole frame when one instance's component set has errors ("Component set for node has existing errors"); such instances now report their variant from the component name.
 - Componentize kept DS instances linked but wrapped them in an Auto Layout frame, which in real Figma threw right-aligned text out of the box; the wrapper is now a plain frame of the instance's size.
 - `figma_preview_plan` no longer needs a Design System scan for plans that use only raw values; plans that reference components or tokens say so. The scan timeout is 10 minutes for very large files.

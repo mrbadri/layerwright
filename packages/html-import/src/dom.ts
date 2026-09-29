@@ -5,7 +5,7 @@ import type { Page } from "playwright-core";
 export interface Rgba { hex: string; a: number }
 export interface DomBox { x: number; y: number; w: number; h: number }
 export interface DomStyle {
-  display: string; position: string; direction: "ltr" | "rtl";
+  display: string; position: string; zIndex?: string; direction: "ltr" | "rtl";
   flexDirection?: string; flexWrap?: string; justify?: string; alignItems?: string; alignSelf?: string; flexGrow?: number;
   rowGap?: number; columnGap?: number; padding: [number, number, number, number];
   bg?: Rgba; gradient?: { angle: number; stops: { color: Rgba; position: number }[] };
@@ -42,7 +42,23 @@ export async function readPage(page: Page, selector = "body", marks: string[] = 
 const SERIALIZE_DOM = ({ selector, marks }: { selector: string; marks: string[] }): any => {
   for (const m of marks) { try { document.querySelector(m); } catch { return { error: `Invalid CSS selector in mappings: "${m}"` }; } }
   const px = (v: string) => parseFloat(v) || 0;
-  const rgba = (v: string) => {
+  // Any CSS colour (oklch, lab, hsl, color(), …) → sRGB, by painting one pixel. Claude Design exports use oklch.
+  const colorCanvas = document.createElement("canvas").getContext("2d", { willReadFrequently: true })!;
+  const converted = new Map<string, string | undefined>();
+  const toRgbString = (c: string): string | undefined => {
+    if (!converted.has(c)) {
+      colorCanvas.clearRect(0, 0, 1, 1);
+      colorCanvas.fillStyle = "rgba(0,0,0,0)"; colorCanvas.fillStyle = c;
+      colorCanvas.fillRect(0, 0, 1, 1);
+      const [r, g, b, a] = colorCanvas.getImageData(0, 0, 1, 1).data;
+      converted.set(c, a ? `rgba(${r}, ${g}, ${b}, ${Math.round((a / 255) * 1000) / 1000})` : undefined);
+    }
+    return converted.get(c);
+  };
+  const COLOR_FN = /(?:rgba?|oklch|oklab|lab|lch|hsla?|hwb|color)\([^()]*(?:\([^()]*\)[^()]*)*\)/;
+  const rgba = (v0: string) => {
+    let v = v0;
+    if (!/^\s*rgba?\(/.test(v)) { const fn = v.match(COLOR_FN); if (!fn) return undefined; v = toRgbString(fn[0]) ?? ""; }
     const m = v.match(/rgba?\(([^)]+)\)/);
     if (!m) return undefined;
     const [r, g, b, a = "1"] = m[1].split(/[ ,/]+/).filter(Boolean);
@@ -60,7 +76,7 @@ const SERIALIZE_DOM = ({ selector, marks }: { selector: string; marks: string[] 
     if (/deg$/.test(parts[0])) angle = parseFloat(parts.shift()!);
     else if (/^to /.test(parts[0])) angle = ({ "to top": 0, "to right": 90, "to bottom": 180, "to left": 270 } as Record<string, number>)[parts.shift()!] ?? 180;
     const stops = parts.map((p, i) => {
-      const cm = p.match(/rgba?\([^)]+\)/); const color = cm ? rgba(cm[0]) : undefined;
+      const cm = p.match(COLOR_FN); const color = cm ? rgba(cm[0]) : undefined;
       const pos = p.replace(cm?.[0] ?? "", "").match(/([\d.]+)%/);
       return color && { color, position: pos ? +pos[1] / 100 : i / Math.max(1, parts.length - 1) };
     }).filter(Boolean) as { color: any; position: number }[];
@@ -69,7 +85,7 @@ const SERIALIZE_DOM = ({ selector, marks }: { selector: string; marks: string[] 
   const shadows = (v: string) => {
     if (!v || v === "none") return undefined;
     const out = splitTop(v).map((s) => {
-      const cm = s.match(/rgba?\([^)]+\)/); const color = cm ? rgba(cm[0]) : undefined;
+      const cm = s.match(COLOR_FN); const color = cm ? rgba(cm[0]) : undefined;
       const n = s.replace(cm?.[0] ?? "", "").replace("inset", "").trim().split(/\s+/).map(px);
       return color && { inset: /inset/.test(s), x: n[0] || 0, y: n[1] || 0, blur: n[2] || 0, spread: n[3] || 0, color };
     }).filter(Boolean);
@@ -84,7 +100,7 @@ const SERIALIZE_DOM = ({ selector, marks }: { selector: string; marks: string[] 
     const bc = rgba(sideColors[bw.findIndex((w) => w > 0)] ?? "");
     const radius = Math.max(px(cs.borderTopLeftRadius), px(cs.borderTopRightRadius), px(cs.borderBottomRightRadius), px(cs.borderBottomLeftRadius));
     return {
-      display: cs.display, position: cs.position, direction: cs.direction === "rtl" ? "rtl" : "ltr",
+      display: cs.display, position: cs.position, zIndex: cs.zIndex === "auto" ? undefined : cs.zIndex, direction: cs.direction === "rtl" ? "rtl" : "ltr",
       flexDirection: cs.flexDirection, flexWrap: cs.flexWrap, justify: cs.justifyContent, alignItems: cs.alignItems, alignSelf: cs.alignSelf, flexGrow: px(cs.flexGrow) || undefined,
       rowGap: px(cs.rowGap) || undefined, columnGap: px(cs.columnGap) || undefined,
       padding: [px(cs.paddingTop), px(cs.paddingRight), px(cs.paddingBottom), px(cs.paddingLeft)],
@@ -120,10 +136,57 @@ const SERIALIZE_DOM = ({ selector, marks }: { selector: string; marks: string[] 
       d.setAttribute("fill", f ? f.hex : "none");
       if (f && f.a < 1) d.setAttribute("fill-opacity", String(f.a));
       if (st) { d.setAttribute("stroke", st.hex); d.setAttribute("stroke-width", String(px(cs.strokeWidth))); d.setAttribute("stroke-linecap", cs.strokeLinecap); d.setAttribute("stroke-linejoin", cs.strokeLinejoin); }
+      // Dashes: a progress ring (one dash about as long as the circle, shifted by an offset) becomes a real arc,
+      // since Figma renders SVG dash patterns differently; other dashes are kept as a plain pattern.
+      if (st && cs.strokeDasharray && cs.strokeDasharray !== "none") {
+        const dash = cs.strokeDasharray.split(/[ ,]+/).map(px).filter((n) => n > 0);
+        const off = px(cs.strokeDashoffset);
+        d.removeAttribute("stroke-dashoffset"); d.removeAttribute("stroke-dasharray");
+        const isCircle = s.tagName.toLowerCase() === "circle";
+        const rr = isCircle ? px(s.getAttribute("r") ?? "0") : 0, cx = px(s.getAttribute("cx") ?? "0"), cy = px(s.getAttribute("cy") ?? "0");
+        const circ = 2 * Math.PI * rr;
+        const visible = dash.length === 1 ? dash[0] - off : dash.length === 2 && dash[1] >= circ * 0.98 ? dash[0] - off : NaN;
+        if (isCircle && rr > 0 && Number.isFinite(visible) && (dash[0] >= circ * 0.98 || dash.length === 2)) {
+          const frac = Math.max(0, Math.min(1, visible / circ));
+          if (frac < 0.999) {
+            const a = frac * 2 * Math.PI;
+            const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            for (const at of [...d.attributes]) if (!["cx", "cy", "r"].includes(at.name)) path.setAttribute(at.name, at.value);
+            path.setAttribute("d", frac <= 0 ? "" : `M ${cx + rr} ${cy} A ${rr} ${rr} 0 ${a > Math.PI ? 1 : 0} 1 ${cx + rr * Math.cos(a)} ${cy + rr * Math.sin(a)}`);
+            path.setAttribute("fill", "none");
+            d.replaceWith(path);
+          }
+        } else if (dash.length) d.setAttribute("stroke-dasharray", dash.join(" "));
+      }
     });
+    // A CSS transform on the <svg> itself (e.g. rotate(-90deg) to start a ring at the top) is baked into the markup.
+    const tf = getComputedStyle(el).transform;
+    if (tf && tf !== "none") {
+      const m = tf.match(/matrix\(([^)]+)\)/);
+      const vb = (el as SVGSVGElement).viewBox?.baseVal;
+      if (m) {
+        const [a, b, c, dd, e, f] = m[1].split(",").map(Number);
+        const w = vb && vb.width ? vb.width : r.width, h = vb && vb.height ? vb.height : r.height;
+        const k = r.width ? w / r.width : 1;
+        const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        g.setAttribute("transform", `translate(${w / 2} ${h / 2}) matrix(${a} ${b} ${c} ${dd} ${e * k} ${f * k}) translate(${-w / 2} ${-h / 2})`);
+        while (clone.firstChild) g.appendChild(clone.firstChild);
+        clone.appendChild(g);
+      }
+    }
     clone.setAttribute("width", String(r.width)); clone.setAttribute("height", String(r.height));
     clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
     return clone.outerHTML;
+  };
+
+  // Lines of a text range. Pieces in different fonts on one line have slightly different tops, so counting
+  // distinct tops over-counts.
+  const lineCount = (range: Range) => {
+    const rects = [...range.getClientRects()].filter((q) => q.width > 0).sort((a, b) => a.top - b.top);
+    // A new line starts more than half a line below the current one (tight line heights make boxes overlap).
+    let lines = 0, top = -Infinity, height = 0;
+    for (const q of rects) { if (q.top > top + height / 2) { lines++; top = q.top; height = q.height; } }
+    return lines || 1;
   };
 
   const textChild = (n: Node, cs: CSSStyleDeclaration, ox: number, oy: number, style?: any): any => {
@@ -136,7 +199,7 @@ const SERIALIZE_DOM = ({ selector, marks }: { selector: string; marks: string[] 
     if (cs.textTransform === "uppercase") text = text.toUpperCase();
     else if (cs.textTransform === "lowercase") text = text.toLowerCase();
     const parent = n.parentElement!;
-    return { kind: "text", tag: "#text", name: text.slice(0, 40), box: { x: tr.left - ox, y: tr.top - oy, w: tr.width, h: tr.height }, style: style ?? styleOf(parent, cs), text, lines: new Set([...range.getClientRects()].filter((q) => q.width > 0).map((q) => Math.round(q.top))).size || 1, attrs: {}, children: [] };
+    return { kind: "text", tag: "#text", name: text.slice(0, 40), box: { x: tr.left - ox, y: tr.top - oy, w: tr.width, h: tr.height }, style: style ?? styleOf(parent, cs), text, lines: lineCount(range), attrs: {}, children: [] };
   };
 
   // Inline formatting: text mixed with plain inline elements (<b>, <span>, <a>, <br>; no box of their own) is one
@@ -176,7 +239,7 @@ const SERIALIZE_DOM = ({ selector, marks }: { selector: string; marks: string[] 
     if (!trimmed.trim()) return null;
     const range = document.createRange(); range.selectNodeContents(el);
     const tr = range.getBoundingClientRect();
-    const lines = new Set([...range.getClientRects()].filter((q) => q.width > 0).map((q) => Math.round(q.top))).size || 1;
+    const lines = lineCount(range);
     return { kind: "text", tag: "#text", name: trimmed.slice(0, 40), box: { x: tr.left - r.left, y: tr.top - r.top, w: tr.width, h: tr.height }, style: styleOf(el, cs), text: trimmed,
       lines, runs: runs.map((x) => ({ ...x, end: Math.min(x.end, trimmed.length) })).filter((x) => x.end > x.start), attrs: {}, children: [] };
   };
@@ -247,6 +310,7 @@ const SERIALIZE_DOM = ({ selector, marks }: { selector: string; marks: string[] 
   const r = el.getBoundingClientRect();
   let root = walk(el, r.left, r.top);
   if (root?.kind === "contents") root = null;
-  if (root) { root.box.x = 0; root.box.y = 0; root.box.h = Math.max(root.box.h, document.documentElement.scrollHeight); }
+  // The page body is at least as tall as the document; an element keeps its own box.
+  if (root) { root.box.x = 0; root.box.y = 0; if (el === document.body) root.box.h = Math.max(root.box.h, document.documentElement.scrollHeight); }
   return { root, webFonts };
 };

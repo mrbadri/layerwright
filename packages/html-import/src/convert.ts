@@ -127,6 +127,8 @@ export function toPlan(screens: { name: string; width: number; dom: DomNode }[],
       if (!horizontal && rtl) layout.crossAlign = layout.crossAlign === "start" ? "end" : layout.crossAlign === "end" ? "start" : layout.crossAlign;
     } else if (flow.length === 1) {
       // One child (a button label, an input value): Auto Layout whose padding reproduces its exact position.
+      // Absolutely positioned siblings (an overlay on an icon) are added separately, out of the flow.
+      order = flow;
       const c = flow[0].box;
       const l = Math.max(0, c.x), t = Math.max(0, c.y), r = Math.max(0, d.box.w - c.x - c.w), b = Math.max(0, d.box.h - c.y - c.h);
       const centred = Math.abs(l - r) < 1;
@@ -168,6 +170,13 @@ export function toPlan(screens: { name: string; width: number; dom: DomNode }[],
       const contentH = pad[0] + pad[2] + (horiz ? max((k) => k.box.h) : sum((k) => k.box.h) + gapTotal);
       out._fixedW = d.box.w - contentW > 1;
       out._fixedH = d.box.h - contentH > 1;
+      // Children that stretch across it (full-width blocks in a column, flex-grow items in a row) take their size
+      // from the container, so its width isn't "just its content": keep it fixed, or they'd have nothing to fill.
+      const innerW = d.box.w - pad[1] - pad[3];
+      // A single line of text (on its own or as a text-only element) is the exception: it may set the width itself.
+      // (Only a plain text wrapper: a styled box with a letter in it, like a step circle, has its own size.)
+      const singleLine = (k: DomNode) => (k.kind === "text" && (k.lines ?? 1) <= 1) || (textOnly(k) && !hasVisual(k) && (k.children[0].lines ?? 1) <= 1);
+      if (horiz ? flow.some((k) => (k.style.flexGrow ?? 0) > 0) : flow.some((k) => Math.abs(k.box.w - innerW) < 1 && !singleLine(k))) out._fixedW = true;
     }
     const children: any[] = [];
     // Repeated siblings with the same structure and a visual container read as cards.
@@ -182,11 +191,16 @@ export function toPlan(screens: { name: string; width: number; dom: DomNode }[],
         if (/^(div|li|article|section)$/.test(c.name)) c.name = "Card";
         hints.push({ path: p, role: "card", label: collectText(k).slice(0, 60) });
       }
-      place(c, k, { auto, horizontal: layout.direction === "horizontal", inner, absolute, stretch: s.alignItems === "stretch" || s.alignItems === "normal" });
+      place(c, k, { auto, horizontal: layout.direction === "horizontal", inner, absolute, stretch: s.alignItems === "stretch" || s.alignItems === "normal", crossFixed: layout.direction === "horizontal" ? !!out._fixedH : !!out._fixedW });
       children.push(c);
     };
+    // Paint order: absolutely positioned layers that come before the flow in the HTML (a stepper's connector line,
+    // a background shape) sit behind it, the rest on top. Figma paints later layers over earlier ones.
+    const firstFlow = kids.findIndex((k) => !isOut(k));
+    const behind = auto ? kids.filter((k, i) => isOut(k) && (firstFlow < 0 || i < firstFlow) && !(Number(k.style.zIndex) > 0)) : [];
+    behind.forEach((k, i) => pushChild(k, i, true));
     order.forEach((k, i) => pushChild(k, i, !auto));
-    if (auto) kids.filter(isOut).forEach((k, i) => pushChild(k, i, true));
+    if (auto) kids.filter((k) => isOut(k) && !behind.includes(k)).forEach((k, i) => pushChild(k, i, true));
     out.children = children;
     // A single line of text inside a container (buttons, links, chips, tags): container and label hug,
     // like a real Figma button. Fixed browser widths would wrap the label on tiny font metric differences.
@@ -198,11 +212,11 @@ export function toPlan(screens: { name: string; width: number; dom: DomNode }[],
   };
 
   /** Size and position a converted child inside its parent. */
-  const place = (c: any, k: DomNode, p: { auto: boolean; horizontal: boolean; inner: { x: number; y: number; w: number; h: number }; absolute: boolean; stretch: boolean }) => {
+  const place = (c: any, k: DomNode, p: { auto: boolean; horizontal: boolean; inner: { x: number; y: number; w: number; h: number }; absolute: boolean; stretch: boolean; crossFixed?: boolean }) => {
     const b = c._box as { x: number; y: number; w: number; h: number };
     delete c._box;
     const hugText = !!c._hugText;
-    const fixedH = !!c._fixedH;
+    const fixedH = !!c._fixedH, fixedW = !!c._fixedW;
     delete c._hugText; delete c._fixedW; delete c._fixedH;
     if (c._mapped) {
       delete c._mapped;
@@ -222,11 +236,20 @@ export function toPlan(screens: { name: string; width: number; dom: DomNode }[],
       return;
     }
     const fullMain = p.horizontal ? false : Math.abs(b.w - p.inner.w) < 1;
+    const oneLine = c.type === "text" && (k.lines ?? 1) <= 1;
+    // A frame whose CSS width was just its content hugs, so a wider fallback font widens it instead of wrapping.
+    const contentWidth = c.type === "frame" && c.layout?.direction !== "none" && !fixedW;
     if (p.horizontal) {
-      c.width = (k.style.flexGrow ?? 0) > 0 ? "fill" : hugText || (c.type === "text" && (k.lines ?? 1) <= 1) ? "hug" : w;
-      if (c.type !== "text") c.height = p.stretch && Math.abs(b.h - p.inner.h) < 1 ? "fill" : autoH;
+      c.width = (k.style.flexGrow ?? 0) > 0 ? "fill" : hugText || oneLine || contentWidth ? "hug" : w;
+      // Stretching to the row's height: fine in a fixed-height row, or for a child with a height of its own
+      // (content in Auto Layout). An empty frame in a hugging row has nothing to size it (Figma leaves it at its
+      // default 100px), so it keeps the rendered height.
+      const ownHeight = c.type !== "frame" || (c.layout?.direction !== "none" && (c.children?.length ?? 0) > 0);
+      if (c.type !== "text") c.height = p.stretch && (p.crossFixed || ownHeight) && Math.abs(b.h - p.inner.h) < 1 ? "fill" : autoH;
     } else {
-      c.width = fullMain ? "fill" : hugText || (c.type === "text" && (k.lines ?? 1) <= 1) ? "hug" : w;
+      // A single line spanning a column only fills it when the column's width is fixed; otherwise it hugs (the
+      // column's cross alignment keeps it on the right side in RTL), so it can't wrap on a wider fallback font.
+      c.width = fullMain && !(oneLine && !p.crossFixed) ? "fill" : hugText || oneLine ? "hug" : w;
       if (c.type !== "text") c.height = autoH;
     }
   };

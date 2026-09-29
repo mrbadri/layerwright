@@ -14,7 +14,9 @@ export { readDom, readPage, type DomNode } from "./dom.ts";
 export { launch, resolveEntry, withPage } from "./browser.ts";
 export { screenshotHtml, diffImages, type ImageDiff } from "./compare.ts";
 
-export interface RenderOptions { viewports?: number[]; selector?: string; root?: string; ds?: DesignSystem; name?: string; mappings?: ComponentMapping[]; fontMap?: Record<string, string> }
+export interface RenderOptions { viewports?: number[]; selector?: string; root?: string; ds?: DesignSystem; name?: string; mappings?: ComponentMapping[]; fontMap?: Record<string, string>;
+  /** Several elements of the page, each its own screen (e.g. the cards of a review board). Overrides `selector`. */
+  targets?: { selector: string; name?: string }[]; waitMs?: number }
 export interface RenderResult { plan: DesignPlan; hints: Hint[]; warnings: string[]; mapped: Record<string, number>; sources: SourceBoxes;
   /** Web font families the page loads, with the formats it ships (e.g. ["woff2"]). */
   webFonts: Record<string, string[]> }
@@ -23,15 +25,24 @@ export const DEFAULT_VIEWPORTS = [1440, 390];
 
 export async function renderToPlan(path: string, opts: RenderOptions = {}): Promise<RenderResult> {
   const viewports = opts.viewports?.length ? opts.viewports : DEFAULT_VIEWPORTS;
-  const screens = [];
+  const screens: { name: string; width: number; dom: import("./dom.ts").DomNode }[] = [];
   let title = "";
   let webFonts: Record<string, string[]> = {};
   const marks = (opts.mappings ?? []).map((m) => m.selector);
+  const targets = opts.targets?.length ? opts.targets : [{ selector: opts.selector ?? "body", name: undefined as string | undefined }];
   for (const width of viewports) {
-    const { read, t } = await withPage(path, { root: opts.root, width, height: 900 }, async (page) => ({ read: await readPage(page, opts.selector ?? "body", marks), t: await page.title() }));
+    const { reads, t } = await withPage(path, { root: opts.root, width, height: 900, waitMs: opts.waitMs }, async (page) => {
+      const reads = [];
+      for (const tg of targets) reads.push(await readPage(page, tg.selector, marks));
+      return { reads, t: await page.title() };
+    });
     title ||= t;
-    webFonts = { ...webFonts, ...read.webFonts };
-    screens.push({ name: `${title || "Page"} – ${width}`, width, dom: read.root });
+    reads.forEach((read, i) => {
+      webFonts = { ...webFonts, ...read.webFonts };
+      const base = targets[i].name ?? (opts.targets?.length ? targets[i].selector : title || "Page");
+      // An element keeps its own rendered width; the page takes the viewport's.
+      screens.push({ name: viewports.length > 1 || !targets[i].name ? `${base} – ${width}` : base, width: opts.targets?.length ? Math.round(read.root.box.w) : width, dom: read.root });
+    });
   }
   const converted = toPlan(screens, { name: opts.name ?? (title || "HTML import"), mappings: opts.mappings, fontMap: opts.fontMap });
   let plan = converted.plan;

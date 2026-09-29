@@ -23,7 +23,22 @@ export async function importHtml(opts: { file: string; root?: string; targets?: 
 // Runs inside the page. Kept dependency-free and self-contained.
 const SERIALIZE = ({ targets, swaps }: { targets: ImportTarget[] | null; swaps: ImportSwap[] }) => {
   const px = (v: string) => parseFloat(v) || 0;
-  const color = (v: string): { hex: string; a: number } | null => {
+  // Any CSS colour (oklch, lab, hsl, color(), …) → sRGB, by painting one pixel. Claude Design exports use oklch.
+  const colorCanvas = document.createElement("canvas").getContext("2d", { willReadFrequently: true })!;
+  const converted = new Map<string, string | null>();
+  const COLOR_FN = /(?:rgba?|oklch|oklab|lab|lch|hsla?|hwb|color)\([^()]*(?:\([^()]*\)[^()]*)*\)/;
+  const color = (v0: string): { hex: string; a: number } | null => {
+    let v = v0;
+    if (!/^\s*rgba?\(/.test(v)) {
+      const fn = v.match(COLOR_FN);
+      if (!fn) return null;
+      if (!converted.has(fn[0])) {
+        colorCanvas.clearRect(0, 0, 1, 1); colorCanvas.fillStyle = "rgba(0,0,0,0)"; colorCanvas.fillStyle = fn[0]; colorCanvas.fillRect(0, 0, 1, 1);
+        const [r, g, b, a] = colorCanvas.getImageData(0, 0, 1, 1).data;
+        converted.set(fn[0], a ? `rgba(${r}, ${g}, ${b}, ${Math.round((a / 255) * 1000) / 1000})` : null);
+      }
+      v = converted.get(fn[0]) ?? "";
+    }
     const m = v.match(/rgba?\(([^)]+)\)/);
     if (!m) return null;
     const [r, g, b, a = "1"] = m[1].split(/[ ,/]+/).filter(Boolean);
@@ -41,7 +56,7 @@ const SERIALIZE = ({ targets, swaps }: { targets: ImportTarget[] | null; swaps: 
     if (/deg$/.test(parts[0])) angle = parseFloat(parts.shift()!);
     else if (/^to /.test(parts[0])) { const t = parts.shift()!; angle = ({ "to top": 0, "to right": 90, "to bottom": 180, "to left": 270 } as any)[t] ?? 180; }
     const stops = parts.map((p, i) => {
-      const cm = p.match(/rgba?\([^)]+\)/); const c = cm ? color(cm[0]) : null;
+      const cm = p.match(COLOR_FN); const c = cm ? color(cm[0]) : null;
       const pos = p.replace(cm?.[0] ?? "", "").match(/([\d.]+)%/);
       return c && { hex: c.hex, a: c.a, pos: pos ? +pos[1] / 100 : i / Math.max(1, parts.length - 1) };
     }).filter(Boolean);
@@ -50,7 +65,7 @@ const SERIALIZE = ({ targets, swaps }: { targets: ImportTarget[] | null; swaps: 
   const shadows = (v: string) => {
     if (!v || v === "none") return undefined;
     return splitTop(v).map((s) => {
-      const cm = s.match(/rgba?\([^)]+\)/); const c = cm ? color(cm[0]) : null;
+      const cm = s.match(COLOR_FN); const c = cm ? color(cm[0]) : null;
       const nums = s.replace(cm?.[0] ?? "", "").replace("inset", "").trim().split(/\s+/).map(px);
       return c && { inset: /inset/.test(s), x: nums[0] || 0, y: nums[1] || 0, blur: nums[2] || 0, spread: nums[3] || 0, hex: c.hex, a: c.a };
     }).filter(Boolean);
@@ -74,7 +89,44 @@ const SERIALIZE = ({ targets, swaps }: { targets: ImportTarget[] | null; swaps: 
       d.setAttribute("fill", f ? f.hex : "none");
       if (f && f.a < 1) d.setAttribute("fill-opacity", String(f.a));
       if (st) { d.setAttribute("stroke", st.hex); d.setAttribute("stroke-width", String(px(cs.strokeWidth))); d.setAttribute("stroke-linecap", cs.strokeLinecap); d.setAttribute("stroke-linejoin", cs.strokeLinejoin); }
+      // Dashes: a progress ring (one dash about as long as the circle, shifted by an offset) becomes a real arc,
+      // since Figma renders SVG dash patterns differently; other dashes are kept as a plain pattern.
+      if (st && cs.strokeDasharray && cs.strokeDasharray !== "none") {
+        const dash = cs.strokeDasharray.split(/[ ,]+/).map(px).filter((n) => n > 0);
+        const off = px(cs.strokeDashoffset);
+        d.removeAttribute("stroke-dashoffset"); d.removeAttribute("stroke-dasharray");
+        const isCircle = s.tagName.toLowerCase() === "circle";
+        const rr = isCircle ? px(s.getAttribute("r") ?? "0") : 0, cx = px(s.getAttribute("cx") ?? "0"), cy = px(s.getAttribute("cy") ?? "0");
+        const circ = 2 * Math.PI * rr;
+        const visible = dash.length === 1 ? dash[0] - off : dash.length === 2 && dash[1] >= circ * 0.98 ? dash[0] - off : NaN;
+        if (isCircle && rr > 0 && Number.isFinite(visible) && (dash[0] >= circ * 0.98 || dash.length === 2)) {
+          const frac = Math.max(0, Math.min(1, visible / circ));
+          if (frac < 0.999) {
+            const a = frac * 2 * Math.PI;
+            const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            for (const at of [...d.attributes]) if (!["cx", "cy", "r"].includes(at.name)) path.setAttribute(at.name, at.value);
+            path.setAttribute("d", frac <= 0 ? "" : `M ${cx + rr} ${cy} A ${rr} ${rr} 0 ${a > Math.PI ? 1 : 0} 1 ${cx + rr * Math.cos(a)} ${cy + rr * Math.sin(a)}`);
+            path.setAttribute("fill", "none");
+            d.replaceWith(path);
+          }
+        } else if (dash.length) d.setAttribute("stroke-dasharray", dash.join(" "));
+      }
     });
+    // A CSS transform on the <svg> itself (e.g. rotate(-90deg) to start a ring at the top) is baked into the markup.
+    const tf = getComputedStyle(el).transform;
+    if (tf && tf !== "none") {
+      const m = tf.match(/matrix\(([^)]+)\)/);
+      const vb = (el as SVGSVGElement).viewBox?.baseVal;
+      if (m) {
+        const [a, b, c, dd, e, f] = m[1].split(",").map(Number);
+        const w = vb && vb.width ? vb.width : r.width, h = vb && vb.height ? vb.height : r.height;
+        const k = r.width ? w / r.width : 1;
+        const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        g.setAttribute("transform", `translate(${w / 2} ${h / 2}) matrix(${a} ${b} ${c} ${dd} ${e * k} ${f * k}) translate(${-w / 2} ${-h / 2})`);
+        while (clone.firstChild) g.appendChild(clone.firstChild);
+        clone.appendChild(g);
+      }
+    }
     clone.setAttribute("width", String(r.width)); clone.setAttribute("height", String(r.height));
     clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
     count++;
@@ -91,7 +143,9 @@ const SERIALIZE = ({ targets, swaps }: { targets: ImportTarget[] | null; swaps: 
       const c = color(cs.color);
       let content = n.textContent.replace(/\s+/g, " ").trim();
       if (cs.textTransform === "uppercase") content = content.toUpperCase();
-      const lines = range.getClientRects().length > 1;
+      // Wrapped only when a box starts over half a line below the first (mixed fonts on one line differ by a few px).
+      const rects = [...range.getClientRects()].filter((q) => q.width > 0);
+      const lines = rects.some((q) => q.top > rects[0].top + rects[0].height / 2);
       count++;
       out.push({
         type: "text", name: content.slice(0, 40), x: r.left - ox, y: r.top - oy, w: r.width, h: r.height, content,

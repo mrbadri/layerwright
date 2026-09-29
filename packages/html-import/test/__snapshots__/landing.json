@@ -59,7 +59,7 @@
             {
               "type": "frame",
               "name": ".links",
-              "width": 177.25,
+              "width": "hug",
               "height": "hug",
               "layout": {
                 "direction": "horizontal",
@@ -370,7 +370,7 @@
                 {
                   "type": "text",
                   "name": "h3",
-                  "width": "fill",
+                  "width": "hug",
                   "content": "Auto Layout",
                   "color": "#172527",
                   "fontSize": 17,
@@ -385,7 +385,7 @@
                 {
                   "type": "text",
                   "name": "p",
-                  "width": "fill",
+                  "width": "hug",
                   "content": "Flexbox becomes native Auto Layout.",
                   "color": "#61706E",
                   "fontSize": 14,
@@ -434,7 +434,7 @@
                 {
                   "type": "text",
                   "name": "h3",
-                  "width": "fill",
+                  "width": "hug",
                   "content": "Components",
                   "color": "#172527",
                   "fontSize": 17,
@@ -449,7 +449,7 @@
                 {
                   "type": "text",
                   "name": "p",
-                  "width": "fill",
+                  "width": "hug",
                   "content": "Buttons map to your Design System.",
                   "color": "#61706E",
                   "fontSize": 14,
@@ -498,7 +498,7 @@
                 {
                   "type": "text",
                   "name": "h3",
-                  "width": "fill",
+                  "width": "hug",
                   "content": "Tokens",
                   "color": "#172527",
                   "fontSize": 17,
@@ -513,7 +513,7 @@
                 {
                   "type": "text",
                   "name": "p",
-                  "width": "fill",
+                  "width": "hug",
                   "content": "Colors and radii stay consistent.",
                   "color": "#61706E",
                   "fontSize": 14,
@@ -587,7 +587,7 @@
             {
               "type": "frame",
               "name": ".links",
-              "width": 177.25,
+              "width": "hug",
               "height": "hug",
               "layout": {
                 "direction": "horizontal",

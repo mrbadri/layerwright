@@ -164,17 +164,23 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
       })).optional().describe("Your own element → component mappings; they win over automatic Design System matching"),
       fontMap: z.record(z.string()).optional().describe('Replace font families, e.g. { "YekanBakhFaNum": "IRANYekanX" } for a web font that isn\'t installed'),
       page: z.string().optional().describe("Page (name or id) to build on when executed (default: the current page)"),
+      targets: z.array(z.object({ selector: z.string(), name: z.string().optional() })).max(50).optional()
+        .describe("Several elements, each its own screen (e.g. the cards of a Claude Design review board); each keeps its rendered width"),
+      target: z.object({ parentId: z.string().optional(), x: z.number().optional(), y: z.number().optional() }).optional()
+        .describe("Where to build: inside an existing node such as a section (needs approval), or at x/y on the page"),
     },
-  }, async ({ path, viewport, useDesignSystem, selector, mappings: userMappings, fontMap, page }) => guard(async () => {
+  }, async ({ path, viewport, useDesignSystem, selector, mappings: userMappings, fontMap, page, targets, target }) => guard(async () => {
     const cached = loadDs();
     const useDs = useDesignSystem ?? !!cached;
     if (useDs && !cached) return fail([{ type: "DESIGN_SYSTEM_NOT_SCANNED", message: "useDesignSystem needs a scan. Call figma_scan_design_system, or pass useDesignSystem: false." }]);
     const d = useDs ? cached! : emptyDesignSystem(bridge.info()?.fileName);
-    const r = await renderToPlan(resolve(workdir, path), { viewports: viewport === undefined ? undefined : [viewport].flat(), selector, ds: useDs ? d : undefined, mappings: userMappings, fontMap });
-    const c = compilePlan(d, page ? { ...r.plan, target: { ...(r.plan.target ?? {}), page } } : r.plan);
+    const r = await renderToPlan(resolve(workdir, path), { viewports: viewport === undefined ? (targets?.length ? [1440] : undefined) : [viewport].flat(), selector, targets, ds: useDs ? d : undefined, mappings: userMappings, fontMap });
+    const c = compilePlan(d, page || target ? { ...r.plan, target: { ...(r.plan.target ?? {}), ...(target ?? {}), ...(page ? { page } : {}) } } : r.plan);
     if (!c.ok || !c.plan) return fail(c.errors, { warnings: [...r.warnings, ...c.warnings], summary: c.summary });
     plans.set(c.plan.planId, { plan: c.plan, summary: c.summary, sources: r.sources, webFonts: r.webFonts });
-    return ok({ success: true, planId: c.plan.planId, summary: c.summary, mappedToDesignSystem: r.mapped, warnings: [...r.warnings, ...c.warnings].slice(0, 30), next: "Show the summary; then call figma_execute_plan with this planId." });
+    const intoExisting = !!c.plan.target.parentId;
+    return ok({ success: true, planId: c.plan.planId, summary: c.summary, mappedToDesignSystem: r.mapped, webFonts: Object.keys(r.webFonts).length ? r.webFonts : undefined, warnings: [...r.warnings, ...c.warnings].slice(0, 30),
+      requiresApproval: intoExisting || undefined, next: intoExisting ? "Show the summary; this builds inside an existing node, so call figma_execute_plan with approved: true after the user agrees." : "Show the summary; then call figma_execute_plan with this planId." });
   }));
 
   server.registerTool("figma_execute_plan", {

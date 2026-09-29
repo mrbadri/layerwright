@@ -139,6 +139,11 @@ maybe("display: contents wrappers vanish; fixed CSS sizes stay fixed; content-si
   // A padded chip is exactly its content: it hugs.
   assert.equal(chip.width, "hug");
   assert.equal(chip.height, "hug");
+  // A timeline column: the 22px step circle defines its width, so the column keeps it (a hugging column would let a
+  // filling circle collapse to the 2px stem).
+  const col = find(plan.screens[0], (n) => n.layout?.direction === "vertical" && n.children?.length === 2 && n.children[0].children?.[0]?.content === "3");
+  assert.ok(col, "timeline column");
+  assert.notEqual(col.width, "hug");
 });
 
 maybe("DS mapping never uses a shape-only guess: an accordion with one text layer is not a button", async () => {
@@ -189,4 +194,40 @@ maybe("user mappings turn chosen elements into that component (winning over auto
   const c = compilePlan(fixtureDs(), r.plan);
   assert.deepEqual(c.errors, []);
   assert.ok(Object.keys(c.summary.instances).includes("Button / Secondary, Medium"));
+});
+
+maybe("an absolute overlay on a one-child box is added once; SVG dash offsets and CSS rotation are kept", async () => {
+  const { plan } = await renderToPlan(fixture("ring.html"), { viewports: [390] });
+  const find = (n: any, pred: (x: any) => boolean): any => (pred(n) ? n : (n.children ?? []).map((c: any) => find(c, pred)).find(Boolean));
+  const ring = find(plan.screens[0], (n) => n.type === "frame" && n.children?.some((c: any) => c.type === "icon"));
+  assert.equal(ring.children.length, 2, "svg + one overlay, not two");
+  assert.equal(ring.children.filter((c: any) => c.position).length, 1);
+  const svg = ring.children.find((c: any) => c.type === "icon").svg;
+  // 40% of the circle as a real arc (Figma renders dash patterns differently): no dashes left.
+  assert.match(svg, /<path [^>]*d="M 128 68 A 60 60 0 0 1 [\d.-]+ [\d.-]+"/);
+  assert.doesNotMatch(svg, /stroke-dasharray/);
+  assert.match(svg, /<g transform="translate\(68 68\) matrix\(/);
+});
+
+maybe("one line in two fonts is one line: the title and its block hug instead of keeping Chrome's width", async () => {
+  const { plan } = await renderToPlan(fixture("mixed.html"), { viewports: [390] });
+  const find = (n: any, pred: (x: any) => boolean): any => (pred(n) ? n : (n.children ?? []).map((c: any) => find(c, pred)).find(Boolean));
+  const title = find(plan.screens[0], (n) => n.type === "text" && n.content.startsWith("درخواست"));
+  const block = find(plan.screens[0], (n) => n.type === "frame" && n.children?.includes(title));
+  assert.equal(title.width, "hug");
+  assert.equal(block.width, "hug");
+});
+
+maybe("oklch, hsl and color-mix colours are converted; an absolute layer before the flow stays behind it", async () => {
+  const { plan } = await renderToPlan(fixture("colors.html"), { viewports: [390] });
+  const all: any[] = [];
+  const walk = (n: any) => { all.push(n); (n.children ?? []).forEach(walk); };
+  walk(plan.screens[0]);
+  const pill = all.find((n) => n.children?.some((c: any) => c.content === "در انتظار تو"));
+  assert.match(pill.fill, /^#F[0-9A-F]{5}$/, "light violet background");
+  assert.ok(pill.stroke, "border colour from color-mix");
+  assert.match(pill.children[0].color, /^#[0-9A-F]{6}$/);
+  const bar = all.find((n) => n.children?.length === 3 && n.children.some((c: any) => c.position));
+  assert.ok(bar.children[0].position, "the connector line is the first (bottom) layer");
+  assert.match(bar.children[0].fill, /^#[0-9A-F]{6}$/);
 });
