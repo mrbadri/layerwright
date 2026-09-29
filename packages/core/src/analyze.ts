@@ -95,7 +95,8 @@ export function analyzeDesign(ds: DesignSystem, root: NodeSnapshot, opts: Analyz
     const sized = ds.typography.filter((t) => Math.abs(t.fontSize - size) < 0.6);
     const sameScript = sized.filter((t) => isFaStyle(t) === fa);
     const pool = (sameScript.length ? sameScript : sized).filter((t) => wd(t) <= 1);
-    const ranked = pool.map((t) => ({ t, s: wd(t) * 10 + (lh && typeof t.lineHeight === "number" ? Math.abs(t.lineHeight - lh) : 0) }))
+    // A copy of the style whose font is known can be applied; one that reports no font may not be.
+    const ranked = pool.map((t) => ({ t, s: wd(t) * 10 + (lh && typeof t.lineHeight === "number" ? Math.abs(t.lineHeight - lh) : 0) + (t.fontFamily ? 0 : 5) }))
       .sort((a, b) => a.s - b.s || a.t.name.length - b.t.name.length);
     return ranked[0]?.t;
   };
@@ -165,7 +166,9 @@ export function analyzeDesign(ds: DesignSystem, root: NodeSnapshot, opts: Analyz
       const filledDark = (n.fills ?? []).some((f) => f.startsWith("#") && !isLight(f));
       const hasStroke = (n.strokes ?? []).length > 0;
       const h = n.h ?? 0, w = n.w ?? 0;
-      const inputish = INPUT_NAME.test(nm) || (hasStroke && !filledDark && h >= 36 && h <= 64 && w >= 160 && t.length >= 1 && t.length <= 2);
+      // Sync (after an HTML import): layers carry their tag names ("input", "button"), so an input must say so;
+      // a bordered box with a label and a value is an info cell, not a field.
+      const inputish = INPUT_NAME.test(nm) || (!sync && hasStroke && !filledDark && h >= 36 && h <= 64 && w >= 160 && t.length >= 1 && t.length <= 2);
       // A round marker (a numbered step, an avatar initial) is neither a button nor a badge.
       const round = h > 0 && w < h * 1.3 && (n.radius ?? 0) >= h / 2 - 1;
       const buttonish = BUTTON_NAME.test(nm) || (!round && (hasFill || hasStroke) && h >= 28 && h <= 64 && w <= 420 && t.length === 1 && (n.children?.length ?? 0) <= 3);
@@ -185,7 +188,8 @@ export function analyzeDesign(ds: DesignSystem, root: NodeSnapshot, opts: Analyz
       // Text styles
       if (n.type === "TEXT" && !n.text?.styleId) {
         const st = pickTextStyle(n) ?? (sync ? looseTextStyle(n) : undefined);
-        if (st) out.push({ id: id(), op: "apply_text_style", nodeId: n.id, nodeName: n.name, styleId: st.styleId, styleKey: ds.styles.find((s) => s.id === st.styleId)?.remote ? ds.styles.find((s) => s.id === st.styleId)?.key : undefined, styleName: st.name, reason: `raw ${n.text?.font ?? ""} ${n.text?.fontSize}px → ${st.name}` });
+        if (st) out.push({ id: id(), op: "apply_text_style", nodeId: n.id, nodeName: n.name, styleId: st.styleId, styleKey: ds.styles.find((s) => s.id === st.styleId)?.remote ? ds.styles.find((s) => s.id === st.styleId)?.key : undefined, styleName: st.name, reason: `raw ${n.text?.font ?? ""} ${n.text?.fontSize}px → ${st.name}`,
+          font: st.fontFamily && st.fontStyle ? { family: st.fontFamily, style: st.fontStyle } : undefined });
       }
       // Fills → color variables
       if ((n.type === "FRAME" || n.type === "RECTANGLE" || n.type === "TEXT") && n.fills?.length === 1 && !n.bound?.fills && !n.fillStyle && n.fills[0].startsWith("#")) {

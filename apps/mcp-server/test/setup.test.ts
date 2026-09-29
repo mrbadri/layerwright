@@ -35,7 +35,11 @@ test("init: plugin copied to a stable home, .mcp.json merged (other servers kept
   assert.match(lines.join("\n"), /Next steps:[\s\S]*1\. Figma desktop[\s\S]*2\.[\s\S]*3\./);
   // Running init twice is safe.
   assert.equal(await init({ dir, port: 7336, skipInstall: true, skipBrowserCheck: true, out: () => {} }), 0);
-  assert.equal(readFileSync(join(dir, ".gitignore"), "utf8").match(/\.layerwright/g)!.length, 1);
+  // Running init again adds nothing: the scan cache and report drafts are ignored once each (memory.json is shared).
+  const gi = readFileSync(join(dir, ".gitignore"), "utf8");
+  assert.equal(gi.match(/\.layerwright\/cache/g)!.length, 1);
+  assert.equal(gi.match(/\.layerwright\/report\.md/g)!.length, 1);
+  assert.doesNotMatch(gi, /memory\.json/);
 });
 
 test("init refuses to overwrite a broken .mcp.json", async () => {

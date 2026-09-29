@@ -35,6 +35,7 @@ Layerwright closes that gap locally:
   - Images and inline SVG icons are imported as real images and vectors.
   - Desktop (1440) and mobile (390) screens are rendered side by side.
   - RTL is supported (Persian, Arabic, Hebrew). Rows keep their visual order and text stays right-aligned.
+- **Design System sync.** After an import, `figma_analyze_design({ mode: "sync" })` swaps buttons and pills for your DS components (the variant that looks closest), gives text your text styles by size and weight, and binds colours to your variables and styles. You approve it; originals are kept hidden.
 - **Design System automation.** After a Design System scan, buttons, inputs and links become your real Figma components when they clearly match, and you can map any element yourself (`mappings: [{ selector, component }]`).
 - **AI design to Figma from a prompt.** Claude writes a typed Design Plan (a JSON DSL). The plan is validated and resolved against your components, variables and text styles, then built deterministically. Claude never writes Figma plugin code.
 - **Prototypes.** Click, hover and timed interactions, navigate / overlay / swap / back, smart animate and push transitions, scrolling frames and flow starting points, in plans or on existing frames.
@@ -50,6 +51,9 @@ Layerwright closes that gap locally:
 - **Audit and fix existing frames.** Hard-coded colours become variables, raw text gets text styles, and custom buttons become component instances, in groups you can pick. Originals are hidden, never deleted.
 - **Design to code.** Map Figma components to your React components and check that the implementation uses them.
 - **Pixel-faithful mode** (`figma_import_html`) for review boards and art-heavy pages: exact layers, variant sets built from states, and instance swaps.
+- **Learns per project.** Font substitutions, mappings and component choices are reused next time, your corrections are kept as notes, and recurring problems come with a hint (`.layerwright/memory.json`, shareable). `npx layerwright report` drafts a redacted issue from them for you to send.
+- **Tells you about updates** in the plugin window, in Claude and in `doctor`.
+- **Fonts from exports:** `npx layerwright fonts ./export --install` installs the TTF/OTF fonts a design ships.
 - **No AI needed for a plain import.** `npx layerwright import ./design.html --to-figma` builds it in the open Figma file.
 
 ## Quickstart (3 steps)
@@ -106,9 +110,10 @@ Read more in [docs/architecture.md](https://github.com/shayan-m81/layerwright/bl
 | `figma_export_image` | A node as an image; compared with the source HTML or another node, with a diff heatmap |
 | `figma_status` / `figma_scan_design_system` / `figma_get_design_context` | Connection and page, Design System scan (components, variants, variables, styles, duplicate names), task-scoped context |
 | `figma_inspect` / `figma_verify` / `figma_select` | Snapshots (tree, summary, text, instances, or the subtree as a plan), plan-vs-canvas checks, select and zoom (switches page) |
-| `figma_analyze_design` / `figma_apply_transformations` | Audit a frame against the DS and apply the groups you approve |
+| `figma_analyze_design` / `figma_apply_transformations` | Audit a frame against the DS, or `mode: "sync"` after an import; apply the groups you approve |
 | `figma_import_html` / `figma_pages` / `figma_foundations` | Pixel-faithful import, page setup, variables and text styles |
 | `figma_cleanup` | List (and with approval remove) what Layerwright made in this session |
+| `layerwright_memory` | What the project remembers (fonts, mappings, component choices, notes, recurring problems); add notes or forget entries |
 | `code_scan_components` / `code_mapping` / `code_verify_usage` | Design to code: component mapping and usage checks |
 
 ## FAQ

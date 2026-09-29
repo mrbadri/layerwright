@@ -36,9 +36,11 @@ Don't ask what you can find out: the file, page, selection and DS come from `fig
 ## 2. Setup, once per session
 
 1. `figma_status`. Not connected → tell the user: *Figma desktop → Plugins → Development → Layerwright*.
-   Its `warnings` say when the scan is stale or Figma shows another page than your last build.
-2. `figma_scan_design_system` (cached; `refresh: true` after DS changes, `reload: true` after editing the cache file).
-   Read `duplicateNames`: components that share a name must be referenced by `{ id }`.
+   - `warnings` say when the scan is stale, Figma shows another page than your last build, or a newer Layerwright exists (tell the user once, with the steps given).
+   - `memory` is what this project learned: font substitutions and mappings (imports reuse them), component choices, the user's notes (follow them), and `recurring` problems with a `hint` (act on it instead of repeating the mistake).
+2. `figma_scan_design_system` (cached; `refresh: true` after DS changes, `reload: true` after editing the cache file). It reads local and library components, styles and variables; a big file takes 10–30 s.
+   Read `duplicateNames`: copies of one library set resolve to the most used; otherwise pick by `{ id }` (remembered afterwards).
+3. When the user corrects you or states a preference, save it: `layerwright_memory({ action: "note", note })`.
 
 ## 3. Job A: HTML → Figma
 
@@ -46,9 +48,11 @@ Don't ask what you can find out: the file, page, selection and DS come from `fig
   - Flexbox → Auto Layout; fixed CSS sizes stay fixed; inline `<b>/<span>/<a>` become one text with styled runs; `display: contents` wrappers vanish; RTL keeps logical order.
   - Automatic DS matching is conservative (a real name match, a label slot, a similar size). Skipped candidates are in `warnings`. When you know better, pass `mappings: [{ selector: ".btn-primary", component: "Button" | { id }, variant: { Type: "Primary" }, props: { Label: "$text" } }]`.
   - A missing font says why (a web font only ships as .woff2): install a TTF/OTF, or re-import with `fontMap: { "WebFont": "InstalledFont" }`.
+- **Several elements** (the cards of a review board): `targets: [{ selector, name }]`, each becomes its own frame; build into a section with `target: { parentId }` (approval).
 - **Pixel-exact:** `figma_import_html({ file, page?, section?, targets?, swaps?, components?, actions? })`.
   - `swaps` replace elements with instances: `component` by name, or `id`/`key` when names repeat; `overrides: "text"` (default: copy text, hide nothing), `"none"`, or `"match"` (also hide missing layers); `fills: true` to copy the element's fill. An unknown variant is an error, never a silent default.
-- **Then make it a system (option 2):** repeated frames → `figma_edit` componentize (§5), instances filled through text properties.
+- **Then use the Design System (option 2), always after an editable import when the file has one:** `figma_analyze_design({ target: <the imported frame or section>, mode: "sync" })`. It proposes DS buttons and badges (closest-looking variant), text styles by size and weight, and colour variables or styles. Show its `groups`, then `figma_apply_transformations({ analysisId, approved: true, groups | excludeGroups })`. Originals are hidden, one undo reverts it. Repeated custom frames → `figma_edit` componentize (§5).
+- **Fonts:** if the import or sync says a font is missing, the export often ships it: `npx layerwright fonts <export folder>` lists them, `--install` installs TTF/OTF (ask first; the user restarts Figma). A text style whose library isn't enabled for the file can't be applied: tell the user to enable the library (Assets → Libraries).
 - **Always check the picture:** `figma_export_image({ nodeId, compareWith: { html: path } })`. Look at both images and the heatmap; `regions` say where they differ. Fix and re-run until the verdict is a close match or the remaining differences are explained (font rendering).
 
 ## 4. Job B: build in Figma
@@ -118,5 +122,7 @@ validation, approval, rollback and verification.
 3. **Approval boundary:** new frames need none; anything that changes or removes existing nodes needs the user's yes, then `approved: true`.
 4. **Errors are data:** `{ success: false, errors: [{ type, message, suggestions, candidates }] }`. Fix the plan from them and preview again. `AMBIGUOUS_COMPONENT` → pick a candidate `{ id }` (ask if unclear). No fitting component → ask; don't invent one.
 5. **Verify with your eyes:** `verification.passed` checks structure, sizes and links; a picture catches the rest. Never report success on a build you haven't looked at.
+
+6. **Report what keeps failing:** if a problem recurs and isn't the user's setup, suggest `npx layerwright report` (a redacted issue draft they review and send).
 
 Error types: `INVALID_PLAN` · `COMPONENT_NOT_FOUND` · `AMBIGUOUS_COMPONENT` · `INVALID_VARIANT` · `TOKEN_NOT_FOUND` · `STYLE_NOT_FOUND` · `NODE_NOT_FOUND` · `DESIGN_SYSTEM_NOT_SCANNED` · `PLUGIN_DISCONNECTED` · `TIMEOUT` (inspect before retrying) · `NOT_APPROVED` · `FIGMA_API_ERROR` (the run was rolled back).

@@ -249,6 +249,8 @@ export interface ResolvedText extends ResolvedBase {
   content: string;
   textStyleId?: string;
   textStyleKey?: string;
+  /** The style's font, when the scan learned it from a layer (a library style may not report it). */
+  textStyleFont?: { family: string; style: string };
   fontSize?: number;
   /** Requested family; the executor falls back to an available one with a warning. Default Inter. */
   fontFamily?: string;
@@ -315,7 +317,7 @@ export type Transformation =
   | { id: string; op: "bind_number"; nodeId: string; nodeName: string; field: "itemSpacing" | "paddingTop" | "paddingRight" | "paddingBottom" | "paddingLeft" | "cornerRadius"; from: number; variableId: string; variableKey?: string; variableName: string; reason: string }
   | { id: string; op: "bind_fill"; nodeId: string; nodeName: string; from: string; variableId: string; variableKey?: string; variableName: string; reason: string }
   | { id: string; op: "apply_fill_style"; nodeId: string; nodeName: string; from: string; styleId: string; styleKey?: string; styleName: string; reason: string }
-  | { id: string; op: "apply_text_style"; nodeId: string; nodeName: string; styleId: string; styleKey?: string; styleName: string; reason: string }
+  | { id: string; op: "apply_text_style"; nodeId: string; nodeName: string; styleId: string; styleKey?: string; styleName: string; reason: string; font?: { family: string; style: string } }
   | { id: string; op: "convert_auto_layout"; nodeId: string; nodeName: string; direction: "HORIZONTAL" | "VERTICAL"; gap: number; padding: Padding; reason: string };
 
 // ---------- Execution results ----------

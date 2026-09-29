@@ -192,11 +192,19 @@ export async function scanDesignSystem(opts: { includeLibraries?: boolean; maxIn
   // used in the file (capped), then look them up in parallel.
   progress("Finding library styles and variables");
   const styleIds = new Set<string>(), varIds = new Set<string>();
+  // A library text style reached by id may not report its font; a layer using it does.
+  const sampleFont = new Map<string, FontName>();
   const known = new Set([...styles.map((x) => x.id), ...variables.map((v) => v.id)]);
   const layers = figma.root.findAllWithCriteria({ types: ["TEXT", "FRAME", "RECTANGLE", "ELLIPSE", "VECTOR", "COMPONENT", "INSTANCE"] });
   for (const n of layers.slice(0, opts.maxInstances ?? 60000)) {
     const any = n as unknown as { textStyleId?: unknown; fillStyleId?: unknown; strokeStyleId?: unknown; effectStyleId?: unknown; boundVariables?: Record<string, unknown> };
     for (const id of [any.textStyleId, any.fillStyleId, any.strokeStyleId, any.effectStyleId]) if (typeof id === "string" && id && !known.has(id)) styleIds.add(id);
+    if (n.type === "TEXT" && typeof n.textStyleId === "string" && n.textStyleId && !sampleFont.has(n.textStyleId)) {
+      try {
+        const f = n.fontName !== figma.mixed ? n.fontName : n.characters.length ? n.getRangeFontName(0, 1) : undefined;
+        if (f && f !== figma.mixed && typeof (f as FontName).family === "string") sampleFont.set(n.textStyleId, f as FontName);
+      } catch { /* unreadable */ }
+    }
     for (const v of Object.values(any.boundVariables ?? {})) for (const a of Array.isArray(v) ? v : [v]) { const id = (a as VariableAlias | undefined)?.id; if (id && !known.has(id)) varIds.add(id); }
   }
   lap("findUsedStyles");
@@ -205,9 +213,12 @@ export async function scanDesignSystem(opts: { includeLibraries?: boolean; maxIn
     if (!st) continue;
     if (st.type === "TEXT") {
       const t = st as TextStyle;
-      const lh = t.lineHeight.unit === "AUTO" ? "AUTO" : t.lineHeight.unit === "PIXELS" ? t.lineHeight.value : `${t.lineHeight.value}%`;
-      styles.push({ id: t.id, key: t.key, name: t.name, type: "TEXT", remote: t.remote, value: `${t.fontName.family} ${t.fontName.style} ${t.fontSize}/${lh}` });
-      typography.push({ styleId: t.id, name: t.name, fontFamily: t.fontName.family, fontStyle: t.fontName.style, fontSize: t.fontSize, lineHeight: lh, letterSpacing: t.letterSpacing.unit === "PIXELS" ? t.letterSpacing.value : undefined });
+      const lhv = t.lineHeight as LineHeight | undefined;
+      const lh = !lhv || typeof lhv !== "object" ? undefined : lhv.unit === "AUTO" ? "AUTO" : lhv.unit === "PIXELS" ? lhv.value : `${lhv.value}%`;
+      const font = typeof t.fontName === "object" && (t.fontName as FontName)?.family ? (t.fontName as FontName) : sampleFont.get(t.id);
+      styles.push({ id: t.id, key: t.key, name: t.name, type: "TEXT", remote: t.remote, value: `${font?.family ?? "?"} ${font?.style ?? "?"} ${t.fontSize}/${lh}` });
+      const ls = t.letterSpacing as LetterSpacing | undefined;
+      typography.push({ styleId: t.id, name: t.name, fontFamily: font?.family as string, fontStyle: font?.style as string, fontSize: t.fontSize, lineHeight: lh, letterSpacing: ls && typeof ls === "object" && ls.unit === "PIXELS" ? ls.value : undefined });
     } else if (st.type === "PAINT") {
       const p = (st as PaintStyle).paints[0];
       styles.push({ id: st.id, key: st.key, name: st.name, type: "PAINT", remote: st.remote, value: p?.type === "SOLID" ? toHex(p.color, p.opacity ?? 1) : p?.type });
@@ -226,6 +237,8 @@ export async function scanDesignSystem(opts: { includeLibraries?: boolean; maxIn
     variables.push({ id: v.id, key: v.key, name: v.name, collection: c?.name ?? "", type: v.resolvedType as VariableDefinition["type"], remote: v.remote, value, scopes: v.scopes as string[] });
   }
   lap("libraryStylesAndVariables");
+  const missingFonts = typography.filter((t) => !t.fontFamily).length;
+  if (missingFonts) warnings.push(`${missingFonts} library text style(s) don't report their font and no layer using them could tell; they can't be applied to new text in this file.`);
   progress("Design System scanned", 1, 1);
   return { fileName: figma.root.name, scannedAt: new Date().toISOString(), components, componentSets, variableCollections, variables, styles, typography, warnings, timings };
 }

@@ -60,9 +60,10 @@ export async function init(o: InitOptions = {}): Promise<number> {
   out(`✓ Skill copied to ${skillDir}`);
 
   const gi = join(dir, ".gitignore");
-  const line = ".layerwright/cache";
-  const cur = existsSync(gi) ? readFileSync(gi, "utf8") : "";
-  if (!cur.split(/\r?\n/).includes(line)) writeFileSync(gi, cur + (cur && !cur.endsWith("\n") ? "\n" : "") + line + "\n");
+  // The scan cache and report drafts stay local; mapping.json and memory.json are meant to be shared.
+  let cur = existsSync(gi) ? readFileSync(gi, "utf8") : "";
+  for (const line of [".layerwright/cache", ".layerwright/report.md"]) if (!cur.split(/\r?\n/).includes(line)) cur = cur + (cur && !cur.endsWith("\n") ? "\n" : "") + line + "\n";
+  writeFileSync(gi, cur);
 
   if (!o.skipBrowserCheck) {
     if (await chromiumAvailable()) out("✓ Chromium available for HTML import");

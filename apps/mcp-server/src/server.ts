@@ -315,7 +315,7 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
     const replaced = new Set(chosen.filter((t) => t.op === "replace_with_instance").map((t) => t.nodeId));
     const order = { convert_auto_layout: 0, replace_with_instance: 1, bind_number: 2, bind_fill: 3, apply_fill_style: 3, apply_text_style: 4 } as const;
     const final = chosen.filter((t) => t.op === "replace_with_instance" || !replaced.has(t.nodeId)).sort((x, y) => order[x.op] - order[y.op]);
-    const report = await bridge.request<TransformReport>("applyTransformations", { transformations: final }, 180_000);
+    const report = await bridge.request<TransformReport>("applyTransformations", { transformations: final }, 600_000);
     analyses.delete(analysisId);
     const byOp: Record<string, number> = {};
     for (const t of final) if (report.applied.some((a) => a.id === t.id)) byOp[t.op] = (byOp[t.op] ?? 0) + 1;

@@ -521,6 +521,7 @@ export function compilePlan(ds: DesignSystem, plan: DesignPlan, opts: { preferre
         letterSpacing: node.letterSpacing ? { unit: LH_UNIT[node.letterSpacing.unit as "px"], value: node.letterSpacing.value } : undefined,
         kind: "text", path, name: node.name ?? (t === "link" ? "Link" : node.content.slice(0, 40)), content: node.content,
         textStyleId: st?.styleId, textStyleKey: st ? ds.styles.find((s) => s.id === st.styleId && s.remote)?.key : undefined,
+        textStyleFont: st?.fontFamily && st.fontStyle ? { family: st.fontFamily, style: st.fontStyle } : undefined,
         fontSize: node.fontSize ?? (st ? undefined : fb.size), fontWeight: node.weight ? WEIGHT[node.weight as keyof typeof WEIGHT] : st ? undefined : fb.weight,
         fill: notePaint(r.resolvePaint(color, `${path}.color`, errors)),
         align, hyperlink: node.href,

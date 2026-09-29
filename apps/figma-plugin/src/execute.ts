@@ -14,6 +14,18 @@ export function withTimeout<T>(p: Promise<T>, ms = 10_000, what = "library impor
   });
 }
 
+/** A text style with its font readable. A library style reached by id may not carry its font until it's imported
+ *  (its fontName is a placeholder), so import it by key then. */
+export async function textStyleOf(id?: string, key?: string, font?: FontName): Promise<{ style: TextStyle; font: FontName } | null> {
+  const fontOf = (s: BaseStyle | null) => (s && s.type === "TEXT" && typeof (s as TextStyle).fontName === "object" && ((s as TextStyle).fontName as FontName)?.family ? (s as TextStyle).fontName as FontName : undefined);
+  let s = id ? await figma.getStyleByIdAsync(id).catch(() => null) : null;
+  if (s && fontOf(s)) return { style: s as TextStyle, font: fontOf(s)! };
+  // Library style without its data: the font the scan saw on a layer using it lets us apply it by id.
+  if (s && s.type === "TEXT" && font) return { style: s as TextStyle, font };
+  if (key) { const imp = await withTimeout(figma.importStyleByKeyAsync(key)).catch(() => null); if (imp && fontOf(imp)) return { style: imp as TextStyle, font: fontOf(imp)! }; }
+  return null;
+}
+
 /** A style: by id first (library styles the file already uses are reachable that way, instantly), then by key. */
 export async function styleOf(id?: string, key?: string): Promise<BaseStyle> {
   if (id) { const s = await figma.getStyleByIdAsync(id).catch(() => null); if (s) return s; }
@@ -260,12 +272,13 @@ async function buildText(n: ResolvedText, parent: BaseNode & ChildrenMixin, ctx:
   ctx.nodeIds[n.path] = t.id;
   await ctx.font(t.fontName as FontName);
   if (n.textStyleId || n.textStyleKey) {
-    const style = (await styleOf(n.textStyleId, n.textStyleKey).catch(() => null)) as TextStyle | null;
-    if (!style) throw new ExecError({ type: "STYLE_NOT_FOUND", path: n.path, message: `Text style ${n.textStyleId} not found.` });
-    await ctx.font(style.fontName);
+    const found = await textStyleOf(n.textStyleId, n.textStyleKey, n.textStyleFont);
+    if (!found) throw new ExecError({ type: "STYLE_NOT_FOUND", path: n.path, message: `Text style ${n.textStyleId} not found, or its library isn't available to this file.` });
+    const style = found.style;
+    await ctx.font(found.font);
     await t.setTextStyleIdAsync(style.id);
     // Explicit font fields override the style (the style stays linked, with overrides).
-    if (n.fontFamily || n.fontWeight || n.italic !== undefined) t.fontName = await ctx.resolveFont(n.fontFamily ?? style.fontName.family, n.fontWeight ?? style.fontName.style, n.italic ?? /italic/i.test(style.fontName.style), n.path);
+    if (n.fontFamily || n.fontWeight || n.italic !== undefined) t.fontName = await ctx.resolveFont(n.fontFamily ?? found.font.family, n.fontWeight ?? found.font.style, n.italic ?? /italic/i.test(found.font.style), n.path);
     if (n.fontSize) t.fontSize = n.fontSize;
   } else {
     t.fontName = await ctx.resolveFont(n.fontFamily ?? "Inter", n.fontWeight ?? "Regular", !!n.italic, n.path);
@@ -612,11 +625,11 @@ export async function applyTransformations(list: Transformation[]): Promise<Tran
         }
         case "apply_text_style": {
           if (node.type !== "TEXT") throw new Error("not a text node");
-          const style = (await styleOf(t.styleId, t.styleKey).catch(() => null)) as TextStyle | null;
-          if (!style) throw new Error(`text style ${t.styleName} not found`);
+          const found = await textStyleOf(t.styleId, t.styleKey, t.font);
+          if (!found) throw new Error(`text style ${t.styleName} not found, or its library isn't available to this file`);
           await ctx.fontsOf(node);
-          await ctx.font(style.fontName);
-          await node.setTextStyleIdAsync(style.id);
+          await ctx.font(found.font);
+          await node.setTextStyleIdAsync(found.style.id);
           report.applied.push({ id: t.id, nodeId: t.nodeId });
           break;
         }

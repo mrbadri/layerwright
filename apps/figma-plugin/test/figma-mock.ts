@@ -119,9 +119,9 @@ class C extends N {
 }
 
 const styles = new Map<string, any>([
-  ["S:h1", { id: "S:h1", fontName: { family: "Inter", style: "Bold" } }],
-  ["S:body", { id: "S:body", fontName: { family: "Inter", style: "Regular" } }],
-  ["S:cap", { id: "S:cap", fontName: { family: "Inter", style: "Regular" } }],
+  ["S:h1", { id: "S:h1", type: "TEXT", fontName: { family: "Inter", style: "Bold" } }],
+  ["S:body", { id: "S:body", type: "TEXT", fontName: { family: "Inter", style: "Regular" } }],
+  ["S:cap", { id: "S:cap", type: "TEXT", fontName: { family: "Inter", style: "Regular" } }],
 ]);
 
 export function resetFigma() {
