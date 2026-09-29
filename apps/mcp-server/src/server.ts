@@ -31,7 +31,7 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
   const home = join(workdir, ".layerwright");
   const cacheDir = join(home, "cache");
   const mappings = new MappingStore(join(home, "mapping.json"));
-  const plans = new Map<string, { plan: ResolvedPlan; summary: PlanSummary; report?: ExecutionReport; sources?: Record<string, { w: number; h?: number }> }>();
+  const plans = new Map<string, { plan: ResolvedPlan; summary: PlanSummary; report?: ExecutionReport; sources?: Record<string, { w: number; h?: number }>; webFonts?: Record<string, string[]> }>();
   const analyses = new Map<string, AnalysisResult>();
   let ds: DesignSystem | undefined;
   // Everything this server creates is tagged with the session (and run), so leftovers can be found and cleaned up.
@@ -121,16 +121,23 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
       viewport: z.union([z.number().int().min(200).max(4000), z.array(z.number().int().min(200).max(4000)).min(1).max(6)]).optional().describe("Viewport width(s). Default [1440, 390] (desktop + mobile)"),
       useDesignSystem: z.boolean().optional().describe("Map buttons/inputs/links to scanned DS components (default: true when a DS is cached)"),
       selector: z.string().optional().describe("CSS selector of the element to import (default body)"),
+      mappings: z.array(z.object({
+        selector: z.string().describe("CSS selector, e.g. .btn-primary"),
+        component: z.union([z.string(), z.object({ id: z.string().optional(), key: z.string().optional() }).strict()]),
+        variant: z.union([z.string(), z.record(z.string())]).optional(),
+        props: z.record(z.union([z.string(), z.boolean()])).optional().describe('Component props; "$text" is the element\'s text (default: { label: "$text" })'),
+      })).optional().describe("Your own element → component mappings; they win over automatic Design System matching"),
+      fontMap: z.record(z.string()).optional().describe('Replace font families, e.g. { "YekanBakhFaNum": "IRANYekanX" } for a web font that isn\'t installed'),
     },
-  }, async ({ path, viewport, useDesignSystem, selector }) => guard(async () => {
+  }, async ({ path, viewport, useDesignSystem, selector, mappings: userMappings, fontMap }) => guard(async () => {
     const cached = loadDs();
     const useDs = useDesignSystem ?? !!cached;
     if (useDs && !cached) return fail([{ type: "DESIGN_SYSTEM_NOT_SCANNED", message: "useDesignSystem needs a scan. Call figma_scan_design_system, or pass useDesignSystem: false." }]);
     const d = useDs ? cached! : emptyDesignSystem(bridge.info()?.fileName);
-    const r = await renderToPlan(resolve(workdir, path), { viewports: viewport === undefined ? undefined : [viewport].flat(), selector, ds: useDs ? d : undefined });
+    const r = await renderToPlan(resolve(workdir, path), { viewports: viewport === undefined ? undefined : [viewport].flat(), selector, ds: useDs ? d : undefined, mappings: userMappings, fontMap });
     const c = compilePlan(d, r.plan);
     if (!c.ok || !c.plan) return fail(c.errors, { warnings: [...r.warnings, ...c.warnings], summary: c.summary });
-    plans.set(c.plan.planId, { plan: c.plan, summary: c.summary, sources: r.sources });
+    plans.set(c.plan.planId, { plan: c.plan, summary: c.summary, sources: r.sources, webFonts: r.webFonts });
     return ok({ success: true, planId: c.plan.planId, summary: c.summary, mappedToDesignSystem: r.mapped, warnings: [...r.warnings, ...c.warnings].slice(0, 30), next: "Show the summary; then call figma_execute_plan with this planId." });
   }));
 
@@ -147,9 +154,18 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
     entry.report = report;
     lastPage = report.page?.name;
     const mismatches = await verifyPlan(entry.plan, report, entry.sources);
-    return ok({ success: true, created: report.createdRootIds, page: report.page?.name, run: m.run, nodeCount: Object.keys(report.nodeIds).length, warnings: [...images.warnings, ...report.warnings], verification: verdict(mismatches),
+    return ok({ success: true, created: report.createdRootIds, page: report.page?.name, run: m.run, nodeCount: Object.keys(report.nodeIds).length, warnings: [...images.warnings, ...explainFonts(report.warnings, entry.webFonts)], verification: verdict(mismatches),
       next: "Check it visually with figma_export_image (pass compareWith: { html } for an HTML import)." });
   }));
+
+  /** Say why a font is missing when the page only ships it as a web font (Figma can't load .woff/.woff2). */
+  const explainFonts = (warnings: string[], webFonts: Record<string, string[]> = {}) => warnings.map((w) => {
+    const m = w.match(/^Font "([^"]+)" is not (?:available|installed)/);
+    const formats = m && Object.entries(webFonts).find(([f]) => f.toLowerCase() === m[1].toLowerCase())?.[1];
+    if (!m || !formats) return w;
+    const webOnly = formats.length > 0 && formats.every((f) => f === "woff" || f === "woff2");
+    return `${w} The page loads it as a web font (${formats.join(", ") || "unknown format"})${webOnly ? ", which Figma can't use: install a TTF/OTF version of it on this machine" : ": install it on this machine"}, or re-import with fontMap: { "${m[1]}": "<an installed family>" }.`;
+  });
 
   const verifyPlan = async (plan: ResolvedPlan, report: ExecutionReport, sources?: Record<string, { w: number; h?: number }>) => {
     const all = [];
@@ -236,10 +252,16 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
       page: z.string().optional().describe("Page to build on (created if missing)"),
       section: z.string().optional().describe("Wrap the screens in a Figma section with this name"),
       gap: z.number().min(0).max(2000).optional(),
+      fontMap: z.record(z.string()).optional().describe('Replace font families, e.g. { "YekanBakhFaNum": "IRANYekanX" }'),
       dryRun: z.boolean().optional(),
     },
-  }, async ({ file, root, targets, swaps, actions, replace, components, only, page, section, gap, dryRun }) => guard(async () => {
+  }, async ({ file, root, targets, swaps, actions, replace, components, only, page, section, gap, fontMap, dryRun }) => guard(async () => {
     let screens = await importHtml({ file: resolve(workdir, file), root: root && resolve(workdir, root), targets, swaps, actions });
+    if (fontMap) {
+      const fm = new Map(Object.entries(fontMap).map(([k, v]) => [k.toLowerCase(), v]));
+      const walk = (n: any) => { if (n.type === "text" && fm.has(n.font.family.toLowerCase())) n.font = { ...n.font, family: fm.get(n.font.family.toLowerCase()) }; (n.children ?? []).forEach(walk); };
+      screens.forEach((s) => walk(s.tree));
+    }
     if (only?.length) screens = screens.filter((s) => only.some((o) => s.name.includes(o)));
     const list = screens.map((s) => ({ name: s.name, width: Math.round(s.width), height: Math.round(s.height), nodes: s.nodeCount }));
     if (dryRun || !screens.length) return ok({ dryRun: true, screens: list });

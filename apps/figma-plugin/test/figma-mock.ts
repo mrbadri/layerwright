@@ -81,7 +81,12 @@ export class T extends N {
   constructor(id?: string) { super("TEXT", id); }
   get characters() { return this._c; }
   set characters(v: string) { if (!loaded.has(`${this.fontName.family}::${this.fontName.style}`)) throw new Error(`Cannot write to node with unloaded font "${this.fontName.family} ${this.fontName.style}"`); this._c = v; }
-  getRangeAllFontNames() { return [this.fontName]; }
+  ranges: any[] = [];
+  getRangeAllFontNames() { return [this.fontName, ...this.ranges.filter((r) => r.font).map((r) => r.font)]; }
+  setRangeFontName(start: number, end: number, font: any) { if (!loaded.has(`${font.family}::${font.style}`)) throw new Error("range font not loaded"); this.ranges.push({ start, end, font }); }
+  setRangeFontSize(start: number, end: number, size: number) { this.ranges.push({ start, end, size }); }
+  setRangeFills(start: number, end: number, fills: any[]) { this.ranges.push({ start, end, fills }); }
+  setRangeHyperlink(start: number, end: number, link: any) { this.ranges.push({ start, end, link }); }
   async setTextStyleIdAsync(id: string) { const s = styles.get(id); if (!loaded.has(`${s.fontName.family}::${s.fontName.style}`)) throw new Error("unloaded style font"); this.textStyleId = id; this.fontName = s.fontName; }
 }
 

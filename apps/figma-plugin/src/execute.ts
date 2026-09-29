@@ -49,6 +49,7 @@ class Ctx {
   warnings: string[] = [];
   nodeIds: Record<string, string> = {};
   fonts = new Set<string>();
+  missing = new Set<string>();
   private catalog?: Map<string, string[]>;
 
   /** Resolve a family + weight to a loaded, available font. Never throws: falls back to Inter with a warning. */
@@ -64,7 +65,7 @@ class Ctx {
     const tries: FontName[] = [];
     const fam = byLower(family);
     if (fam) tries.push({ family: fam, style: closestStyle(catalog.get(fam)!, weight, italic)! });
-    else this.warnings.push(`${path}: font "${family}" is not available; using Inter.`);
+    else if (!this.missing.has(family.toLowerCase())) { this.missing.add(family.toLowerCase()); this.warnings.push(`Font "${family}" is not available in Figma; used Inter (first at ${path}).`); }
     const inter = byLower("Inter");
     tries.push({ family: "Inter", style: inter ? closestStyle(catalog.get(inter)!, weight, italic)! : "Regular" }, { family: "Inter", style: "Regular" });
     for (const f of tries) {
@@ -259,6 +260,16 @@ async function buildText(n: ResolvedText, parent: BaseNode & ChildrenMixin, ctx:
   if (n.align) t.textAlignHorizontal = n.align;
   await ctx.fill(t, n.fill);
   if (n.hyperlink && /^https?:\/\//.test(n.hyperlink)) t.hyperlink = { type: "URL", value: n.hyperlink };
+  // Styled runs: each range gets its own font, size, colour and link on top of the base style.
+  const base = t.fontName as FontName;
+  for (const r of n.runs ?? []) {
+    const end = Math.min(r.end, t.characters.length);
+    if (r.start >= end) continue;
+    if (r.fontFamily || r.fontWeight || r.italic !== undefined) t.setRangeFontName(r.start, end, await ctx.resolveFont(r.fontFamily ?? base.family, r.fontWeight ?? base.style, r.italic ?? /italic/i.test(base.style), n.path));
+    if (r.fontSize) t.setRangeFontSize(r.start, end, r.fontSize);
+    if (r.fill) t.setRangeFills(r.start, end, [await ctx.solid(r.fill)]);
+    if (r.hyperlink && /^https?:\/\//.test(r.hyperlink)) t.setRangeHyperlink(r.start, end, { type: "URL", value: r.hyperlink });
+  }
   t.textAutoResize = "WIDTH_AND_HEIGHT";
   if (n.sizingH === "fill" || n.width) t.textAutoResize = "HEIGHT";
   applySizing(t, n, ctx);

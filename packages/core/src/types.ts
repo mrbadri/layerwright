@@ -236,6 +236,8 @@ export interface ResolvedText extends ResolvedBase {
   fill?: Paint;
   align?: "LEFT" | "CENTER" | "RIGHT" | "JUSTIFIED";
   hyperlink?: string;
+  /** Character ranges with their own style, applied after the base font. */
+  runs?: { start: number; end: number; fontFamily?: string; fontWeight?: ResolvedText["fontWeight"]; italic?: boolean; fontSize?: number; fill?: Paint; hyperlink?: string }[];
 }
 
 export interface ResolvedInstance extends ResolvedBase {

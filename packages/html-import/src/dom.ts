@@ -19,17 +19,28 @@ export interface DomNode {
   kind: "element" | "text" | "svg" | "image";
   tag: string; name: string; box: DomBox; style: DomStyle;
   text?: string; lines?: number; svg?: string; src?: string;
-  attrs: { role?: string; type?: string; placeholder?: string; value?: string; ariaLabel?: string; href?: string; id?: string; testid?: string };
+  /** Styled pieces of one text (inline <b>, <span>, <a>): offsets into `text` with the piece's own font. */
+  runs?: { start: number; end: number; font: NonNullable<DomStyle["font"]>; href?: string }[];
+  attrs: { role?: string; type?: string; placeholder?: string; value?: string; ariaLabel?: string; href?: string; id?: string; testid?: string; mark?: number };
   children: DomNode[];
 }
 
-export async function readDom(page: Page, selector = "body"): Promise<DomNode> {
-  const root = await page.evaluate(SERIALIZE_DOM, selector);
-  if (!root) throw new Error(`Nothing rendered for "${selector}".`);
-  return root as DomNode;
+export interface DomRead { root: DomNode; webFonts: Record<string, string[]> }
+
+/** Read the rendered DOM. Elements matching `marks[i]` carry `attrs.mark = i` (user component mappings). */
+export async function readDom(page: Page, selector = "body", marks: string[] = []): Promise<DomNode> {
+  return (await readPage(page, selector, marks)).root;
 }
 
-const SERIALIZE_DOM = (selector: string) => {
+export async function readPage(page: Page, selector = "body", marks: string[] = []): Promise<DomRead> {
+  const res = await page.evaluate(SERIALIZE_DOM, { selector, marks });
+  if ("error" in res) throw new Error(res.error);
+  if (!res.root) throw new Error(`Nothing rendered for "${selector}".`);
+  return res as DomRead;
+}
+
+const SERIALIZE_DOM = ({ selector, marks }: { selector: string; marks: string[] }): any => {
+  for (const m of marks) { try { document.querySelector(m); } catch { return { error: `Invalid CSS selector in mappings: "${m}"` }; } }
   const px = (v: string) => parseFloat(v) || 0;
   const rgba = (v: string) => {
     const m = v.match(/rgba?\(([^)]+)\)/);
@@ -95,6 +106,7 @@ const SERIALIZE_DOM = (selector: string) => {
     placeholder: el.getAttribute("placeholder") ?? undefined, value: (el as HTMLInputElement).value || undefined,
     ariaLabel: el.getAttribute("aria-label") ?? undefined, href: el.getAttribute("href") ?? undefined,
     id: el.id || undefined, testid: el.getAttribute("data-testid") ?? undefined,
+    mark: (() => { const i = marks.findIndex((m) => el.matches(m)); return i >= 0 ? i : undefined; })(),
   });
 
   const svgMarkup = (el: SVGSVGElement, r: DOMRect) => {
@@ -125,6 +137,48 @@ const SERIALIZE_DOM = (selector: string) => {
     else if (cs.textTransform === "lowercase") text = text.toLowerCase();
     const parent = n.parentElement!;
     return { kind: "text", tag: "#text", name: text.slice(0, 40), box: { x: tr.left - ox, y: tr.top - oy, w: tr.width, h: tr.height }, style: style ?? styleOf(parent, cs), text, lines: new Set([...range.getClientRects()].filter((q) => q.width > 0).map((q) => Math.round(q.top))).size || 1, attrs: {}, children: [] };
+  };
+
+  // Inline formatting: text mixed with plain inline elements (<b>, <span>, <a>, <br>; no box of their own) is one
+  // paragraph in the browser, so it becomes one text with styled runs instead of many positioned text layers.
+  const plainInline = (e: Element): boolean => {
+    const c = getComputedStyle(e);
+    if (c.display !== "inline" || ["svg", "img", "input", "textarea", "select", "button"].includes(e.tagName.toLowerCase())) return false;
+    const box = rgba(c.backgroundColor) || [c.borderTopStyle, c.borderRightStyle, c.borderBottomStyle, c.borderLeftStyle].some((b) => b !== "none")
+      || [c.paddingLeft, c.paddingRight, c.paddingTop, c.paddingBottom].some((v) => px(v) > 0) || c.backgroundImage !== "none" || c.boxShadow !== "none";
+    return !box && [...e.children].every((k) => k.tagName.toLowerCase() === "br" || plainInline(k));
+  };
+  const inlineRuns = (el: Element, cs: CSSStyleDeclaration, r: DOMRect): any => {
+    const kids = [...el.childNodes];
+    const elems = kids.filter((n) => n.nodeType === 1) as Element[];
+    if (!elems.length || !elems.every((k) => k.tagName.toLowerCase() === "br" || plainInline(k))) return null;
+    if (!kids.some((n) => n.nodeType === 3 && n.textContent!.trim()) && elems.length < 2) return null;
+    // Walk the text in order, collapsing whitespace across piece boundaries like the browser does.
+    const pieces: { text: string; el: Element }[] = [];
+    const visit = (n: Node, owner: Element) => {
+      if (n.nodeType === 3) pieces.push({ text: n.textContent ?? "", el: owner });
+      else if (n.nodeType === 1) { const e = n as Element; if (e.tagName.toLowerCase() === "br") pieces.push({ text: "\n", el: owner }); else e.childNodes.forEach((k) => visit(k, e)); }
+    };
+    kids.forEach((k) => visit(k, el));
+    let text = "";
+    const runs: any[] = [];
+    for (const pc of pieces) {
+      const ps = getComputedStyle(pc.el);
+      let t = pc.text === "\n" ? "\n" : pc.text.replace(/\s+/g, " ");
+      if (t !== "\n" && (text === "" || /[ \n]$/.test(text))) t = t.replace(/^ /, "");
+      if (ps.textTransform === "uppercase") t = t.toUpperCase(); else if (ps.textTransform === "lowercase") t = t.toLowerCase();
+      if (!t) continue;
+      const start = text.length;
+      text += t;
+      if (pc.el !== el) runs.push({ start, end: text.length, font: styleOf(pc.el, ps).font, href: pc.el.closest("a")?.getAttribute("href") ?? undefined });
+    }
+    const trimmed = text.replace(/ +$/, "");
+    if (!trimmed.trim()) return null;
+    const range = document.createRange(); range.selectNodeContents(el);
+    const tr = range.getBoundingClientRect();
+    const lines = new Set([...range.getClientRects()].filter((q) => q.width > 0).map((q) => Math.round(q.top))).size || 1;
+    return { kind: "text", tag: "#text", name: trimmed.slice(0, 40), box: { x: tr.left - r.left, y: tr.top - r.top, w: tr.width, h: tr.height }, style: styleOf(el, cs), text: trimmed,
+      lines, runs: runs.map((x) => ({ ...x, end: Math.min(x.end, trimmed.length) })).filter((x) => x.end > x.start), attrs: {}, children: [] };
   };
 
   const walk = (el: Element, ox: number, oy: number): any => {
@@ -161,6 +215,8 @@ const SERIALIZE_DOM = (selector: string) => {
       if (shown) base.children.push({ kind: "text", tag: "#text", name: shown.slice(0, 40), box: (() => { const lh = cs.lineHeight === "normal" ? px(cs.fontSize) * 1.25 : px(cs.lineHeight); const bl = px(cs.borderLeftWidth), br = px(cs.borderRightWidth); return { x: px(cs.paddingLeft) + bl, y: Math.max(0, (r.height - lh) / 2), w: Math.max(1, r.width - px(cs.paddingLeft) - px(cs.paddingRight) - bl - br), h: lh }; })(), style: { ...base.style, font: { ...base.style.font, color: i.value ? base.style.font.color : rgba(getComputedStyle(el, "::placeholder").color) ?? base.style.font.color } }, text: shown, lines: 1, attrs: {}, children: [] });
       return { ...base, kind: "element" };
     }
+    const merged = inlineRuns(el, cs, r);
+    if (merged) { base.children.push(merged); return { ...base, kind: "element" }; }
     for (const n of el.childNodes) {
       if (n.nodeType === 3) {
         const t = textChild(n, cs, r.left, r.top, base.style);
@@ -173,11 +229,24 @@ const SERIALIZE_DOM = (selector: string) => {
     return { ...base, kind: "element" };
   };
 
+  // Web fonts by family, with the formats the page ships (Figma can only use fonts installed as TTF/OTF).
+  const webFonts: Record<string, string[]> = {};
+  for (const sheet of [...document.styleSheets]) {
+    let rules: CSSRuleList;
+    try { rules = sheet.cssRules; } catch { continue; } // cross-origin stylesheet
+    for (const rule of [...rules]) {
+      if (!(rule instanceof CSSFontFaceRule)) continue;
+      const fam = rule.style.getPropertyValue("font-family").replace(/["']/g, "").trim();
+      const src = rule.style.getPropertyValue("src");
+      const formats = [...src.matchAll(/\.(woff2|woff|ttf|otf)\b|format\(["']?(woff2|woff|truetype|opentype)/g)].map((m) => (m[1] ?? m[2]).replace("truetype", "ttf").replace("opentype", "otf"));
+      if (fam) webFonts[fam] = [...new Set([...(webFonts[fam] ?? []), ...formats])];
+    }
+  }
   const el = document.querySelector(selector);
-  if (!el) return null;
+  if (!el) return { root: null, webFonts };
   const r = el.getBoundingClientRect();
   let root = walk(el, r.left, r.top);
   if (root?.kind === "contents") root = null;
   if (root) { root.box.x = 0; root.box.y = 0; root.box.h = Math.max(root.box.h, document.documentElement.scrollHeight); }
-  return root;
+  return { root, webFonts };
 };

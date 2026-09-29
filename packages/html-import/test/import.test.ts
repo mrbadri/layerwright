@@ -152,3 +152,41 @@ maybe("DS mapping never uses a shape-only guess: an accordion with one text laye
   assert.deepEqual(r.mapped, {});
   assert.ok(r.warnings.some((w) => /QA Accordion: matched only by shape/.test(w)), r.warnings.join("\n"));
 });
+
+maybe("inline runs (<b>, <a>) become one text layer with styled ranges, in logical order (RTL too)", async () => {
+  const { plan } = await renderToPlan(fixture("inline.html"), { viewports: [390] });
+  const texts: any[] = [];
+  const walk = (n: any) => { if (n.type === "text") texts.push(n); (n.children ?? []).forEach(walk); };
+  walk(plan.screens[0]);
+  assert.equal(texts.length, 2, texts.map((t) => t.content).join(" | "));
+  const [fa, en] = texts;
+  assert.equal(fa.content, "مرحله ۳ از ۵ · تکمیل شواهد");
+  assert.deepEqual(fa.runs.map((r: any) => [r.text, r.weight, r.color]), [["مرحله ۳ از ۵ · ", undefined, undefined], ["تکمیل شواهد", "bold", "#176B66"]]);
+  assert.equal(en.content, "Upload two documents, then read the help page.");
+  assert.deepEqual(en.runs.filter((r: any) => Object.keys(r).length > 1).map((r: any) => [r.text, r.weight ?? r.href]), [["two", "bold"], ["help page", "https://example.com/help"]]);
+  // And the executor applies them as ranges.
+  const { resetFigma } = await import("../../../apps/figma-plugin/test/figma-mock.ts");
+  const { executePlan } = await import("../../../apps/figma-plugin/src/execute.ts");
+  const c = compilePlan({ ...fixtureDs(), typography: [] }, plan);
+  assert.deepEqual(c.errors, []);
+  const page = resetFigma();
+  await executePlan(c.plan!);
+  const t = page.children[0].findAllWithCriteria({ types: ["TEXT"] }).find((x: any) => x.characters.startsWith("Upload"));
+  assert.ok(t.ranges.some((r: any) => r.font?.style === "Bold" && t.characters.slice(r.start, r.end) === "two"));
+  assert.ok(t.ranges.some((r: any) => r.link?.value === "https://example.com/help"));
+});
+
+maybe("user mappings turn chosen elements into that component (winning over automatic matching); fontMap swaps families", async () => {
+  const r = await renderToPlan(fixture("login.html"), { viewports: [390], ds: fixtureDs(),
+    mappings: [{ selector: "button", component: { id: "1:1" }, variant: { Type: "Secondary" }, props: { Label: "$text" } }], fontMap: { Vazirmatn: "Inter" } });
+  const nodes: any[] = [];
+  const walk = (n: any) => { nodes.push(n); (n.children ?? []).forEach(walk); };
+  walk(r.plan.screens[0]);
+  const btn = nodes.find((n) => n.type === "component");
+  assert.deepEqual([btn.component, btn.variant, btn.props], [{ id: "1:1" }, { Type: "Secondary" }, { Label: "Sign in" }]);
+  assert.ok(!nodes.some((n) => n.type === "button"), "no automatic mapping for the element the user mapped");
+  assert.ok(nodes.filter((n) => n.type === "text").every((t) => t.fontFamily === "Inter"));
+  const c = compilePlan(fixtureDs(), r.plan);
+  assert.deepEqual(c.errors, []);
+  assert.ok(Object.keys(c.summary.instances).includes("Button / Secondary, Medium"));
+});

@@ -20,6 +20,9 @@ All notable changes to this project are documented here. The format follows
 - A plan resolved against a stale scan no longer builds instances of a component that was deleted in the meantime.
 
 ### Added
+- HTML import: text mixed with inline elements (`<b>`, `<span>`, `<a>`, `<br>`) is one text layer with styled ranges (weight, colour, size, links), in logical order for RTL, instead of many positioned layers. The DSL's `text` takes `runs`.
+- HTML import: `mappings: [{ selector, component, variant?, props? }]` turns chosen elements into a component (`"$text"` = the element's text), ahead of automatic matching. `fontMap` replaces font families (also in `figma_import_html`).
+- A font that's missing because the page only ships it as `.woff`/`.woff2` now says so and suggests installing a TTF/OTF or using `fontMap`. Missing-font warnings come once per family.
 - `figma_edit`: rename, move (to a parent, section or page), duplicate, set (visibility, position, size, opacity, text, instance properties), delete, resizeToFit and componentize, in one undo step. Ops can refer to earlier results (`"$0"`). Changing existing nodes needs `approved: true`; without it, delete only hides the node and prefixes 🗑.
 - Componentize turns existing frames into a component, several components, or one component set (`variants: [{ State: "Expanded" }, …]`). It works on copies by default, placed next to the originals, can expose text layers as TEXT properties (`exposeText`), and gives cleanly stacked layers Auto Layout so the component adapts to new text.
 - `target.page` in plans (name or id): the plan builds there, never silently on whatever page is open. `figma_select` switches to the page of the nodes; `figma_status` warns when Figma shows a different page than the last build.

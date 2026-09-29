@@ -55,6 +55,12 @@ const Base = {
   maxWidth: z.number().min(0).max(20000).optional(),
 };
 
+/** A piece of a text with its own style (bold word, coloured link). Unset fields inherit from the text. */
+export const TextRun = z.object({
+  text: z.string().min(1).max(5000), weight: Weight.optional(), italic: z.boolean().optional(), fontFamily: z.string().min(1).max(100).optional(),
+  fontSize: z.number().min(1).max(400).optional(), color: ColorRef.optional(), href: z.string().optional(),
+}).strict();
+
 export const TextRole = z.enum(["display", "heading", "subheading", "title", "body", "label", "caption", "overline", "code"]);
 
 const ContainerStyle = {
@@ -107,7 +113,9 @@ export const DesignNodeSchema: z.ZodType<any> = z.lazy(() =>
     z.object({ type: z.literal("text"), ...Base, content: z.string().max(5000), role: TextRole.optional(), style: z.string().nullable().optional(), color: ColorRef.optional(), fontSize: z.number().min(1).max(400).optional(),
       fontFamily: z.string().min(1).max(100).optional(), weight: Weight.optional(), italic: z.boolean().optional(),
       lineHeight: LineHeight.optional(), letterSpacing: LetterSpacing.optional(),
-      align: z.enum(["left", "center", "right", "justified"]).optional(), direction: z.enum(["ltr", "rtl"]).optional() }).strict(),
+      align: z.enum(["left", "center", "right", "justified"]).optional(), direction: z.enum(["ltr", "rtl"]).optional(),
+      /** Styled pieces of one text; their texts joined must equal `content`. */
+      runs: z.array(TextRun).max(200).optional() }).strict(),
     z.object({ type: z.literal("link"), ...Base, content: z.string().max(500), href: z.string().optional(), style: z.string().optional(), color: ColorRef.optional(), ...ComponentRef }).strict(),
     ...(["component", "component-instance", "button", "input"] as const).map((t) =>
       z.object({ type: z.literal(t), ...Base, ...ComponentRef }).strict(),

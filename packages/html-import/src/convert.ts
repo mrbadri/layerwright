@@ -27,7 +27,12 @@ const textOnly = (d: DomNode) => d.kind === "element" && d.children.length === 1
 /** Structure fingerprint used to spot repeated siblings (cards, list items). */
 const signature = (d: DomNode, depth = 2): string => `${d.tag}(${depth ? d.children.map((c) => signature(c, depth - 1)).join(",") : ""})`;
 
-export function toPlan(screens: { name: string; width: number; dom: DomNode }[], opts: { name?: string } = {}): ConvertResult {
+/** The user's own mapping: elements matching `selector` become this component. In props, "$text" is the element's text. */
+export interface ComponentMapping { selector: string; component: string | { id?: string; key?: string }; variant?: string | Record<string, string>; props?: Record<string, string | boolean> }
+
+export function toPlan(screens: { name: string; width: number; dom: DomNode }[], opts: { name?: string; mappings?: ComponentMapping[]; fontMap?: Record<string, string> } = {}): ConvertResult {
+  const fontMap = new Map(Object.entries(opts.fontMap ?? {}).map(([k, v]) => [k.toLowerCase(), v]));
+  const mapFont = (f?: string) => (f ? fontMap.get(f.toLowerCase()) ?? f : f);
   const hints: Hint[] = [];
   const warnings: string[] = [];
   const sources: SourceBoxes = {};
@@ -53,13 +58,14 @@ export function toPlan(screens: { name: string; width: number; dom: DomNode }[],
     const alignCss = f.align === "start" ? (rtl ? "right" : "left") : f.align === "end" ? (rtl ? "left" : "right") : f.align;
     return {
       type: "text", name: d.name.slice(0, 60) || "Text", content: d.text!.slice(0, 5000),
-      fontFamily: f.family || undefined, weight: weightName(f.weight), fontSize: round(f.size),
+      fontFamily: mapFont(f.family) || undefined, weight: weightName(f.weight), fontSize: round(f.size),
       // line-height: normal depends on the font's metrics, and Figma's AUTO differs from Chrome's: use the rendered one.
       lineHeight: f.lineHeight ? { unit: "px", value: round(f.lineHeight) } : d.box.h > 0 ? { unit: "px", value: round(d.box.h / Math.max(1, d.lines ?? 1)) } : undefined,
       letterSpacing: f.letterSpacing ? { unit: "px", value: round(f.letterSpacing) } : undefined,
       italic: f.italic || undefined, color: hex(f.color),
       align: ({ left: "left", right: "right", center: "center", justify: "justified" } as Record<string, string>)[alignCss] ?? (rtl ? "right" : undefined),
       direction: rtl ? "rtl" : undefined,
+      runs: d.runs?.length ? toRuns(d.text!.slice(0, 5000), d.runs, f)?.map((x) => (x.fontFamily ? { ...x, fontFamily: mapFont(x.fontFamily) } : x)) : undefined,
       _box: box,
     };
   };
@@ -72,6 +78,13 @@ export function toPlan(screens: { name: string; width: number; dom: DomNode }[],
       let src = d.src;
       if (src && !/^(data:image\/(png|jpe?g|gif);base64,|https:\/\/)/.test(src)) { warnings.push(`${path}: image "${src.slice(0, 80)}" is not a data/https URL; placeholder used.`); src = undefined; }
       return { type: "image", name: d.attrs.ariaLabel || "Image", src, fit: d.style.objectFit === "contain" ? "fit" : "fill", radius: d.style.radius, _box: d.box };
+    }
+    // The user's mappings win over everything else: the element becomes that component, with its text as props.
+    if (d.kind === "element" && d.attrs.mark !== undefined && opts.mappings?.[d.attrs.mark]) {
+      const m = opts.mappings[d.attrs.mark];
+      const label = collectText(d).slice(0, 200);
+      const props = m.props ? Object.fromEntries(Object.entries(m.props).map(([k, v]) => [k, v === "$text" ? label : v])) : label ? { label } : undefined;
+      return { type: "component", name: d.name.slice(0, 120) || d.tag, component: m.component, variant: m.variant, props, _box: d.box, _mapped: true };
     }
     // Plain wrappers disappear: a text-only element becomes the text itself (with the element's box,
     // so centred/right-aligned headings stay put), and a single-child wrapper hands over its child.
@@ -191,6 +204,13 @@ export function toPlan(screens: { name: string; width: number; dom: DomNode }[],
     const hugText = !!c._hugText;
     const fixedH = !!c._fixedH;
     delete c._hugText; delete c._fixedW; delete c._fixedH;
+    if (c._mapped) {
+      delete c._mapped;
+      if (p.absolute || !p.auto) c.position = { type: "absolute", x: round(b.x), y: round(b.y) };
+      else if (!p.horizontal && Math.abs(b.w - p.inner.w) < 1) c.width = "fill";
+      else if (p.horizontal && (k.style.flexGrow ?? 0) > 0) c.width = "fill";
+      return;
+    }
     const w = round(Math.max(1, b.w)), h = round(Math.max(1, b.h));
     // An Auto Layout frame hugs its content unless its CSS height was bigger than the content.
     const autoH = (c.type === "frame" && c.layout?.direction && c.layout.direction !== "none") ? (fixedH ? h : "hug") : h;
@@ -222,6 +242,29 @@ export function toPlan(screens: { name: string; width: number; dom: DomNode }[],
     }),
   } as DesignPlan;
   return { plan: strip(plan) as DesignPlan, hints, warnings, sources };
+}
+
+/** DOM runs → DSL runs covering the whole text; each carries only what differs from the text's own font. */
+function toRuns(text: string, runs: NonNullable<DomNode["runs"]>, base: NonNullable<DomNode["style"]["font"]>) {
+  const out: any[] = [];
+  let at = 0;
+  const plain = (end: number) => { if (end > at) out.push({ text: text.slice(at, end) }); at = Math.max(at, end); };
+  for (const r of [...runs].sort((a, b) => a.start - b.start)) {
+    if (r.start < at || r.end > text.length) continue;
+    plain(r.start);
+    const f = r.font, piece: any = { text: text.slice(r.start, r.end) };
+    if (f.weight !== base.weight) piece.weight = weightName(f.weight);
+    if (f.italic !== base.italic) piece.italic = f.italic;
+    if (f.family && f.family !== base.family) piece.fontFamily = f.family;
+    if (Math.abs(f.size - base.size) > 0.01) piece.fontSize = round(f.size);
+    if (f.color && hex(f.color) !== hex(base.color)) piece.color = hex(f.color);
+    if (r.href && /^https?:/.test(r.href)) piece.href = r.href;
+    out.push(piece);
+    at = r.end;
+  }
+  plain(text.length);
+  // Nothing styled differently: a plain text is simpler.
+  return out.some((x) => Object.keys(x).length > 1) ? out : undefined;
 }
 
 function padObj(p: [number, number, number, number]) {

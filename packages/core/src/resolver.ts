@@ -470,6 +470,15 @@ export function compilePlan(ds: DesignSystem, plan: DesignPlan): CompileResult {
         fontSize: node.fontSize ?? (st ? undefined : fb.size), fontWeight: node.weight ? WEIGHT[node.weight as keyof typeof WEIGHT] : st ? undefined : fb.weight,
         fill: notePaint(r.resolvePaint(color, `${path}.color`, errors)),
         align, hyperlink: node.href,
+        runs: node.runs ? (() => {
+          if (node.runs.map((x: any) => x.text).join("") !== node.content) { errors.push({ type: "INVALID_PLAN", path: `${path}.runs`, message: "The runs' texts joined must equal content." }); return undefined; }
+          let at = 0;
+          return node.runs.map((x: any, i: number) => {
+            const start = at; at += x.text.length;
+            return { start, end: at, fontFamily: x.fontFamily, fontWeight: x.weight ? WEIGHT[x.weight as keyof typeof WEIGHT] : undefined, italic: x.italic, fontSize: x.fontSize,
+              fill: notePaint(r.resolvePaint(x.color, `${path}.runs[${i}].color`, errors)), hyperlink: x.href };
+          }).filter((x: any) => x.fontFamily || x.fontWeight || x.italic !== undefined || x.fontSize || x.fill || x.hyperlink);
+        })() : undefined,
         width: w.size, height: h.size, sizingH: defaultH(stretch), sizingV: h.mode,
       } as ResolvedNode;
     }
