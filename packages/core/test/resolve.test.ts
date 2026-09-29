@@ -82,3 +82,20 @@ test("a role picks a DS style; an explicit style plus font fields keeps both; st
   assert.equal(both.fontSize, 32);
   assert.equal(textOf({ type: "text", role: "heading", style: null, content: "H" }).textStyleId, undefined);
 });
+
+test("verification flags sizes far from the plan or the source, hidden layers and missing text overrides", async () => {
+  const { verifyAgainstPlan } = await import("../src/index.ts");
+  const frame: any = { kind: "frame", path: "screens[0]", name: "Card", role: "frame", width: 480, sizingH: "fixed", layout: { direction: "VERTICAL" }, children: [
+    { kind: "instance", path: "screens[0].children[0]", name: "Acc", componentId: "9:1.1", remote: false, componentName: "Accordion / Expanded", properties: {}, textOverrides: { Title: "Evidence" } },
+  ] };
+  const snap: any = { id: "1", type: "FRAME", name: "Card", w: 480, h: 1162, layout: { mode: "VERTICAL" }, children: [
+    { id: "2", type: "INSTANCE", name: "Acc", w: 320, h: 80, instance: { componentId: "9:1.1", overrides: { Badge: ["visible"] } },
+      children: [{ id: "3", type: "TEXT", name: "Title", text: { chars: "Title" } }] },
+  ] };
+  const issues = verifyAgainstPlan(frame, snap, { sources: { "screens[0]": { w: 480, h: 490 } } }).map((m) => m.issue);
+  assert.ok(issues.includes("size far from the source's rendered box"));
+  assert.ok(issues.includes("layers hidden by an override the plan didn't ask for"));
+  assert.ok(issues.includes('text "Title" not overridden'));
+  snap.h = 492; snap.children[0].instance.overrides = {}; snap.children[0].children[0].text.chars = "Evidence";
+  assert.deepEqual(verifyAgainstPlan(frame, snap, { sources: { "screens[0]": { w: 480, h: 490 } } }), []);
+});

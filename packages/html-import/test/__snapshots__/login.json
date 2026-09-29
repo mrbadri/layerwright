@@ -47,6 +47,10 @@
               "fontSize": 24,
               "fontFamily": "Vazirmatn",
               "weight": "bold",
+              "lineHeight": {
+                "unit": "px",
+                "value": 38
+              },
               "align": "left"
             },
             {
@@ -71,6 +75,10 @@
                   "fontSize": 13,
                   "fontFamily": "Vazirmatn",
                   "weight": "regular",
+                  "lineHeight": {
+                    "unit": "px",
+                    "value": 20
+                  },
                   "align": "left"
                 },
                 {
@@ -103,6 +111,10 @@
                       "fontSize": 15,
                       "fontFamily": "Vazirmatn",
                       "weight": "regular",
+                      "lineHeight": {
+                        "unit": "px",
+                        "value": 18.75
+                      },
                       "align": "left"
                     }
                   ]
@@ -131,6 +143,10 @@
                   "fontSize": 13,
                   "fontFamily": "Vazirmatn",
                   "weight": "regular",
+                  "lineHeight": {
+                    "unit": "px",
+                    "value": 20
+                  },
                   "align": "left"
                 },
                 {
@@ -163,6 +179,10 @@
                       "fontSize": 15,
                       "fontFamily": "Vazirmatn",
                       "weight": "regular",
+                      "lineHeight": {
+                        "unit": "px",
+                        "value": 18.75
+                      },
                       "align": "left"
                     }
                   ]
@@ -197,6 +217,10 @@
                   "fontSize": 15,
                   "fontFamily": "Vazirmatn",
                   "weight": "bold",
+                  "lineHeight": {
+                    "unit": "px",
+                    "value": 23
+                  },
                   "align": "center"
                 }
               ]
@@ -222,6 +246,10 @@
                   "fontSize": 13,
                   "fontFamily": "Vazirmatn",
                   "weight": "regular",
+                  "lineHeight": {
+                    "unit": "px",
+                    "value": 20
+                  },
                   "align": "center"
                 }
               ]
@@ -274,6 +302,10 @@
               "fontSize": 24,
               "fontFamily": "Vazirmatn",
               "weight": "bold",
+              "lineHeight": {
+                "unit": "px",
+                "value": 38
+              },
               "align": "left"
             },
             {
@@ -298,6 +330,10 @@
                   "fontSize": 13,
                   "fontFamily": "Vazirmatn",
                   "weight": "regular",
+                  "lineHeight": {
+                    "unit": "px",
+                    "value": 20
+                  },
                   "align": "left"
                 },
                 {
@@ -330,6 +366,10 @@
                       "fontSize": 15,
                       "fontFamily": "Vazirmatn",
                       "weight": "regular",
+                      "lineHeight": {
+                        "unit": "px",
+                        "value": 18.75
+                      },
                       "align": "left"
                     }
                   ]
@@ -358,6 +398,10 @@
                   "fontSize": 13,
                   "fontFamily": "Vazirmatn",
                   "weight": "regular",
+                  "lineHeight": {
+                    "unit": "px",
+                    "value": 20
+                  },
                   "align": "left"
                 },
                 {
@@ -390,6 +434,10 @@
                       "fontSize": 15,
                       "fontFamily": "Vazirmatn",
                       "weight": "regular",
+                      "lineHeight": {
+                        "unit": "px",
+                        "value": 18.75
+                      },
                       "align": "left"
                     }
                   ]
@@ -424,6 +472,10 @@
                   "fontSize": 15,
                   "fontFamily": "Vazirmatn",
                   "weight": "bold",
+                  "lineHeight": {
+                    "unit": "px",
+                    "value": 23
+                  },
                   "align": "center"
                 }
               ]
@@ -449,6 +501,10 @@
                   "fontSize": 13,
                   "fontFamily": "Vazirmatn",
                   "weight": "regular",
+                  "lineHeight": {
+                    "unit": "px",
+                    "value": 20
+                  },
                   "align": "center"
                 }
               ]

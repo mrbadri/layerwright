@@ -140,3 +140,15 @@ maybe("display: contents wrappers vanish; fixed CSS sizes stay fixed; content-si
   assert.equal(chip.width, "hug");
   assert.equal(chip.height, "hug");
 });
+
+maybe("DS mapping never uses a shape-only guess: an accordion with one text layer is not a button", async () => {
+  const { enrichDesignSystem } = await import("@cde/core");
+  const base = fixtureDs();
+  // Only an accordion (no "button" in its name) that happens to look like a button by shape.
+  const ds = enrichDesignSystem({ ...base,
+    componentSets: [{ id: "8:1", key: "k8", name: "QA Accordion", remote: false, variantIds: ["8:2"], properties: [{ key: "State", name: "State", type: "VARIANT", options: ["Collapsed"] }] }],
+    components: [{ id: "8:2", key: "k82", name: "State=Collapsed", remote: false, componentSetId: "8:1", variants: { State: "Collapsed" }, dimensions: { width: 354, height: 52 }, textLayers: ["Title"] }] });
+  const r = await renderToPlan(fixture("landing.html"), { viewports: [1440], ds });
+  assert.deepEqual(r.mapped, {});
+  assert.ok(r.warnings.some((w) => /QA Accordion: matched only by shape/.test(w)), r.warnings.join("\n"));
+});

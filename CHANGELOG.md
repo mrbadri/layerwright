@@ -12,7 +12,12 @@ All notable changes to this project are documented here. The format follows
 - HTML import: `display: contents` wrappers no longer become frames with page-sized padding, and boxes whose CSS size is bigger than their content stay fixed instead of hugging.
 - A plan root with `position: absolute` inside `target.parentId` keeps its x/y.
 
+- HTML import mapped buttons to any component that merely looked like one (one text layer, 28–64px tall), e.g. an accordion. Automatic Design System mapping now needs a real role match from the name or description, skips private components (`_…`, `.…`), needs a text slot for the label and a similar height; skipped candidates are listed in the warnings. The Mode B analyzer uses the same check.
+- HTML import: text with `line-height: normal` gets the rendered line height, so Figma's taller AUTO line height no longer shifts the layout.
+
 ### Added
+- `figma_export_image`: a PNG/JPG of any node, returned as an image. With `compareWith: { html }` it also screenshots the source in headless Chrome and returns a diff heatmap plus the changed regions.
+- Verification checks sizes against the plan and against the source's rendered boxes (HTML imports), text overrides inside instances, and layers hidden by overrides. `figma_import_html` now verifies screen sizes too.
 - `figma_inspect({ expandInstances: true })`: the layers inside instances (text, hidden layers) and which ones are overridden.
 
 ## [0.1.4] - 2026-09-28

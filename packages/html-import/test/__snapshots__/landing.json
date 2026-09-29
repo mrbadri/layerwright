@@ -50,6 +50,10 @@
               "fontSize": 18,
               "fontFamily": "Vazirmatn",
               "weight": "bold",
+              "lineHeight": {
+                "unit": "px",
+                "value": 28
+              },
               "align": "left"
             },
             {
@@ -86,6 +90,10 @@
                       "fontSize": 14,
                       "fontFamily": "Vazirmatn",
                       "weight": "regular",
+                      "lineHeight": {
+                        "unit": "px",
+                        "value": 22
+                      },
                       "align": "left"
                     }
                   ]
@@ -111,6 +119,10 @@
                       "fontSize": 14,
                       "fontFamily": "Vazirmatn",
                       "weight": "regular",
+                      "lineHeight": {
+                        "unit": "px",
+                        "value": 22
+                      },
                       "align": "left"
                     }
                   ]
@@ -136,6 +148,10 @@
                       "fontSize": 14,
                       "fontFamily": "Vazirmatn",
                       "weight": "regular",
+                      "lineHeight": {
+                        "unit": "px",
+                        "value": 22
+                      },
                       "align": "left"
                     }
                   ]
@@ -204,6 +220,10 @@
               "fontSize": 17,
               "fontFamily": "Vazirmatn",
               "weight": "regular",
+              "lineHeight": {
+                "unit": "px",
+                "value": 26
+              },
               "align": "center"
             },
             {
@@ -247,6 +267,10 @@
                       "fontSize": 15,
                       "fontFamily": "Vazirmatn",
                       "weight": "regular",
+                      "lineHeight": {
+                        "unit": "px",
+                        "value": 23
+                      },
                       "align": "center"
                     }
                   ]
@@ -281,6 +305,10 @@
                       "fontSize": 15,
                       "fontFamily": "Vazirmatn",
                       "weight": "regular",
+                      "lineHeight": {
+                        "unit": "px",
+                        "value": 23
+                      },
                       "align": "center"
                     }
                   ]
@@ -348,6 +376,10 @@
                   "fontSize": 17,
                   "fontFamily": "Vazirmatn",
                   "weight": "bold",
+                  "lineHeight": {
+                    "unit": "px",
+                    "value": 26
+                  },
                   "align": "left"
                 },
                 {
@@ -408,6 +440,10 @@
                   "fontSize": 17,
                   "fontFamily": "Vazirmatn",
                   "weight": "bold",
+                  "lineHeight": {
+                    "unit": "px",
+                    "value": 26
+                  },
                   "align": "left"
                 },
                 {
@@ -468,6 +504,10 @@
                   "fontSize": 17,
                   "fontFamily": "Vazirmatn",
                   "weight": "bold",
+                  "lineHeight": {
+                    "unit": "px",
+                    "value": 26
+                  },
                   "align": "left"
                 },
                 {
@@ -538,6 +578,10 @@
               "fontSize": 18,
               "fontFamily": "Vazirmatn",
               "weight": "bold",
+              "lineHeight": {
+                "unit": "px",
+                "value": 28
+              },
               "align": "left"
             },
             {
@@ -574,6 +618,10 @@
                       "fontSize": 14,
                       "fontFamily": "Vazirmatn",
                       "weight": "regular",
+                      "lineHeight": {
+                        "unit": "px",
+                        "value": 22
+                      },
                       "align": "left"
                     }
                   ]
@@ -599,6 +647,10 @@
                       "fontSize": 14,
                       "fontFamily": "Vazirmatn",
                       "weight": "regular",
+                      "lineHeight": {
+                        "unit": "px",
+                        "value": 22
+                      },
                       "align": "left"
                     }
                   ]
@@ -624,6 +676,10 @@
                       "fontSize": 14,
                       "fontFamily": "Vazirmatn",
                       "weight": "regular",
+                      "lineHeight": {
+                        "unit": "px",
+                        "value": 22
+                      },
                       "align": "left"
                     }
                   ]
@@ -692,6 +748,10 @@
               "fontSize": 17,
               "fontFamily": "Vazirmatn",
               "weight": "regular",
+              "lineHeight": {
+                "unit": "px",
+                "value": 26
+              },
               "align": "center"
             },
             {
@@ -735,6 +795,10 @@
                       "fontSize": 15,
                       "fontFamily": "Vazirmatn",
                       "weight": "regular",
+                      "lineHeight": {
+                        "unit": "px",
+                        "value": 23
+                      },
                       "align": "center"
                     }
                   ]
@@ -769,6 +833,10 @@
                       "fontSize": 15,
                       "fontFamily": "Vazirmatn",
                       "weight": "regular",
+                      "lineHeight": {
+                        "unit": "px",
+                        "value": 23
+                      },
                       "align": "center"
                     }
                   ]
@@ -836,6 +904,10 @@
                   "fontSize": 17,
                   "fontFamily": "Vazirmatn",
                   "weight": "bold",
+                  "lineHeight": {
+                    "unit": "px",
+                    "value": 26
+                  },
                   "align": "left"
                 },
                 {
@@ -896,6 +968,10 @@
                   "fontSize": 17,
                   "fontFamily": "Vazirmatn",
                   "weight": "bold",
+                  "lineHeight": {
+                    "unit": "px",
+                    "value": 26
+                  },
                   "align": "left"
                 },
                 {
@@ -956,6 +1032,10 @@
                   "fontSize": 17,
                   "fontFamily": "Vazirmatn",
                   "weight": "bold",
+                  "lineHeight": {
+                    "unit": "px",
+                    "value": 26
+                  },
                   "align": "left"
                 },
                 {

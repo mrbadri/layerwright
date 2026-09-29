@@ -1,17 +1,20 @@
 // Swap converted buttons/inputs/links for real Design System components when the scanned DS has them.
 // Everything that doesn't resolve stays a styled frame, so the import never loses content.
-import { Resolver, type DesignPlan, type DesignSystem } from "@cde/core";
+import { Resolver, mappingDoubt, type DesignPlan, type DesignSystem } from "@cde/core";
 import type { Hint } from "./convert.ts";
 
-export function applyDesignSystem(plan: DesignPlan, hints: Hint[], ds: DesignSystem): { plan: DesignPlan; mapped: Record<string, number> } {
+export function applyDesignSystem(plan: DesignPlan, hints: Hint[], ds: DesignSystem): { plan: DesignPlan; mapped: Record<string, number>; skipped: { path: string; label?: string; component: string; reason: string }[] } {
   const r = new Resolver(ds);
   const out = structuredClone(plan) as any;
   const mapped: Record<string, number> = {};
+  const skipped: { path: string; label?: string; component: string; reason: string }[] = [];
   // Deepest paths first so replacing a parent never invalidates a child's path.
   for (const h of [...hints].sort((a, b) => b.path.length - a.path.length)) {
     if (h.role === "card") continue; // cards keep their children; a DS card would drop them
     const found = r.findComponent({ role: h.role });
     if ("error" in found) continue;
+    const doubt = mappingDoubt(found, h);
+    if (doubt) { skipped.push({ path: h.path, label: h.label, component: found.set?.name ?? found.def.name, reason: doubt }); continue; }
     const loc = locate(out, h.path);
     if (!loc) continue;
     const { parent, key, node } = loc;
@@ -26,7 +29,7 @@ export function applyDesignSystem(plan: DesignPlan, hints: Hint[], ds: DesignSys
     const name = found.set?.name ?? found.def.name;
     mapped[name] = (mapped[name] ?? 0) + 1;
   }
-  return { plan: out, mapped };
+  return { plan: out, mapped, skipped };
 }
 
 function locate(plan: any, path: string): { parent: any; key: string | number; node: any } | undefined {

@@ -1,7 +1,7 @@
 // Mode B: compare an existing design (compact snapshot) against the Design System and
 // propose non-destructive transformations. Pure & deterministic; nothing is applied here.
 import type { DesignSystem, NodeSnapshot, Transformation, TypographyDefinition, VariableDefinition, ResolvedNode, StructuredError } from "./types.ts";
-import { Resolver, hash } from "./resolver.ts";
+import { Resolver, hash, mappingDoubt } from "./resolver.ts";
 import { norm } from "./semantics.ts";
 
 const BUTTON_NAME = /(?:^| )(button|btn|cta|دکمه)(?= |$)/;
@@ -59,6 +59,8 @@ export function analyzeDesign(ds: DesignSystem, root: NodeSnapshot): AnalysisRes
   const tryReplace = (n: NodeSnapshot, role: string, label?: string): boolean => {
     const m = r.findComponent({ role }, n.name);
     if ("error" in m) { unresolved.push({ ...m.error, nodeId: n.id, message: `"${n.name}" looks like a ${role} but ${m.error.message}` }); return false; }
+    const doubt = mappingDoubt(m, { role, label, box: n.w && n.h ? { w: n.w, h: n.h } : undefined });
+    if (doubt) { unresolved.push({ type: "COMPONENT_NOT_FOUND", nodeId: n.id, component: m.set?.name ?? m.def.name, message: `"${n.name}" looks like a ${role}; "${m.set?.name ?? m.def.name}" is not a confident match (${doubt}).` }); return false; }
     const props = label ? { label } : undefined;
     const { properties, textOverrides } = r.mapProps(m.def, m.set, props, n.name, warnings);
     const componentName = m.set ? `${m.set.name} / ${Object.values(m.def.variants ?? {}).join(", ")}` : m.def.name;
@@ -155,11 +157,21 @@ function inferAutoLayout(n: NodeSnapshot): { direction: "HORIZONTAL" | "VERTICAL
 // ---------------- Verification ----------------
 
 export interface Mismatch { path: string; nodeId?: string; issue: string; expected?: unknown; actual?: unknown }
+export interface VerifyOptions {
+  /** Rendered source size per plan path (HTML imports): frames far from it are reported. */
+  sources?: Record<string, { w: number; h?: number }>;
+}
+
+/** Sizes are "far off" beyond 4px or 5%, whichever is larger (font metrics shift text a little). */
+const far = (a: number, b: number) => Math.abs(a - b) > Math.max(4, Math.abs(b) * 0.05);
+
+/** All text layers inside a snapshot (for checking an instance's text overrides). */
+const textsIn = (n: NodeSnapshot): NodeSnapshot[] => (n.type === "TEXT" ? [n] : (n.children ?? []).flatMap(textsIn));
 
 const KIND_TYPE: Record<ResolvedNode["kind"], string> = { frame: "FRAME", text: "TEXT", instance: "INSTANCE", rect: "RECTANGLE", svg: "FRAME" };
 
 /** Structural comparison of an executed plan against the inspected Figma result. */
-export function verifyAgainstPlan(expected: ResolvedNode, actual: NodeSnapshot | undefined): Mismatch[] {
+export function verifyAgainstPlan(expected: ResolvedNode, actual: NodeSnapshot | undefined, opts: VerifyOptions = {}): Mismatch[] {
   const out: Mismatch[] = [];
   const walk = (e: ResolvedNode, a: NodeSnapshot | undefined) => {
     if (!a) { out.push({ path: e.path, issue: "missing node", expected: `${KIND_TYPE[e.kind]} "${e.name}"` }); return; }
@@ -173,6 +185,27 @@ export function verifyAgainstPlan(expected: ResolvedNode, actual: NodeSnapshot |
         const got = a.instance?.props?.[k];
         if (got !== undefined && got !== v) out.push({ path: e.path, nodeId: a.id, issue: `property "${k.split("#")[0]}" differs`, expected: v, actual: got });
       }
+      // Needs an expanded snapshot (expandInstances): text overrides landed, and nothing was hidden behind our back.
+      if (a.children) {
+        const texts = textsIn(a);
+        for (const [layer, v] of Object.entries(e.textOverrides)) {
+          const t = texts.find((x) => x.name === layer);
+          if (t && t.text?.chars !== v) out.push({ path: e.path, nodeId: t.id, issue: `text "${layer}" not overridden`, expected: v, actual: t.text?.chars });
+        }
+      }
+      const hidden = Object.entries(a.instance?.overrides ?? {}).filter(([, f]) => f.includes("visible")).map(([n]) => n);
+      if (hidden.length) out.push({ path: e.path, nodeId: a.id, issue: "layers hidden by an override the plan didn't ask for", actual: hidden });
+    }
+    // Size: fixed sizes from the plan, and the rendered box of the source (HTML import). Text is left out: its
+    // width depends on font metrics, and its container is checked instead.
+    if (e.kind !== "text" && a.w !== undefined && a.h !== undefined) {
+      if (e.width && e.sizingH !== "fill" && e.sizingH !== "hug" && far(a.w, e.width)) out.push({ path: e.path, nodeId: a.id, issue: "width differs from the plan", expected: e.width, actual: a.w });
+      if (e.height && e.sizingV !== "fill" && e.sizingV !== "hug" && far(a.h, e.height)) out.push({ path: e.path, nodeId: a.id, issue: "height differs from the plan", expected: e.height, actual: a.h });
+      const src = opts.sources?.[e.path];
+      // A DS instance may differ a little from the element it replaced; half again or more means a wrong match.
+      const off = e.kind === "instance" ? (x: number, y: number) => Math.abs(x - y) > Math.max(8, y * 0.5) : far;
+      // Instance heights are left out: DS inputs often include their label, so they're taller than the bare <input>.
+      if (src && (off(a.w, src.w) || (src.h !== undefined && e.kind !== "instance" && off(a.h, src.h)))) out.push({ path: e.path, nodeId: a.id, issue: e.kind === "instance" ? "instance size far from the element it replaced" : "size far from the source's rendered box", expected: `${src.w}×${src.h ?? "any"}`, actual: `${a.w}×${a.h}` });
     }
     if (e.kind === "frame") {
       if (e.layout && e.layout.direction !== (a.layout?.mode ?? "NONE")) out.push({ path: e.path, nodeId: a.id, issue: "layout direction differs", expected: e.layout.direction, actual: a.layout?.mode });

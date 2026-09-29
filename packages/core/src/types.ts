@@ -310,7 +310,8 @@ export type BridgeMethod =
   | "select"
   | "importTree"
   | "ensurePages"
-  | "foundations";
+  | "foundations"
+  | "exportImage";
 
 export interface BridgeRequest { id: string; method: BridgeMethod; params?: unknown }
 export interface BridgeResponse { id: string; ok: boolean; result?: unknown; error?: StructuredError }

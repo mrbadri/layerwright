@@ -46,6 +46,8 @@ const EMPHASIS: { hint: string; words: RegExp }[] = [
 ];
 
 export function inferRoles(name: string, description = "", variantValues: string[] = [], dims?: { width: number; height: number }, textLayers: string[] = []): string[] {
+  // "_Tab button base", ".Icon/check": private building blocks, never picked by role (only by explicit name).
+  if (/^[_.]/.test(name.trim())) return [];
   const hay = norm(`${name} ${description}`);
   const vhay = norm(variantValues.join(" "));
   const roles = new Set<string>();

@@ -4,17 +4,18 @@
 import { validatePlan, type DesignPlan, type DesignSystem } from "@cde/core";
 import { withPage } from "./browser.ts";
 import { readDom } from "./dom.ts";
-import { toPlan, type Hint } from "./convert.ts";
+import { toPlan, type Hint, type SourceBoxes } from "./convert.ts";
 import { applyDesignSystem } from "./design-system.ts";
 
 export { importHtml, type ImportTarget, type ImportSwap, type ImportAction, type ImportedScreen } from "./tree.ts";
-export { toPlan, type Hint, type ConvertResult } from "./convert.ts";
+export { toPlan, type Hint, type ConvertResult, type SourceBoxes } from "./convert.ts";
 export { applyDesignSystem } from "./design-system.ts";
 export { readDom, type DomNode } from "./dom.ts";
 export { launch, resolveEntry, withPage } from "./browser.ts";
+export { screenshotHtml, diffImages, type ImageDiff } from "./compare.ts";
 
 export interface RenderOptions { viewports?: number[]; selector?: string; root?: string; ds?: DesignSystem; name?: string }
-export interface RenderResult { plan: DesignPlan; hints: Hint[]; warnings: string[]; mapped: Record<string, number> }
+export interface RenderResult { plan: DesignPlan; hints: Hint[]; warnings: string[]; mapped: Record<string, number>; sources: SourceBoxes }
 
 export const DEFAULT_VIEWPORTS = [1440, 390];
 
@@ -30,8 +31,16 @@ export async function renderToPlan(path: string, opts: RenderOptions = {}): Prom
   const converted = toPlan(screens, { name: opts.name ?? (title || "HTML import") });
   let plan = converted.plan;
   let mapped: Record<string, number> = {};
-  if (opts.ds) ({ plan, mapped } = applyDesignSystem(plan, converted.hints, opts.ds));
+  const warnings = [...converted.warnings];
+  if (opts.ds) {
+    const a = applyDesignSystem(plan, converted.hints, opts.ds);
+    ({ plan, mapped } = a);
+    // Say what was left as a frame and why, grouped, so a user can map it explicitly if it was right after all.
+    const groups = new Map<string, string[]>();
+    for (const s of a.skipped) { const k = `${s.component}: ${s.reason}`; groups.set(k, [...(groups.get(k) ?? []), s.label ?? s.path]); }
+    for (const [k, labels] of groups) warnings.push(`Not mapped to "${k}" (${labels.length} × e.g. "${labels[0]}"); kept as styled frames.`);
+  }
   const v = validatePlan(plan);
   if (!v.success) throw new Error(`Converted plan failed validation: ${v.errors.slice(0, 3).map((e) => `${e.path}: ${e.message}`).join("; ")}`);
-  return { plan: v.plan, hints: converted.hints, warnings: converted.warnings, mapped };
+  return { plan: v.plan, hints: converted.hints, warnings, mapped, sources: converted.sources };
 }

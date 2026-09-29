@@ -7,8 +7,10 @@
 import type { DesignPlan } from "@cde/core";
 import type { DomNode, Rgba } from "./dom.ts";
 
-export interface Hint { path: string; role: "primary-action" | "secondary-action" | "text-input" | "password-input" | "link" | "card"; label?: string; placeholder?: string }
-export interface ConvertResult { plan: DesignPlan; hints: Hint[]; warnings: string[] }
+export interface Hint { path: string; role: "primary-action" | "secondary-action" | "text-input" | "password-input" | "link" | "card"; label?: string; placeholder?: string; box?: { w: number; h: number } }
+/** Rendered browser box of each plan node, by plan path (used to verify the Figma result against the source). */
+export type SourceBoxes = Record<string, { w: number; h?: number }>;
+export interface ConvertResult { plan: DesignPlan; hints: Hint[]; warnings: string[]; sources: SourceBoxes }
 
 const MAX_CHILDREN = 200;
 const round = (n: number) => Math.round(n * 100) / 100;
@@ -28,20 +30,21 @@ const signature = (d: DomNode, depth = 2): string => `${d.tag}(${depth ? d.child
 export function toPlan(screens: { name: string; width: number; dom: DomNode }[], opts: { name?: string } = {}): ConvertResult {
   const hints: Hint[] = [];
   const warnings: string[] = [];
+  const sources: SourceBoxes = {};
 
   const hintFor = (d: DomNode, path: string) => {
     const label = collectText(d).slice(0, 80) || d.attrs.ariaLabel;
     if (d.tag === "input" || d.tag === "textarea" || d.tag === "select") {
       if (["checkbox", "radio", "range", "file", "hidden", "submit", "button"].includes(d.attrs.type ?? "")) return;
-      hints.push({ path, role: d.attrs.type === "password" ? "password-input" : "text-input", placeholder: d.attrs.placeholder, label: d.attrs.ariaLabel });
+      hints.push({ path, role: d.attrs.type === "password" ? "password-input" : "text-input", placeholder: d.attrs.placeholder, label: d.attrs.ariaLabel, box: { w: d.box.w, h: d.box.h } });
       return;
     }
     const buttonish = d.tag === "button" || d.attrs.role === "button" || (d.tag === "input" && ["submit", "button"].includes(d.attrs.type ?? ""));
     const linkButton = d.tag === "a" && (d.style.bg || d.style.border);
     if (buttonish || linkButton) {
       const dark = d.style.bg && d.style.bg.a > 0.5 && luminance(d.style.bg.hex) < 0.5;
-      hints.push({ path, role: dark ? "primary-action" : "secondary-action", label });
-    } else if (d.tag === "a" && label) hints.push({ path, role: "link", label });
+      hints.push({ path, role: dark ? "primary-action" : "secondary-action", label, box: { w: d.box.w, h: d.box.h } });
+    } else if (d.tag === "a" && label) hints.push({ path, role: "link", label, box: { w: d.box.w, h: d.box.h } });
   };
 
   const text = (d: DomNode, box = d.box): any => {
@@ -51,7 +54,8 @@ export function toPlan(screens: { name: string; width: number; dom: DomNode }[],
     return {
       type: "text", name: d.name.slice(0, 60) || "Text", content: d.text!.slice(0, 5000),
       fontFamily: f.family || undefined, weight: weightName(f.weight), fontSize: round(f.size),
-      lineHeight: f.lineHeight ? { unit: "px", value: round(f.lineHeight) } : undefined,
+      // line-height: normal depends on the font's metrics, and Figma's AUTO differs from Chrome's: use the rendered one.
+      lineHeight: f.lineHeight ? { unit: "px", value: round(f.lineHeight) } : d.box.h > 0 ? { unit: "px", value: round(d.box.h / Math.max(1, d.lines ?? 1)) } : undefined,
       letterSpacing: f.letterSpacing ? { unit: "px", value: round(f.letterSpacing) } : undefined,
       italic: f.italic || undefined, color: hex(f.color),
       align: ({ left: "left", right: "right", center: "center", justify: "justified" } as Record<string, string>)[alignCss] ?? (rtl ? "right" : undefined),
@@ -160,6 +164,7 @@ export function toPlan(screens: { name: string; width: number; dom: DomNode }[],
       const p = `${path}.children[${children.length}]`;
       const c = node(k, p);
       if (!c) return;
+      if (c._box && c.type !== "text") sources[p] = { w: round(c._box.w), h: round(c._box.h) };
       if (k.kind === "element" && hasVisual(k) && k.children.length >= 2 && (sigs.get(signature(k)) ?? 0) >= 3 && c.type === "frame") {
         if (/^(div|li|article|section)$/.test(c.name)) c.name = "Card";
         hints.push({ path: p, role: "card", label: collectText(k).slice(0, 60) });
@@ -210,11 +215,13 @@ export function toPlan(screens: { name: string; width: number; dom: DomNode }[],
     version: 1, name: opts.name ?? "HTML import", screenGap: 120,
     screens: screens.map((sc, i) => {
       const f = container(sc.dom, `screens[${i}]`);
+      // A page is at least as tall as the viewport, but the screen hugs its content: compare the width only.
+      sources[`screens[${i}]`] = { w: sc.width };
       delete f._box; delete f._hugText; delete f._fixedW; delete f._fixedH;
       return { ...f, type: "screen", name: sc.name, width: sc.width, height: f.layout.direction === "none" ? f.height : undefined, fill: f.fill ?? "#FFFFFF" };
     }),
   } as DesignPlan;
-  return { plan: strip(plan) as DesignPlan, hints, warnings };
+  return { plan: strip(plan) as DesignPlan, hints, warnings, sources };
 }
 
 function padObj(p: [number, number, number, number]) {

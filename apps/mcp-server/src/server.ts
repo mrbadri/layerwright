@@ -9,11 +9,11 @@ import {
 } from "@cde/core";
 import { BridgeError, type FigmaTransport } from "./bridge.ts";
 import { MappingStore, scanCodebase, verifyCodeUsage } from "./code.ts";
-import { importHtml, renderToPlan } from "@cde/html-import";
+import { diffImages, importHtml, renderToPlan, screenshotHtml } from "@cde/html-import";
 import { inlineImages } from "./images.ts";
 import { PKG_VERSION } from "./meta.ts";
 
-type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
+type ToolResult = { content: ({ type: "text"; text: string } | { type: "image"; data: string; mimeType: string })[]; isError?: boolean };
 const ok = (data: unknown): ToolResult => ({ content: [{ type: "text", text: JSON.stringify(data) }] });
 const fail = (errors: StructuredError[], extra: Record<string, unknown> = {}): ToolResult => ({ content: [{ type: "text", text: JSON.stringify({ success: false, errors, ...extra }) }], isError: true });
 
@@ -31,7 +31,7 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
   const home = join(workdir, ".layerwright");
   const cacheDir = join(home, "cache");
   const mappings = new MappingStore(join(home, "mapping.json"));
-  const plans = new Map<string, { plan: ResolvedPlan; summary: PlanSummary; report?: ExecutionReport }>();
+  const plans = new Map<string, { plan: ResolvedPlan; summary: PlanSummary; report?: ExecutionReport; sources?: Record<string, { w: number; h?: number }> }>();
   const analyses = new Map<string, AnalysisResult>();
   let ds: DesignSystem | undefined;
 
@@ -123,7 +123,7 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
     const r = await renderToPlan(resolve(workdir, path), { viewports: viewport === undefined ? undefined : [viewport].flat(), selector, ds: useDs ? d : undefined });
     const c = compilePlan(d, r.plan);
     if (!c.ok || !c.plan) return fail(c.errors, { warnings: [...r.warnings, ...c.warnings], summary: c.summary });
-    plans.set(c.plan.planId, { plan: c.plan, summary: c.summary });
+    plans.set(c.plan.planId, { plan: c.plan, summary: c.summary, sources: r.sources });
     return ok({ success: true, planId: c.plan.planId, summary: c.summary, mappedToDesignSystem: r.mapped, warnings: [...r.warnings, ...c.warnings].slice(0, 30), next: "Show the summary; then call figma_execute_plan with this planId." });
   }));
 
@@ -137,18 +137,25 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
     const images = await inlineImages(entry.plan);
     const report = await bridge.request<ExecutionReport>("executePlan", { plan: images.plan }, 180_000);
     entry.report = report;
-    const mismatches = await verifyPlan(entry.plan, report);
-    return ok({ success: true, created: report.createdRootIds, nodeCount: Object.keys(report.nodeIds).length, warnings: [...images.warnings, ...report.warnings], verification: { mismatches, passed: mismatches.length === 0 } });
+    const mismatches = await verifyPlan(entry.plan, report, entry.sources);
+    return ok({ success: true, created: report.createdRootIds, nodeCount: Object.keys(report.nodeIds).length, warnings: [...images.warnings, ...report.warnings], verification: verdict(mismatches),
+      next: "Check it visually with figma_export_image (pass compareWith: { html } for an HTML import)." });
   }));
 
-  const verifyPlan = async (plan: ResolvedPlan, report: ExecutionReport) => {
+  const verifyPlan = async (plan: ResolvedPlan, report: ExecutionReport, sources?: Record<string, { w: number; h?: number }>) => {
     const all = [];
     for (let i = 0; i < plan.roots.length; i++) {
       const id = report.createdRootIds[i];
-      const snap = id ? ((await bridge.request<{ nodes: NodeSnapshot[] }>("inspect", { target: id, depth: 12, maxNodes: 2000 })).nodes[0]) : undefined;
-      all.push(...verifyAgainstPlan(plan.roots[i], snap));
+      const snap = id ? ((await bridge.request<{ nodes: NodeSnapshot[] }>("inspect", { target: id, depth: 12, maxNodes: 4000, expandInstances: true })).nodes[0]) : undefined;
+      all.push(...verifyAgainstPlan(plan.roots[i], snap, { sources }));
     }
     return all;
+  };
+  /** Keep the answer small: counts by issue, and the first mismatches. */
+  const verdict = (mismatches: Awaited<ReturnType<typeof verifyPlan>>) => {
+    const byIssue: Record<string, number> = {};
+    for (const m of mismatches) byIssue[m.issue] = (byIssue[m.issue] ?? 0) + 1;
+    return { passed: mismatches.length === 0, byIssue, mismatches: mismatches.slice(0, 25), total: mismatches.length };
   };
 
   server.registerTool("figma_verify", {
@@ -157,8 +164,7 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
   }, async ({ planId }) => guard(async () => {
     const e = plans.get(planId);
     if (!e?.report) return fail([{ type: "INVALID_PLAN", message: "Plan not executed in this session." }]);
-    const mismatches = await verifyPlan(e.plan, e.report);
-    return ok({ passed: mismatches.length === 0, mismatches });
+    return ok(verdict(await verifyPlan(e.plan, e.report, e.sources)));
   }));
 
   server.registerTool("figma_analyze_design", {
@@ -228,8 +234,14 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
     if (only?.length) screens = screens.filter((s) => only.some((o) => s.name.includes(o)));
     const list = screens.map((s) => ({ name: s.name, width: Math.round(s.width), height: Math.round(s.height), nodes: s.nodeCount }));
     if (dryRun || !screens.length) return ok({ dryRun: true, screens: list });
-    const res = await bridge.request("importTree", { page, section, gap, components, replace, screens: screens.map(({ name, tree }) => ({ name, tree })) }, 300_000);
-    return ok({ imported: list, ...(res as object) });
+    const res = await bridge.request<{ screens: { id: string; name: string; width: number; height: number }[] }>("importTree", { page, section, gap, components, replace, screens: screens.map(({ name, tree }) => ({ name, tree })) }, 300_000);
+    // Screens are laid out one per import (component sets combine several), so only compare plain screens.
+    const mismatches = components ? [] : res.screens.flatMap((b, i) => {
+      const s = list[i];
+      return s && (Math.abs(b.width - s.width) > Math.max(4, s.width * 0.05) || Math.abs(b.height - s.height) > Math.max(4, s.height * 0.05))
+        ? [{ path: `screens[${i}]`, nodeId: b.id, issue: "size far from the source's rendered box", expected: `${s.width}×${s.height}`, actual: `${Math.round(b.width)}×${Math.round(b.height)}` }] : [];
+    });
+    return ok({ imported: list, ...res, verification: verdict(mismatches), next: "Check it visually with figma_export_image({ nodeId, compareWith: { html } })." });
   }));
 
   server.registerTool("figma_foundations", {
@@ -241,6 +253,44 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
       textStyles: z.array(z.object({ name: z.string(), family: z.string(), style: z.string(), size: z.number(), lineHeight: z.number().optional().describe("px"), letterSpacing: z.number().optional().describe("percent") })).optional(),
     },
   }, async (p) => guard(async () => ok(await bridge.request("foundations", p, 60_000))));
+
+  server.registerTool("figma_export_image", {
+    description: "Render a Figma node as an image you can look at: use it after every build or edit to check the result visually (empty instances, wrong sizes and wrong variants are obvious in a picture). With compareWith, the source HTML is screenshotted in headless Chrome too, and you get both images, a diff heatmap and the share of changed pixels.",
+    inputSchema: {
+      nodeId: z.string().describe("Node to render (a frame, section, instance, ...)"),
+      scale: z.number().min(0.05).max(4).optional().describe("Default 1; capped so the longest side stays within maxDimension"),
+      maxDimension: z.number().int().min(100).max(4000).optional().describe("Default 1600 px"),
+      format: z.enum(["png", "jpg"]).optional(),
+      compareWith: z.object({
+        html: z.string().describe("The .html file (or folder) the node was built from"),
+        selector: z.string().optional().describe("Element to screenshot (default body)"),
+        viewport: z.number().int().min(200).max(4000).optional().describe("Viewport width (default: the node's width)"),
+      }).optional(),
+    },
+  }, async ({ nodeId, scale, maxDimension, format, compareWith }) => guard(async () => {
+    const maxDim = maxDimension ?? 1600;
+    const exp = (s?: number) => bridge.request<{ base64: string; format: string; width: number; height: number; scale: number; name: string }>("exportImage", { nodeId, scale: s, format, maxDimension: maxDim }, 120_000);
+    const mime = (f: string) => (f === "jpg" ? "image/jpeg" : "image/png");
+    if (!compareWith) {
+      const img = await exp(scale);
+      return { content: [{ type: "image", data: img.base64, mimeType: mime(img.format) }, { type: "text", text: JSON.stringify({ node: img.name, width: img.width, height: img.height, scale: img.scale }) }] };
+    }
+    const snap = (await bridge.request<{ nodes: NodeSnapshot[] }>("inspect", { target: nodeId, depth: 0 })).nodes[0];
+    const figmaW = snap?.w ?? 1440, figmaH = snap?.h ?? 900;
+    const html = await screenshotHtml(resolve(workdir, compareWith.html), { selector: compareWith.selector, width: compareWith.viewport ?? figmaW });
+    // Export at the HTML's pixel size so both images line up (capped by maxDimension).
+    const img = await exp(html.width / Math.max(1, figmaW));
+    const diff = await diffImages({ base64: html.base64 }, { base64: img.base64, mime: mime(img.format) });
+    const sizeOff = Math.abs(figmaW - html.width) > 2 || Math.abs(figmaH - html.height) > Math.max(4, html.height * 0.02);
+    const verdict = diff.changedCells < 0.01 && !sizeOff ? "close match"
+      : `${sizeOff ? `size differs (Figma ${figmaW}×${figmaH}, HTML ${html.width}×${html.height}); ` : ""}${diff.regions.length} changed region(s), largest first: look at them in the heatmap before reporting success`;
+    return { content: [
+      { type: "text", text: "Figma:" }, { type: "image", data: img.base64, mimeType: mime(img.format) },
+      { type: "text", text: "HTML source:" }, { type: "image", data: html.base64, mimeType: "image/png" },
+      { type: "text", text: "Diff (red = changed):" }, { type: "image", data: diff.heatmap, mimeType: "image/png" },
+      { type: "text", text: JSON.stringify({ figma: { width: figmaW, height: figmaH }, html: { width: html.width, height: html.height }, changedCells: diff.changedCells, regions: diff.regions, verdict }) },
+    ] };
+  }));
 
   server.registerTool("figma_select", {
     description: "Select and zoom to node ids in Figma (to show the user what was created or will change).",

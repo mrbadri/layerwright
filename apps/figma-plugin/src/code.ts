@@ -38,6 +38,16 @@ async function handle(req: BridgeRequest): Promise<unknown> {
       return foundations(p);
     case "ensurePages":
       return ensurePages(p.pages as string[]);
+    case "exportImage": {
+      // A PNG/JPG of one node, capped so a huge frame doesn't produce a huge payload.
+      const n = await figma.getNodeByIdAsync(p.nodeId);
+      if (!n || !("exportAsync" in n)) throw new ExecError({ type: "NODE_NOT_FOUND", message: `Node ${p.nodeId} not found or can't be exported.` });
+      const node = n as SceneNode;
+      const longest = Math.max(node.width, node.height, 1);
+      const scale = Math.max(0.05, Math.min(p.scale ?? 1, (p.maxDimension ?? 2000) / longest));
+      const bytes = await node.exportAsync({ format: p.format === "jpg" ? "JPG" : "PNG", constraint: { type: "SCALE", value: scale } });
+      return { base64: figma.base64Encode(bytes), format: p.format === "jpg" ? "jpg" : "png", scale, width: Math.round(node.width * scale), height: Math.round(node.height * scale), name: node.name };
+    }
     case "select": {
       const nodes = (await Promise.all((p.nodeIds as string[]).map((id) => figma.getNodeByIdAsync(id)))).filter((n): n is SceneNode => !!n && "x" in n);
       figma.currentPage.selection = nodes;

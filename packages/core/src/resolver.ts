@@ -244,6 +244,27 @@ export class Resolver {
   }
 }
 
+const MAP_BASE: Record<string, string> = { "primary-action": "button", "secondary-action": "button", "text-input": "text-input", "password-input": "text-input", link: "link" };
+
+/** Why a candidate is not a confident match, or undefined when it is. A wrong component is worse than none:
+ *  the element would lose its look and content, so anything doubtful stays a styled frame. */
+export function mappingDoubt(found: { def: ComponentDefinition; set?: ComponentSetDefinition }, h: { role: string; label?: string; placeholder?: string; box?: { w: number; h: number } }): string | undefined {
+  const owner = found.set ?? found.def;
+  const hints = new Set([...(owner.semanticHints ?? []), ...(found.def.semanticHints ?? [])]);
+  if (!hints.has(h.role) && !hints.has(MAP_BASE[h.role] ?? h.role)) return "matched only by shape, not by name or description";
+  if (/^[_.]/.test(owner.name)) return "private component";
+  const props = (found.set?.properties ?? found.def.properties ?? []);
+  const hasTextSlot = props.some((p) => p.type === "TEXT") || (found.def.textLayers?.length ?? 0) > 0;
+  if ((h.label || h.placeholder) && !hasTextSlot) return "no text property or text layer for the label";
+  const dim = found.def.dimensions;
+  // Inputs often include their label and hint in the component, so only actions are compared by height.
+  if (!h.role.endsWith("input") && h.box && dim && dim.height > 0 && h.box.h > 0) {
+    const ratio = dim.height / h.box.h;
+    if (ratio < 0.6 || ratio > 1.6) return `height ${Math.round(dim.height)}px vs ${Math.round(h.box.h)}px in the HTML`;
+  }
+  return undefined;
+}
+
 // ---------------- Plan compilation ----------------
 
 const CONTAINERS = new Set(["screen", "frame", "section", "stack", "row", "card", "modal", "navigation", "list"]);
