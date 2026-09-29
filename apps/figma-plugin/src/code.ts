@@ -22,8 +22,11 @@ async function handle(req: BridgeRequest): Promise<unknown> {
   const p = (req.params ?? {}) as any;
   switch (req.method) {
     case "ping":
-      return { fileName: figma.root.name, page: figma.currentPage.name, pluginBuild: BUILD, selection: figma.currentPage.selection.map((n) => ({ id: n.id, name: n.name, type: n.type })) };
+      return { fileName: figma.root.name, page: figma.currentPage.name, pluginBuild: BUILD,
+        // Changes seen since this plugin window opened; a scan older than that can't be vouched for.
+        dsChangedSinceScan: dsChanged || (typeof p.scannedAt === "string" && p.scannedAt < watchingSince) || undefined, watchingSince, selection: figma.currentPage.selection.map((n) => ({ id: n.id, name: n.name, type: n.type })) };
     case "scanDesignSystem":
+      dsChanged = false;
       return scanDesignSystem(p);
     case "inspect": {
       const nodes = await resolveTarget(p.target);
@@ -94,3 +97,14 @@ figma.ui.onmessage = async (msg: any) => {
   figma.ui.postMessage({ type: "response", res });
 };
 figma.on("currentpagechange", () => figma.ui.postMessage({ type: "hello", hello: hello() }));
+
+// Watch for Design System changes (components, component sets, styles) so a stale scan can be flagged.
+let dsChanged = false;
+const watchingSince = new Date().toISOString();
+figma.loadAllPagesAsync().then(() => figma.on("documentchange", (e) => {
+  if (dsChanged) return;
+  for (const c of e.documentChanges) {
+    const t = (c as { node?: { type?: string } }).node?.type;
+    if (c.type.startsWith("STYLE_") || t === "COMPONENT" || t === "COMPONENT_SET") { dsChanged = true; return; }
+  }
+})).catch(() => { /* no watch: status just can't tell */ });

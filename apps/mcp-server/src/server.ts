@@ -4,7 +4,7 @@ import { z } from "zod";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
-  analyzeDesign, compilePlan, emptyDesignSystem, enrichDesignSystem, retrieve, summarize, validatePlan, verifyAgainstPlan,
+  analyzeDesign, compilePlan, emptyDesignSystem, enrichDesignSystem, retrieve, snapshotToPlan, summarize, validatePlan, verifyAgainstPlan,
   type AnalysisResult, type DesignSystem, type ExecutionReport, type NodeSnapshot, type ResolvedPlan, type StructuredError, type TransformReport, type PlanSummary,
 } from "@cde/core";
 import { BridgeError, type FigmaTransport } from "./bridge.ts";
@@ -65,18 +65,22 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
   }, async () => guard(async () => {
     const base = { connected: bridge.connected(), file: bridge.info()?.fileName, designSystemCached: !!loadDs(), designSystemScannedAt: ds?.scannedAt, workdir };
     if (!bridge.connected()) return ok({ ...base, hint: "Open Figma desktop → Plugins → Development → Layerwright." });
-    const ping = await bridge.request<{ page: string }>("ping", {}, 10_000);
+    const ping = await bridge.request<{ page: string; dsChangedSinceScan?: boolean; watchingSince?: string }>("ping", { scannedAt: ds?.scannedAt }, 10_000);
     const warnings = [...(staleWarning() ?? [])];
+    if (ds && ping.dsChangedSinceScan) warnings.push("Components or styles changed in Figma since the last scan. Rescan (figma_scan_design_system refresh: true) before planning.");
     if (lastPage && ping.page !== lastPage) warnings.push(`Figma now shows page "${ping.page}", but the last build went to "${lastPage}". Plans build on the current page unless target.page is set.`);
     return ok({ ...base, ...ping, session, warnings: warnings.length ? warnings : undefined });
   }));
 
   server.registerTool("figma_scan_design_system", {
     description: "Scan the open Figma file for components, component sets/variants/properties, variables (+modes), text/paint/effect styles and library components used in the file. Normalizes, infers semantic roles, caches to disk, and returns a COMPACT summary (not the full dump). Use refresh=true after the DS changed.",
-    inputSchema: { refresh: z.boolean().optional(), includeLibraries: z.boolean().optional().describe("Include enabled library variable collections (default true)") },
-  }, async ({ refresh, includeLibraries }) => guard(async () => {
+    inputSchema: { refresh: z.boolean().optional(), includeLibraries: z.boolean().optional().describe("Include enabled library variable collections (default true)"),
+      reload: z.boolean().optional().describe("Re-read the cache file from disk (after editing it) instead of scanning"),
+      maxInstances: z.number().int().min(100).max(200000).optional().describe("How many instances to check for library components (default: 3000, or every instance on the current page)") },
+  }, async ({ refresh, includeLibraries, reload, maxInstances }) => guard(async () => {
+    if (reload) { ds = undefined; if (!loadDs()) return fail([{ type: "DESIGN_SYSTEM_NOT_SCANNED", message: "No cache file for this Figma file; scan instead." }]); return ok({ cached: true, reloaded: true, ...summarize(ds!) }); }
     if (!refresh && loadDs() && !staleWarning()) return ok({ cached: true, ...summarize(ds!) });
-    const raw: any = await bridge.request("scanDesignSystem", { includeLibraries }, 180_000);
+    const raw: any = await bridge.request("scanDesignSystem", { includeLibraries, maxInstances }, 180_000);
     const { warnings, ...rest } = raw;
     ds = enrichDesignSystem(rest);
     mkdirSync(cacheDir, { recursive: true });
@@ -95,10 +99,36 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
   }));
 
   server.registerTool("figma_inspect", {
-    description: "Return a compact semantic snapshot (type, name, size, auto layout, fills, bound variables, text style, instance component/variant/props, children) of the selection (default), the current page (top level), or a node id. With expandInstances, instances also list their layers (text, hidden layers) and which layers are overridden.",
-    inputSchema: { target: z.string().optional().describe("'selection' (default) | 'page' | a node id"), depth: z.number().int().min(0).max(12).optional(), maxNodes: z.number().int().min(1).max(2000).optional(),
-      expandInstances: z.boolean().optional().describe("Descend into instances: their text, hidden layers and overrides (default false)") },
-  }, async ({ target, depth, maxNodes, expandInstances }) => guard(async () => ok(await bridge.request("inspect", { target, depth, maxNodes, expandInstances }))));
+    description: "Read Figma nodes: the selection (default), the current page (top level) or a node id. format: tree (default; compact snapshot of layout, fills, bound variables, text styles, instances), summary (counts, instances per component, top-level children; cheap for big frames), text (every text layer, flat), instances (every instance with variants, props and overrides, flat), plan (the subtree as a Design Plan you can edit and send to figma_preview_plan: clone, refactor, or implement in code). Big answers are capped; use summary, a smaller depth, or offset/limit.",
+    inputSchema: { target: z.string().optional().describe("'selection' (default) | 'page' | a node id"), depth: z.number().int().min(0).max(20).optional(), maxNodes: z.number().int().min(1).max(5000).optional(),
+      expandInstances: z.boolean().optional().describe("tree: descend into instances (their text, hidden layers, overrides)"),
+      format: z.enum(["tree", "summary", "text", "instances", "plan"]).optional(),
+      offset: z.number().int().min(0).optional(), limit: z.number().int().min(1).max(500).optional().describe("text/instances: page through the list (default 100)") },
+  }, async ({ target, depth, maxNodes, expandInstances, format, offset, limit }) => guard(async () => {
+    const f = format ?? "tree";
+    const deep = f !== "tree";
+    const res = await bridge.request<{ page: string; nodes: NodeSnapshot[] }>("inspect", { target, depth: depth ?? (deep ? 20 : undefined), maxNodes: maxNodes ?? (deep ? 5000 : undefined), expandInstances: deep || expandInstances }, 120_000);
+    if (!res.nodes.length) return fail([{ type: "NODE_NOT_FOUND", message: "Nothing selected. Pass a node id or ask the user to select a frame." }]);
+    const flat: { n: NodeSnapshot; path: string; inInstance: boolean }[] = [];
+    const walk = (n: NodeSnapshot, path: string, inInstance: boolean) => { flat.push({ n, path, inInstance }); (n.children ?? []).forEach((c) => walk(c, `${path} / ${c.name}`, inInstance || n.type === "INSTANCE")); };
+    res.nodes.forEach((n) => walk(n, n.name, false));
+    const page = <T,>(items: T[]) => { const o = offset ?? 0, l = limit ?? 100; return { items: items.slice(o, o + l), total: items.length, offset: o, next: o + l < items.length ? o + l : undefined }; };
+    if (f === "summary") {
+      const byType: Record<string, number> = {}, byComponent: Record<string, number> = {};
+      for (const { n, inInstance } of flat) { if (inInstance) continue; byType[n.type] = (byType[n.type] ?? 0) + 1; if (n.instance) { const k = `${n.instance.componentSet ?? n.instance.component}${n.instance.variants ? ` / ${Object.values(n.instance.variants).join(", ")}` : ""}`; byComponent[k] = (byComponent[k] ?? 0) + 1; } }
+      return ok({ page: res.page, roots: res.nodes.map((n) => ({ id: n.id, type: n.type, name: n.name, size: `${n.w}×${n.h}`, layout: n.layout?.mode, children: (n.children ?? []).map((c) => ({ id: c.id, type: c.type, name: c.name, size: `${c.w}×${c.h}` })).slice(0, 60) })), byType, instancesByComponent: byComponent, hiddenLayers: flat.filter((x) => x.n.visible === false && !x.inInstance).length });
+    }
+    if (f === "text") return ok({ page: res.page, ...page(flat.filter((x) => x.n.type === "TEXT").map(({ n, path, inInstance }) => ({ id: n.id, path, text: n.text?.chars, style: n.text?.style ?? n.text?.font, size: n.text?.fontSize, inInstance: inInstance || undefined, hidden: n.visible === false || undefined }))) });
+    if (f === "instances") return ok({ page: res.page, ...page(flat.filter((x) => x.n.type === "INSTANCE").map(({ n, path }) => ({ id: n.id, path, componentSet: n.instance?.componentSet, componentSetId: n.instance?.componentSetId, component: n.instance?.component, componentId: n.instance?.componentId, variants: n.instance?.variants, props: n.instance?.props, overrides: n.instance?.overrides }))) });
+    if (f === "plan") {
+      const out = res.nodes.map((n) => snapshotToPlan(n, loadDs()));
+      const plan = { ...out[0].plan, screens: out.flatMap((o) => o.plan.screens) };
+      return ok({ plan, warnings: out.flatMap((o) => o.warnings).slice(0, 30), next: "Edit the plan (or reuse it as is), then figma_preview_plan. Instances point at their component set by id." });
+    }
+    const text = JSON.stringify(res);
+    if (text.length > 80_000) return ok({ truncated: true, chars: text.length, hint: "This tree is too big to return whole. Use format: \"summary\" first, then inspect a child by id, lower depth, or format text/instances with offset/limit.", preview: text.slice(0, 20_000) });
+    return ok(res);
+  }));
 
   server.registerTool("figma_preview_plan", {
     description: "Validate a Design Plan (Design DSL JSON) with Zod, resolve every component/variant/property/token against the cached Design System, and return a planId + human-readable summary WITHOUT touching Figma. Invalid plans or unresolved components return structured errors with suggestions — fix the plan and preview again.",
@@ -110,7 +140,7 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
     const c = compilePlan(d, v.plan);
     if (!c.ok || !c.plan) return fail(c.errors, { warnings: c.warnings, summary: c.summary });
     plans.set(c.plan.planId, { plan: c.plan, summary: c.summary });
-    const destructive = !!c.plan.target.parentId;
+    const destructive = !!c.plan.target.parentId || !!c.plan.inserts?.length;
     return ok({ success: true, planId: c.plan.planId, summary: c.summary, warnings: [...c.warnings, ...(staleWarning() ?? [])], requiresApproval: destructive, next: destructive ? "Show the summary to the user; call figma_execute_plan with approved=true only after they agree." : "Show the summary; then call figma_execute_plan (creates new frames only)." });
   }));
 
@@ -147,7 +177,7 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
   }, async ({ planId, approved }) => guard(async () => {
     const entry = plans.get(planId);
     if (!entry) return fail([{ type: "INVALID_PLAN", message: `Unknown planId ${planId}. Call figma_preview_plan first.` }]);
-    if (entry.plan.target.parentId && !approved) return fail([{ type: "NOT_APPROVED", message: "This plan modifies an existing node. Ask the user, then call again with approved=true." }]);
+    if ((entry.plan.target.parentId || entry.plan.inserts?.length) && !approved) return fail([{ type: "NOT_APPROVED", message: "This plan modifies an existing node. Ask the user, then call again with approved=true." }]);
     const images = await inlineImages(entry.plan);
     const m = meta();
     const report = await bridge.request<ExecutionReport>("executePlan", { plan: images.plan, meta: m }, 180_000);
@@ -169,10 +199,11 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
 
   const verifyPlan = async (plan: ResolvedPlan, report: ExecutionReport, sources?: Record<string, { w: number; h?: number }>) => {
     const all = [];
-    for (let i = 0; i < plan.roots.length; i++) {
+    const roots = [...plan.roots, ...(plan.inserts ?? []).flatMap((x) => x.roots)];
+    for (let i = 0; i < roots.length; i++) {
       const id = report.createdRootIds[i];
       const snap = id ? ((await bridge.request<{ nodes: NodeSnapshot[] }>("inspect", { target: id, depth: 12, maxNodes: 4000, expandInstances: true })).nodes[0]) : undefined;
-      all.push(...verifyAgainstPlan(plan.roots[i], snap, { sources }));
+      all.push(...verifyAgainstPlan(roots[i], snap, { sources }));
     }
     return all;
   };
@@ -294,7 +325,8 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
       maxDimension: z.number().int().min(100).max(4000).optional().describe("Default 1600 px"),
       format: z.enum(["png", "jpg"]).optional(),
       compareWith: z.object({
-        html: z.string().describe("The .html file (or folder) the node was built from"),
+        html: z.string().optional().describe("The .html file (or folder) the node was built from"),
+        nodeId: z.string().optional().describe("Another Figma node to compare with (before/after, original/clone)"),
         selector: z.string().optional().describe("Element to screenshot (default body)"),
         viewport: z.number().int().min(200).max(4000).optional().describe("Viewport width (default: the node's width)"),
       }).optional(),
@@ -307,9 +339,21 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
       const img = await exp(scale);
       return { content: [{ type: "image", data: img.base64, mimeType: mime(img.format) }, { type: "text", text: JSON.stringify({ node: img.name, width: img.width, height: img.height, scale: img.scale }) }] };
     }
+    if (compareWith.nodeId) {
+      const [a, b] = await Promise.all([exp(scale), bridge.request<{ base64: string; format: string; width: number; height: number }>("exportImage", { nodeId: compareWith.nodeId, scale, format, maxDimension: maxDim }, 120_000)]);
+      const diff = await diffImages({ base64: a.base64, mime: mime(a.format) }, { base64: b.base64, mime: mime(b.format) });
+      const same = diff.changedCells < 0.01 && Math.abs(a.width - b.width) <= 2 && Math.abs(a.height - b.height) <= 2;
+      return { content: [
+        { type: "text", text: `${nodeId}:` }, { type: "image", data: a.base64, mimeType: mime(a.format) },
+        { type: "text", text: `${compareWith.nodeId}:` }, { type: "image", data: b.base64, mimeType: mime(b.format) },
+        { type: "text", text: "Diff (red = changed):" }, { type: "image", data: diff.heatmap, mimeType: "image/png" },
+        { type: "text", text: JSON.stringify({ a: { width: a.width, height: a.height }, b: { width: b.width, height: b.height }, changedCells: diff.changedCells, regions: diff.regions, verdict: same ? "same" : `${diff.regions.length} changed region(s)` }) },
+      ] };
+    }
+    if (!compareWith.html) return fail([{ type: "INVALID_PLAN", message: "compareWith needs html or nodeId." }]);
     const snap = (await bridge.request<{ nodes: NodeSnapshot[] }>("inspect", { target: nodeId, depth: 0 })).nodes[0];
     const figmaW = snap?.w ?? 1440, figmaH = snap?.h ?? 900;
-    const html = await screenshotHtml(resolve(workdir, compareWith.html), { selector: compareWith.selector, width: compareWith.viewport ?? figmaW });
+    const html = await screenshotHtml(resolve(workdir, compareWith.html!), { selector: compareWith.selector, width: compareWith.viewport ?? figmaW });
     // Export at the HTML's pixel size so both images line up (capped by maxDimension).
     const img = await exp(html.width / Math.max(1, figmaW));
     const diff = await diffImages({ base64: html.base64 }, { base64: img.base64, mime: mime(img.format) });

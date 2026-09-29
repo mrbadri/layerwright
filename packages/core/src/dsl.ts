@@ -138,9 +138,12 @@ export const DesignPlanSchema = z
     target: z.object({ parentId: z.string().optional(), page: z.string().min(1).optional().describe("Page name or id (default: the current page); switched to before building"), x: z.number().optional(), y: z.number().optional() }).strict().optional(),
     /** Horizontal gap between multiple top-level screens. */
     screenGap: z.number().min(0).max(2000).default(80),
-    screens: z.array(DesignNodeSchema).min(1).max(30),
+    screens: z.array(DesignNodeSchema).max(30).default([]),
+    /** Add nodes into existing parents (e.g. fill 9 slots) in the same run and undo step. Needs approval. */
+    inserts: z.array(z.object({ parentId: z.string().min(1), index: z.number().int().min(0).optional(), nodes: z.array(DesignNodeSchema).min(1).max(100) }).strict()).max(50).optional(),
   })
-  .strict();
+  .strict()
+  .refine((p) => p.screens.length > 0 || (p.inserts?.length ?? 0) > 0, { message: "A plan needs screens or inserts.", path: ["screens"] });
 
 export type DesignPlan = z.infer<typeof DesignPlanSchema>;
 

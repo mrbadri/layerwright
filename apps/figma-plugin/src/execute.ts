@@ -447,6 +447,19 @@ export async function executePlan(plan: ResolvedPlan, meta?: { session?: string;
     }
     // Content added to a section: grow the section so it still contains everything.
     if (parent.type === "SECTION") fitSection(parent as SectionNode);
+    // Inserts: nodes into existing parents (slots), in the same run and undo step.
+    for (const ins of plan.inserts ?? []) {
+      const p = await figma.getNodeByIdAsync(ins.parentId);
+      if (!p || !("appendChild" in p)) throw new ExecError({ type: "NODE_NOT_FOUND", message: `Insert parent ${ins.parentId} not found or cannot have children.` });
+      const host = p as BaseNode & ChildrenMixin;
+      let at = ins.index;
+      for (const r of ins.roots) {
+        const node = await buildNode(r, host, ctx);
+        created.push(node);
+        if (at !== undefined) host.insertChild(Math.min(at++, host.children.length - 1), node);
+      }
+      if (host.type === "SECTION") fitSection(host as SectionNode);
+    }
   } catch (e) {
     // Never leave a half-built design behind: remove only what this run created.
     for (const n of created) if (!n.removed) n.remove();

@@ -113,3 +113,16 @@ test("componentize gives cleanly stacked absolute layers Auto Layout; text fills
   assert.ok(a.children.every((t: any) => t.textAutoResize === "HEIGHT" && t.layoutSizingHorizontal === "FILL"), "text in a column wraps inside it");
   assert.equal(b.layoutMode, "NONE", "uneven gaps keep their exact positions");
 });
+
+test("inserts fill several existing parents in one run, at the given index", async () => {
+  const { board: b, items } = board(2);
+  const v = validatePlan({ name: "slots", inserts: [
+    { parentId: items[0].id, nodes: [{ type: "text", content: "Slot A" }] },
+    { parentId: b.id, index: 0, nodes: [{ type: "frame", name: "Header", width: 320, height: 40 }] },
+  ] });
+  assert.ok(v.success, JSON.stringify(!v.success && v.errors));
+  const r = await executePlan(compilePlan(emptyDesignSystem(), v.plan).plan!);
+  assert.equal(r.createdRootIds.length, 2);
+  assert.equal(items[0].children.at(-1).characters, "Slot A");
+  assert.equal(b.children[0].name, "Header");
+});

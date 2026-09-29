@@ -4,3 +4,5 @@ export * from "./semantics.ts";
 export * from "./resolver.ts";
 export * from "./retrieval.ts";
 export * from "./analyze.ts";
+export * from "./export.ts";
+export * from "./weights.ts";

@@ -99,3 +99,9 @@ test("verification flags sizes far from the plan or the source, hidden layers an
   snap.h = 492; snap.children[0].instance.overrides = {}; snap.children[0].children[0].text.chars = "Evidence";
   assert.deepEqual(verifyAgainstPlan(frame, snap, { sources: { "screens[0]": { w: 480, h: 490 } } }), []);
 });
+
+test("the scan summary lists component sets that share a name", async () => {
+  const { summarize } = await import("../src/index.ts");
+  const d = summarize(dupDs()).duplicateNames!;
+  assert.deepEqual(d.map((x) => [x.name, x.candidates.map((c) => c.id)]), [["Accordion", ["8:1", "9:1"]]]);
+});

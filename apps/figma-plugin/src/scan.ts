@@ -180,6 +180,9 @@ export async function snapshot(node: BaseNode, opts: { depth?: number; maxNodes?
     if ("fills" in sn) s.fills = paints(sn.fills as readonly Paint[]);
     if ("strokes" in sn) s.strokes = paints(sn.strokes);
     if ("cornerRadius" in sn && typeof sn.cornerRadius === "number" && sn.cornerRadius > 0) s.radius = sn.cornerRadius;
+    if ("strokeWeight" in sn && typeof sn.strokeWeight === "number" && s.strokes) s.strokeWeight = sn.strokeWeight;
+    if ("opacity" in sn && sn.opacity < 1) s.opacity = Math.round(sn.opacity * 100) / 100;
+    if ("clipsContent" in sn && (sn as FrameNode).clipsContent && n.type !== "INSTANCE") s.clip = true;
     if ("fillStyleId" in sn && typeof sn.fillStyleId === "string" && sn.fillStyleId) s.fillStyle = sn.fillStyleId;
     if ("boundVariables" in sn && sn.boundVariables) {
       const b: Record<string, string> = {};
@@ -193,6 +196,9 @@ export async function snapshot(node: BaseNode, opts: { depth?: number; maxNodes?
       const t = n as TextNode;
       s.text = { chars: t.characters.length > 300 ? `${t.characters.slice(0, 300)}…` : t.characters, fontSize: typeof t.fontSize === "number" ? t.fontSize : undefined, font: t.fontName !== figma.mixed ? `${t.fontName.family} ${t.fontName.style}` : "mixed",
         lineHeight: t.lineHeight === figma.mixed ? "mixed" : t.lineHeight.unit === "AUTO" ? "AUTO" : t.lineHeight.unit === "PIXELS" ? Math.round(t.lineHeight.value * 10) / 10 : `${t.lineHeight.value}%` };
+      s.text.align = t.textAlignHorizontal;
+      s.text.autoResize = t.textAutoResize;
+      if (t.letterSpacing !== figma.mixed && t.letterSpacing.value) s.text.letterSpacing = t.letterSpacing.unit === "PIXELS" ? t.letterSpacing.value : Math.round((t.letterSpacing.value / 100) * (typeof t.fontSize === "number" ? t.fontSize : 16) * 100) / 100;
       if (typeof t.textStyleId === "string" && t.textStyleId) { s.text.styleId = t.textStyleId; s.text.style = (await figma.getStyleByIdAsync(t.textStyleId))?.name; }
     }
     if (n.type === "INSTANCE") {

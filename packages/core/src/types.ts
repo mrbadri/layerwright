@@ -166,7 +166,10 @@ export interface NodeSnapshot {
   radius?: number;
   bound?: Record<string, string>; // field -> variable name/id
   fillStyle?: string;
-  text?: { chars: string; fontSize?: number; font?: string; lineHeight?: number | "AUTO" | string; styleId?: string; style?: string };
+  text?: { chars: string; fontSize?: number; font?: string; lineHeight?: number | "AUTO" | string; styleId?: string; style?: string; align?: string; letterSpacing?: number; autoResize?: string };
+  strokeWeight?: number;
+  opacity?: number;
+  clip?: boolean;
   instance?: { componentId?: string; component?: string; componentSet?: string; componentSetId?: string; variants?: Record<string, string>; props?: Record<string, unknown>; overrides?: Record<string, string[]> };
   children?: NodeSnapshot[];
   truncated?: number;
@@ -279,6 +282,8 @@ export interface ResolvedPlan {
   target: { parentId?: string; page?: string; x?: number; y?: number };
   screenGap?: number;
   roots: ResolvedNode[];
+  /** Nodes added into existing parents. */
+  inserts?: { parentId: string; index?: number; roots: ResolvedNode[] }[];
 }
 
 // ---------- Transformations (Mode B) ----------

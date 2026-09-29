@@ -531,9 +531,11 @@ export function compilePlan(ds: DesignSystem, plan: DesignPlan): CompileResult {
     const b = build(s, `screens[${i}]`, null);
     if (b) { roots.push(b); summary.screens.push(b.name); }
   });
+  const inserts = (plan.inserts ?? []).map((ins: any, i: number) => ({ parentId: ins.parentId, index: ins.index,
+    roots: ins.nodes.map((n: any, j: number) => build(n, `inserts[${i}].nodes[${j}]`, null)).filter(Boolean) as ResolvedNode[] }));
   summary.tokensUsed = [...tokenSet];
   summary.textStylesUsed = [...styleSet];
-  const body = JSON.stringify({ plan, roots, scanned: ds.scannedAt });
-  const resolved: ResolvedPlan = { planId: `plan_${hash(body)}`, name: plan.name, target: { ...(plan.target ?? {}) }, screenGap: plan.screenGap, roots };
+  const body = JSON.stringify({ plan, roots, inserts, scanned: ds.scannedAt });
+  const resolved: ResolvedPlan = { planId: `plan_${hash(body)}`, name: plan.name, target: { ...(plan.target ?? {}) }, screenGap: plan.screenGap, roots, inserts: inserts.length ? inserts : undefined };
   return { ok: errors.length === 0, plan: errors.length === 0 ? resolved : undefined, errors, warnings, summary };
 }

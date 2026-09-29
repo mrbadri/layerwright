@@ -139,5 +139,15 @@ export function summarize(ds: DesignSystem) {
     roles: roleCounts,
     componentSets: ds.componentSets.slice(0, 80).map((s) => `${s.name} {${s.properties.filter((p) => p.type === "VARIANT").map((p) => `${p.name}: ${(p.options ?? []).join("|")}`).join("; ")}}`),
     standaloneComponents: ds.components.filter((c) => !c.componentSetId).slice(0, 60).map((c) => c.name),
+    duplicateNames: duplicateNames(ds),
   };
+}
+
+/** Component sets / components that share a name (often an old copy left behind). Plans must pick them by id. */
+export function duplicateNames(ds: DesignSystem) {
+  const byName = new Map<string, { id: string; page?: string; variants: number; remote: boolean }[]>();
+  for (const s of ds.componentSets) byName.set(s.name, [...(byName.get(s.name) ?? []), { id: s.id, page: s.page, variants: s.variantIds.length, remote: s.remote }]);
+  for (const c of ds.components.filter((x) => !x.componentSetId)) byName.set(c.name, [...(byName.get(c.name) ?? []), { id: c.id, page: c.page, variants: 0, remote: c.remote }]);
+  const dups = [...byName].filter(([, v]) => v.length > 1).map(([name, v]) => ({ name, candidates: v }));
+  return dups.length ? dups : undefined;
 }
