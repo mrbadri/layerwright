@@ -35,6 +35,7 @@ All notable changes to this project are documented here. The format follows
 - `figma_inspect({ expandInstances: true })`: the layers inside instances (text, hidden layers) and which ones are overridden.
 
 ### Fixed
+- Problems say what to do: changes that didn't apply come back grouped by cause with the fix (e.g. "20 × library not enabled for this file → Assets panel → Libraries…", "font not installed: Gilroy → your export ships it: `npx layerwright fonts … --install --only Gilroy`"), once instead of once per layer, in Claude and in the plugin window. The scan says when library styles can't be applied and why.
 - HTML import, found on a real Claude Design export:
   - Colours written as `oklch()`, `lab()`, `hsl()`, `color-mix()` and the like (Claude Design's default) were dropped; any CSS colour is now converted to sRGB.
   - An absolutely positioned overlay on a one-child box was imported twice (once in the flow).

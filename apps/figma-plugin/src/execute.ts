@@ -273,7 +273,7 @@ async function buildText(n: ResolvedText, parent: BaseNode & ChildrenMixin, ctx:
   await ctx.font(t.fontName as FontName);
   if (n.textStyleId || n.textStyleKey) {
     const found = await textStyleOf(n.textStyleId, n.textStyleKey, n.textStyleFont);
-    if (!found) throw new ExecError({ type: "STYLE_NOT_FOUND", path: n.path, message: `Text style ${n.textStyleId} not found, or its library isn't available to this file.` });
+    if (!found) throw new ExecError({ type: "STYLE_NOT_FOUND", path: n.path, message: `A text style can't be applied: it was deleted, or its library isn't enabled for this file (Assets → Libraries).` });
     const style = found.style;
     await ctx.font(found.font);
     await t.setTextStyleIdAsync(style.id);
@@ -628,7 +628,7 @@ export async function applyTransformations(list: Transformation[]): Promise<Tran
         case "apply_text_style": {
           if (node.type !== "TEXT") throw new Error("not a text node");
           const found = await textStyleOf(t.styleId, t.styleKey, t.font);
-          if (!found) throw new Error(`text style ${t.styleName} not found, or its library isn't available to this file`);
+          if (!found) throw new Error(`Text style "${t.styleName}" can't be applied: its library isn't enabled for this file (Assets → Libraries).`);
           await ctx.fontsOf(node);
           await ctx.font(found.font);
           await node.setTextStyleIdAsync(found.style.id);

@@ -1,8 +1,8 @@
 // MCP tool surface. Claude reasons; these tools validate, resolve and execute deterministically.
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import {
   analyzeDesign, compilePlan, emptyDesignSystem, enrichDesignSystem, Interaction, resolveInteraction, retrieve, snapshotToPlan, summarize, validatePlan, verifyAgainstPlan,
   type AnalysisResult, type DesignSystem, type ExecutionReport, type NodeSnapshot, type ResolvedPlan, type StructuredError, type TransformReport, type PlanSummary,
@@ -14,6 +14,7 @@ import { inlineImages } from "./images.ts";
 import { PKG_VERSION } from "./meta.ts";
 import { cachedUpdate, checkForUpdate, type UpdateInfo } from "./update.ts";
 import { MemoryStore } from "./memory.ts";
+import { fontFix, groupFailures } from "./problems.ts";
 import { duplicateNames } from "@cde/core";
 
 type ToolResult = { content: ({ type: "text"; text: string } | { type: "image"; data: string; mimeType: string })[]; isError?: boolean };
@@ -217,6 +218,8 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
     const usedFonts = { ...mem.fontMap, ...(fontMap ?? {}) };
     const usedMappings = [...mem.mappings.filter((m) => !(userMappings ?? []).some((u) => u.selector === m.selector)), ...(userMappings ?? [])];
     memory.rememberFonts(fontMap); memory.rememberMappings(userMappings);
+    const exportDir = (() => { const p = resolve(workdir, path); try { return statSync(p).isDirectory() ? p : dirname(p); } catch { return dirname(p); } })();
+    memory.update((m) => { m.lastExport = exportDir; });
     const r = await renderToPlan(resolve(workdir, path), { viewports: viewport === undefined ? (targets?.length ? [1440] : undefined) : [viewport].flat(), selector, targets, ds: useDs ? d : undefined, mappings: usedMappings.length ? usedMappings : undefined, fontMap: Object.keys(usedFonts).length ? usedFonts : undefined });
     const c = compilePlan(d, page || target ? { ...r.plan, target: { ...(r.plan.target ?? {}), ...(target ?? {}), ...(page ? { page } : {}) } } : r.plan, { preferred: preferred() });
     const fromMemory = { fontMap: Object.keys(mem.fontMap).filter((k) => !fontMap?.[k]).length ? mem.fontMap : undefined, mappings: usedMappings.length - (userMappings?.length ?? 0) || undefined };
@@ -248,10 +251,15 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
   /** Say why a font is missing when the page only ships it as a web font (Figma can't load .woff/.woff2). */
   const explainFonts = (warnings: string[], webFonts: Record<string, string[]> = {}) => warnings.map((w) => {
     const m = w.match(/^Font "([^"]+)" is not (?:available|installed)/);
-    const formats = m && Object.entries(webFonts).find(([f]) => f.toLowerCase() === m[1].toLowerCase())?.[1];
-    if (!m || !formats) return w;
+    if (!m) return w;
+    const exportDir = memory.read().lastExport;
+    const shipped = fontFix([m[1]], exportDir);
+    // The export ships the font: say exactly how to install it.
+    if (shipped.startsWith("Your export ships")) return `${w} ${shipped}`;
+    const formats = Object.entries(webFonts).find(([f]) => f.toLowerCase() === m[1].toLowerCase())?.[1];
+    if (!formats) return `${w} Install it on this computer and restart Figma, or re-import with fontMap: { "${m[1]}": "<an installed family>" }.`;
     const webOnly = formats.length > 0 && formats.every((f) => f === "woff" || f === "woff2");
-    return `${w} The page loads it as a web font (${formats.join(", ") || "unknown format"})${webOnly ? ", which Figma can't use: install a TTF/OTF version of it on this machine" : ": install it on this machine"}, or re-import with fontMap: { "${m[1]}": "<an installed family>" }.`;
+    return `${w} The page loads it as a web font (${formats.join(", ") || "unknown format"})${webOnly ? ", which Figma can't use: install a TTF/OTF version of it on this machine" : ": install it on this machine"} and restart Figma, or re-import with fontMap: { "${m[1]}": "<an installed family>" }.`;
   });
 
   const verifyPlan = async (plan: ResolvedPlan, report: ExecutionReport, sources?: Record<string, { w: number; h?: number }>) => {
@@ -319,7 +327,11 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
     analyses.delete(analysisId);
     const byOp: Record<string, number> = {};
     for (const t of final) if (report.applied.some((a) => a.id === t.id)) byOp[t.op] = (byOp[t.op] ?? 0) + 1;
-    return ok({ success: report.failed.length === 0, applied: report.applied.length, byOp, failed: report.failed.slice(0, 20), hiddenOriginals: report.hiddenOriginals.length });
+    const names = new Map(final.map((t) => [t.id, t.nodeName]));
+    const problems = groupFailures(report.failed.map((f) => ({ ...f, node: names.get(f.id) })), { exportDir: memory.read().lastExport });
+    return ok({ success: report.failed.length === 0, applied: report.applied.length, byOp, notApplied: report.failed.length || undefined,
+      problems: problems.length ? problems : undefined, hiddenOriginals: report.hiddenOriginals.length,
+      next: problems.length ? `Tell the user what didn't apply and the fix: ${problems.map((p) => `${p.count} × ${p.cause} → ${p.fix}`).join(" | ")}` : undefined });
   }));
 
   server.registerTool("figma_pages", {
@@ -468,7 +480,11 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
     const sent = ops.map((o, k) => o.op !== "prototype" ? o : { ...o, interactions: o.interactions.map((it) => resolveInteraction(it, `ops[${k}]`, (r) => (/^\$\d+$/.test(r) ? r : undefined), errors, () => ["a Figma node id", '"$n"'])).filter(Boolean) });
     if (errors.length) return fail(errors);
     const res = await bridge.request<{ applied: unknown[]; failed?: { op: number; error: string } }>("editNodes", { ops: sent, approved, meta: meta() }, 180_000);
-    return res.failed ? fail([{ type: "FIGMA_API_ERROR", message: `op ${res.failed.op} (${ops[res.failed.op].op}): ${res.failed.error}` }], { ...res }) : ok({ success: true, ...res, next: "Check the result with figma_export_image." });
+    if (res.failed) {
+      const [p] = groupFailures([{ error: res.failed.error }], { exportDir: memory.read().lastExport });
+      return fail([{ type: "FIGMA_API_ERROR", message: `op ${res.failed.op} (${ops[res.failed.op].op}): ${res.failed.error}`, fix: p?.fix }], { ...res });
+    }
+    return ok({ success: true, ...res, next: "Check the result with figma_export_image." });
   }));
 
   server.registerTool("layerwright_memory", {

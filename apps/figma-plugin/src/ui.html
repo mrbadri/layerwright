@@ -111,8 +111,8 @@
   };
   function friendly(err) {
     const m = String(err.message || "");
-    if (/font .*could not be loaded|Cannot unwrap symbol|unloaded font/i.test(m)) return "A font isn't installed on this computer, so its text can't be changed. Install the font and restart Figma.";
-    if (/timed out/i.test(m) && /library/i.test(m)) return "A library didn't answer. Is it enabled for this file (Assets → Libraries)?";
+    if (/font .*could not be loaded|Cannot unwrap symbol|unloaded font/i.test(m)) return "A font isn't installed on this computer, so its text can't be changed. Install the font (Claude can tell you the command), then quit and reopen Figma.";
+    if (/library isn't enabled|isn't available to this file|library didn't answer|timed out.*library/i.test(m)) return "The Design System library isn't enabled for this file. Open the Assets panel → Libraries (book icon), enable it, then try again.";
     return FRIENDLY[err.type] || "Something went wrong.";
   }
   const ago = (t) => { const s = Math.round((Date.now() - t) / 1000); return s < 60 ? s + "s ago" : Math.round(s / 60) + "m ago"; };
@@ -214,8 +214,14 @@
         $("errorTech").textContent = msg.res.error.type + ": " + msg.res.error.message;
         events.unshift({ ok: false, text: (LABEL[method] || method) + " failed", at: Date.now(), took });
       } else {
-        if (msg.res.ok) $("error").style.display = "none";
-        if (!QUIET[method]) events.unshift({ ok: true, text: summary(method, msg.res.result), at: Date.now(), took });
+        const failed = msg.res.ok && msg.res.result && Array.isArray(msg.res.result.failed) ? msg.res.result.failed : [];
+        if (failed.length) {
+          // Some changes didn't apply: say why once (not once per layer), with what to do.
+          $("error").style.display = "block";
+          $("errorText").textContent = count(failed.length, "change", "changes") + " couldn't be applied. " + friendly({ message: failed[0].error });
+          $("errorTech").textContent = failed[0].error;
+        } else if (msg.res.ok) $("error").style.display = "none";
+        if (!QUIET[method]) events.unshift({ ok: !failed.length, text: summary(method, msg.res.result), at: Date.now(), took });
       }
       renderActivity();
       render();

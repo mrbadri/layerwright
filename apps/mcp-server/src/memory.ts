@@ -18,6 +18,8 @@ export interface ProjectMemory {
   notes: { at: string; text: string }[];
   /** Recent problems (newest last), capped. */
   problems: Problem[];
+  /** The folder of the last imported export (where its fonts may be). */
+  lastExport?: string;
 }
 
 const MAX_PROBLEMS = 200;
@@ -91,6 +93,7 @@ export class MemoryStore {
 /** A next step for a problem that keeps happening. */
 export function hintFor(p: Problem): string | undefined {
   const m = p.message;
+  if (/library isn't available|isn't enabled|library didn't answer/i.test(m)) return "The Design System library isn't enabled for this file: Assets panel → Libraries → enable it, then run it again.";
   if (/font .*(not available|could not be loaded)|Cannot unwrap symbol/i.test(m)) return "A font is missing on this computer: `npx layerwright fonts <export folder> --install`, restart Figma, or pass fontMap.";
   if (p.type === "AMBIGUOUS_COMPONENT") return "Pick one candidate by { id }; the choice is remembered for this project.";
   if (p.type === "COMPONENT_NOT_FOUND") return "Rescan the Design System (refresh: true); for a library component not used in the file yet, pass its { key }.";

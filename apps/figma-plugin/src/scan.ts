@@ -238,7 +238,7 @@ export async function scanDesignSystem(opts: { includeLibraries?: boolean; maxIn
   }
   lap("libraryStylesAndVariables");
   const missingFonts = typography.filter((t) => !t.fontFamily).length;
-  if (missingFonts) warnings.push(`${missingFonts} library text style(s) don't report their font and no layer using them could tell; they can't be applied to new text in this file.`);
+  if (missingFonts) warnings.push(`${missingFonts} library text style(s) can't be applied to new text in this file: their library isn't enabled here (Figma returns no font for them). Tell the user: Assets panel → Libraries → enable the Design System library for this file, then rescan.`);
   progress("Design System scanned", 1, 1);
   return { fileName: figma.root.name, scannedAt: new Date().toISOString(), components, componentSets, variableCollections, variables, styles, typography, warnings, timings };
 }
