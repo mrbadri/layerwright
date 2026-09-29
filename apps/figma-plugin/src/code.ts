@@ -1,7 +1,8 @@
 // Plugin main thread: a deterministic worker that answers bridge requests.
 import type { BridgeRequest, BridgeResponse, ResolvedPlan, Transformation } from "@cde/core";
 import { scanDesignSystem, snapshot } from "./scan.ts";
-import { executePlan, applyTransformations, ExecError } from "./execute.ts";
+import { executePlan, applyTransformations, ExecError, pageOf } from "./execute.ts";
+import { editNodes, cleanup } from "./edit.ts";
 import { importTree, ensurePages, foundations } from "./import.ts";
 
 figma.showUI(__html__, { width: 260, height: 180, themeColors: true });
@@ -29,7 +30,11 @@ async function handle(req: BridgeRequest): Promise<unknown> {
       return { page: figma.currentPage.name, nodes: out };
     }
     case "executePlan":
-      return executePlan(p.plan as ResolvedPlan);
+      return executePlan(p.plan as ResolvedPlan, p.meta);
+    case "editNodes":
+      return editNodes(p);
+    case "cleanup":
+      return cleanup(p);
     case "applyTransformations":
       return applyTransformations(p.transformations as Transformation[]);
     case "importTree":
@@ -49,10 +54,14 @@ async function handle(req: BridgeRequest): Promise<unknown> {
       return { base64: figma.base64Encode(bytes), format: p.format === "jpg" ? "jpg" : "png", scale, width: Math.round(node.width * scale), height: Math.round(node.height * scale), name: node.name };
     }
     case "select": {
-      const nodes = (await Promise.all((p.nodeIds as string[]).map((id) => figma.getNodeByIdAsync(id)))).filter((n): n is SceneNode => !!n && "x" in n);
+      // Selection only works on the current page: switch to the page of the first node, select what's on it.
+      const all = (await Promise.all((p.nodeIds as string[]).map((id) => figma.getNodeByIdAsync(id)))).filter((n): n is SceneNode => !!n && "x" in n);
+      const page = all.length ? pageOf(all[0]) : undefined;
+      if (page && page.id !== figma.currentPage.id) await figma.setCurrentPageAsync(page);
+      const nodes = all.filter((n) => pageOf(n)?.id === figma.currentPage.id);
       figma.currentPage.selection = nodes;
       if (nodes.length) figma.viewport.scrollAndZoomIntoView(nodes);
-      return { selected: nodes.length };
+      return { selected: nodes.length, page: figma.currentPage.name, skippedOnOtherPages: all.length - nodes.length || undefined };
     }
     default:
       throw new ExecError({ type: "FIGMA_API_ERROR", message: `Unknown method ${(req as any).method}` });

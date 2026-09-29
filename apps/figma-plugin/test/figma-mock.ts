@@ -34,7 +34,10 @@ export class N {
   remove() { this.removed = true; if (this.parent) this.parent.children = this.parent.children.filter((x: any) => x !== this); }
   resize(w: number, h: number) { this.width = w; this.height = h; }
   setBoundVariable(f: string, v: any) { this.boundVariables[f] = { type: "VARIABLE_ALIAS", id: v.id }; }
-  findAllWithCriteria({ types }: any): any[] { return this.children.flatMap((c) => [...(types.includes(c.type) ? [c] : []), ...c.findAllWithCriteria({ types })]); }
+  findAllWithCriteria(q: any): any[] {
+    if (q.pluginData) return this.findAllWithCriteriaPlugin(q.pluginData.keys);
+    return this.children.flatMap((c) => [...(q.types.includes(c.type) ? [c] : []), ...c.findAllWithCriteria(q)]);
+  }
   get layoutSizingHorizontal() { return this._lh; }
   set layoutSizingHorizontal(v: string) { this.checkSizing(v); this._lh = v; }
   get layoutSizingVertical() { return this._lv; }
@@ -45,6 +48,28 @@ export class N {
   }
   async setEffectStyleIdAsync() {}
   async setFillStyleIdAsync() {}
+  locked = false; primaryAxisSizingMode = "AUTO"; counterAxisSizingMode = "AUTO"; layoutWrap = "NO_WRAP"; counterAxisSpacing = 0; dashPattern: number[] = [];
+  private data = new Map<string, string>();
+  setPluginData(k: string, v: string) { this.data.set(k, v); }
+  getPluginData(k: string) { return this.data.get(k) ?? ""; }
+  hasPluginData(k: string) { return this.data.has(k); }
+  resizeWithoutConstraints(w: number, h: number) { if (this.type !== "SECTION") throw new Error("only sections here"); this.width = w; this.height = h; }
+  clone(attach = true): any {
+    const c: any = new (this.constructor as any)(...(this.type === "TEXT" ? [] : [this.type]));
+    for (const k of ["name", "x", "y", "width", "height", "fills", "strokes", "layoutMode", "itemSpacing", "visible", "cornerRadius"]) c[k] = (this as any)[k];
+    if (this.type === "TEXT") { c.fontName = (this as any).fontName; c._c = (this as any)._c; }
+    for (const ch of [...this.children]) c.appendChild(ch.clone(false));
+    if (attach) this.parent?.appendChild(c);
+    return c;
+  }
+  // Component properties on components and sets.
+  componentPropertyDefinitions: Record<string, any> = {};
+  addComponentProperty(name: string, type: string, defaultValue: unknown) {
+    if (this.type !== "COMPONENT" && this.type !== "COMPONENT_SET") throw new Error("properties need a component or component set");
+    const key = `${name}#${++seq}:0`; this.componentPropertyDefinitions[key] = { type, defaultValue }; return key;
+  }
+  componentPropertyReferences: any = null;
+  findAllWithCriteriaPlugin(keys: string[]): any[] { return this.children.flatMap((c) => [...(keys.some((k) => c.hasPluginData(k)) ? [c] : []), ...c.findAllWithCriteriaPlugin(keys)]); }
 }
 
 export class T extends N {
@@ -80,6 +105,11 @@ const styles = new Map<string, any>([
 export function resetFigma() {
   nodes.clear(); loaded.clear(); seq = 0;
   const page = new N("PAGE", "0:1");
+  page.name = "Page 1";
+  const page2 = new N("PAGE", "0:2");
+  page2.name = "Playground";
+  const root = new N("DOCUMENT", "0:0");
+  root.appendChild(page); root.appendChild(page2);
   new C("1:2", "Type=Primary, Size=Medium", { "Label#10:0": { type: "TEXT", defaultValue: "Button" }, "Show icon#10:1": { type: "BOOLEAN", defaultValue: false } }, ["Label"]);
   new C("1:3", "Type=Secondary, Size=Medium", { "Label#10:0": { type: "TEXT", defaultValue: "Button" } }, ["Label"]);
   new C("2:2", "State=Default", { "Label#20:0": { type: "TEXT", defaultValue: "Label" }, "Placeholder#20:1": { type: "TEXT", defaultValue: "" } }, ["Label", "Placeholder"]);
@@ -88,6 +118,25 @@ export function resetFigma() {
   (globalThis as any).figma = {
     mixed: MIXED,
     currentPage: Object.assign(page, { selection: [] }),
+    root,
+    loadAllPagesAsync: async () => {},
+    setCurrentPageAsync: async (p: any) => { (globalThis as any).figma.currentPage = Object.assign(p, { selection: p.selection ?? [] }); },
+    createSection: () => { const s = new N("SECTION"); s.fills = []; return s; },
+    createComponentFromNode: (n: any) => {
+      if (["COMPONENT", "COMPONENT_SET", "INSTANCE"].includes(n.type)) throw new Error(`cannot create a component from ${n.type}`);
+      const c = new N("COMPONENT");
+      for (const k of ["name", "x", "y", "width", "height", "fills", "strokes", "layoutMode", "itemSpacing", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft", "primaryAxisSizingMode", "counterAxisSizingMode", "cornerRadius"]) (c as any)[k] = n[k];
+      for (const ch of [...n.children]) c.appendChild(ch);
+      const parent = n.parent; if (parent) parent.insertChild(parent.children.indexOf(n), c); n.remove();
+      return c;
+    },
+    combineAsVariants: (comps: any[], parent: any) => {
+      if (!comps.length || comps.some((c) => c.type !== "COMPONENT")) throw new Error("combineAsVariants needs components");
+      if (new Set(comps.map((c) => c.name)).size !== comps.length) throw new Error("duplicate variant names");
+      const set = new N("COMPONENT_SET"); parent.appendChild(set);
+      for (const c of comps) set.appendChild(c);
+      return set;
+    },
     viewport: { scrollAndZoomIntoView() {} },
     commitUndo() {},
     createFrame: () => { const f = new N("FRAME"); f.fills = [{ type: "SOLID", color: { r: 1, g: 1, b: 1 } }]; return f; },

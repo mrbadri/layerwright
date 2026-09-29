@@ -127,7 +127,7 @@ export const DesignPlanSchema = z
     name: z.string().min(1).max(200),
     description: z.string().max(2000).optional(),
     /** Where to put it. Default: new top-level frames on the current page, placed right of existing content. */
-    target: z.object({ parentId: z.string().optional(), x: z.number().optional(), y: z.number().optional() }).strict().optional(),
+    target: z.object({ parentId: z.string().optional(), page: z.string().min(1).optional().describe("Page name or id (default: the current page); switched to before building"), x: z.number().optional(), y: z.number().optional() }).strict().optional(),
     /** Horizontal gap between multiple top-level screens. */
     screenGap: z.number().min(0).max(2000).default(80),
     screens: z.array(DesignNodeSchema).min(1).max(30),

@@ -433,7 +433,10 @@ export function compilePlan(ds: DesignSystem, plan: DesignPlan): CompileResult {
         const e = ds.styles.find((s) => s.type === "EFFECT" && norm(s.name).includes(norm(node.effect)));
         if (e) frame.effectStyleId = e.id; else errors.push({ type: "STYLE_NOT_FOUND", path: `${path}.effect`, message: `No effect style matches "${node.effect}".`, suggestions: ds.styles.filter((s) => s.type === "EFFECT").map((s) => s.name).slice(0, 8) });
       }
-      (node.children ?? []).forEach((c: any, i: number) => { const b = build(c, `${path}.children[${i}]`, dir, rtl); if (b) frame.children.push(b); });
+      // A top-level section is a real Figma Section: no Auto Layout, so its children are placed like screens.
+      const realSection = t === "section" && parentDir === null;
+      if (realSection) { frame.sizingH = undefined; frame.sizingV = undefined; if (!node.layout?.padding) frame.layout = { ...frame.layout!, padding: { top: { value: 80 }, right: { value: 80 }, bottom: { value: 80 }, left: { value: 80 } } }; if (!node.layout?.gap) frame.layout = { ...frame.layout!, gap: { value: 80 } }; if (!node.layout?.direction) frame.layout = { ...frame.layout!, direction: "HORIZONTAL" }; }
+      (node.children ?? []).forEach((c: any, i: number) => { const b = build(c, `${path}.children[${i}]`, realSection ? null : dir, rtl); if (b) frame.children.push(b); });
       // RTL: the first child sits on the right. Figma lays out left-to-right, so reverse the order.
       if (rtl && dir === "HORIZONTAL") frame.children.reverse();
       return frame;

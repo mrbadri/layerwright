@@ -34,6 +34,11 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
   const plans = new Map<string, { plan: ResolvedPlan; summary: PlanSummary; report?: ExecutionReport; sources?: Record<string, { w: number; h?: number }> }>();
   const analyses = new Map<string, AnalysisResult>();
   let ds: DesignSystem | undefined;
+  // Everything this server creates is tagged with the session (and run), so leftovers can be found and cleaned up.
+  const session = `s${Date.now().toString(36)}`;
+  let runSeq = 0;
+  const meta = () => ({ session, run: `${session}.${++runSeq}` });
+  let lastPage: string | undefined;
 
   const cacheFile = (fileName: string) => join(cacheDir, `${fileName.replace(/[^\w.-]+/g, "_")}.json`);
   const loadDs = (): DesignSystem | undefined => {
@@ -60,8 +65,10 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
   }, async () => guard(async () => {
     const base = { connected: bridge.connected(), file: bridge.info()?.fileName, designSystemCached: !!loadDs(), designSystemScannedAt: ds?.scannedAt, workdir };
     if (!bridge.connected()) return ok({ ...base, hint: "Open Figma desktop → Plugins → Development → Layerwright." });
-    const ping = await bridge.request("ping", {}, 10_000);
-    return ok({ ...base, ...(ping as object) });
+    const ping = await bridge.request<{ page: string }>("ping", {}, 10_000);
+    const warnings = [...(staleWarning() ?? [])];
+    if (lastPage && ping.page !== lastPage) warnings.push(`Figma now shows page "${ping.page}", but the last build went to "${lastPage}". Plans build on the current page unless target.page is set.`);
+    return ok({ ...base, ...ping, session, warnings: warnings.length ? warnings : undefined });
   }));
 
   server.registerTool("figma_scan_design_system", {
@@ -135,10 +142,12 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
     if (!entry) return fail([{ type: "INVALID_PLAN", message: `Unknown planId ${planId}. Call figma_preview_plan first.` }]);
     if (entry.plan.target.parentId && !approved) return fail([{ type: "NOT_APPROVED", message: "This plan modifies an existing node. Ask the user, then call again with approved=true." }]);
     const images = await inlineImages(entry.plan);
-    const report = await bridge.request<ExecutionReport>("executePlan", { plan: images.plan }, 180_000);
+    const m = meta();
+    const report = await bridge.request<ExecutionReport>("executePlan", { plan: images.plan, meta: m }, 180_000);
     entry.report = report;
+    lastPage = report.page?.name;
     const mismatches = await verifyPlan(entry.plan, report, entry.sources);
-    return ok({ success: true, created: report.createdRootIds, nodeCount: Object.keys(report.nodeIds).length, warnings: [...images.warnings, ...report.warnings], verification: verdict(mismatches),
+    return ok({ success: true, created: report.createdRootIds, page: report.page?.name, run: m.run, nodeCount: Object.keys(report.nodeIds).length, warnings: [...images.warnings, ...report.warnings], verification: verdict(mismatches),
       next: "Check it visually with figma_export_image (pass compareWith: { html } for an HTML import)." });
   }));
 
@@ -234,7 +243,8 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
     if (only?.length) screens = screens.filter((s) => only.some((o) => s.name.includes(o)));
     const list = screens.map((s) => ({ name: s.name, width: Math.round(s.width), height: Math.round(s.height), nodes: s.nodeCount }));
     if (dryRun || !screens.length) return ok({ dryRun: true, screens: list });
-    const res = await bridge.request<{ screens: { id: string; name: string; width: number; height: number }[] }>("importTree", { page, section, gap, components, replace, screens: screens.map(({ name, tree }) => ({ name, tree })) }, 300_000);
+    const res = await bridge.request<{ page: string; screens: { id: string; name: string; width: number; height: number }[] }>("importTree", { page, section, gap, components, replace, screens: screens.map(({ name, tree }) => ({ name, tree })), meta: meta() }, 300_000);
+    lastPage = res.page;
     // Screens are laid out one per import (component sets combine several), so only compare plain screens.
     const mismatches = components ? [] : res.screens.flatMap((b, i) => {
       const s = list[i];
@@ -292,8 +302,43 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
     ] };
   }));
 
+  const Ref = z.string().describe('Node id, or "$n" for the node made by op n of this call');
+  const EditOp = z.discriminatedUnion("op", [
+    z.object({ op: z.literal("rename"), node: Ref, name: z.string().min(1) }).strict(),
+    z.object({ op: z.literal("move"), node: Ref, parent: Ref.optional(), page: z.string().optional().describe("Page name or id (top level of that page)"), index: z.number().int().min(0).optional(), x: z.number().optional(), y: z.number().optional() }).strict(),
+    z.object({ op: z.literal("duplicate"), node: Ref, parent: Ref.optional(), x: z.number().optional(), y: z.number().optional(), name: z.string().optional() }).strict(),
+    z.object({ op: z.literal("set"), node: Ref, visible: z.boolean().optional(), locked: z.boolean().optional(), x: z.number().optional(), y: z.number().optional(), width: z.number().positive().optional(), height: z.number().positive().optional(),
+      opacity: z.number().min(0).max(1).optional(), text: z.string().optional().describe("Characters of a text layer"), properties: z.record(z.union([z.string(), z.boolean()])).optional().describe("Instance properties/variants by name") }).strict(),
+    z.object({ op: z.literal("delete"), node: Ref }).strict(),
+    z.object({ op: z.literal("resizeToFit"), node: Ref.describe("A section, an Auto Layout frame (set to hug) or a frame"), padding: z.number().min(0).optional() }).strict(),
+    z.object({ op: z.literal("componentize"), nodes: z.array(Ref).min(1).max(100), mode: z.enum(["single", "multiple", "variants"]).optional(),
+      name: z.string().optional().describe("Component (single) or component set (variants) name"),
+      variants: z.array(z.record(z.string())).optional().describe('One entry per node, e.g. [{ State: "Expanded", Step: "Evidence" }, …]'),
+      duplicate: z.boolean().optional().describe("Work on copies and leave the originals untouched (default true)"),
+      exposeText: z.union([z.boolean(), z.array(z.string())]).optional().describe("Turn text layers (all, or these names) into TEXT properties"),
+      autoLayout: z.boolean().optional().describe("Give absolutely positioned layers that stack cleanly Auto Layout first, so the component adapts to new text (default true; uneven layouts are left as they are)"),
+      parent: Ref.optional(), x: z.number().optional(), y: z.number().optional() }).strict(),
+  ]);
+  const MUTATES = new Set(["rename", "move", "set", "delete", "resizeToFit"]);
+
+  server.registerTool("figma_edit", {
+    description: "Change existing layers in one undo step: rename, move (to a parent, section or page), duplicate, set (visible, position, size, opacity, text, instance properties), delete, resizeToFit (sections grow to their content), and componentize (turn existing frames into a component, several components, or one component set with variants; works on copies by default, and can expose text layers as TEXT properties). Ops run in order and can use \"$n\" for the node made by op n. Changing or deleting existing nodes needs approved=true; without it, delete only hides and renames the node (🗑).",
+    inputSchema: { ops: z.array(EditOp).min(1).max(200), approved: z.boolean().optional().describe("Required for ops that change existing nodes; for delete it means really remove") },
+  }, async ({ ops, approved }) => guard(async () => {
+    const needs = ops.filter((o) => MUTATES.has(o.op) && o.op !== "delete" || (o.op === "componentize" && o.duplicate === false));
+    if (needs.length && !approved) return fail([{ type: "NOT_APPROVED", message: `${needs.length} op(s) change existing nodes (${[...new Set(needs.map((o) => o.op))].join(", ")}). Show the user what will change, then call again with approved: true.` }]);
+    const res = await bridge.request<{ applied: unknown[]; failed?: { op: number; error: string } }>("editNodes", { ops, approved, meta: meta() }, 180_000);
+    return res.failed ? fail([{ type: "FIGMA_API_ERROR", message: `op ${res.failed.op} (${ops[res.failed.op].op}): ${res.failed.error}` }], { ...res }) : ok({ success: true, ...res, next: "Check the result with figma_export_image." });
+  }));
+
+  server.registerTool("figma_cleanup", {
+    description: "List what Layerwright created (by session, run or node ids) — e.g. leftovers from failed attempts — and, with approved=true, remove it. Default: this session, list only.",
+    inputSchema: { scope: z.enum(["session", "all"]).optional().describe("session (default): this server session; all: every Layerwright-made node in the file"),
+      run: z.string().optional().describe("Only one run (the `run` returned by figma_execute_plan)"), nodeIds: z.array(z.string()).optional(), approved: z.boolean().optional() },
+  }, async ({ scope, run, nodeIds, approved }) => guard(async () => ok(await bridge.request("cleanup", { session: !run && !nodeIds && scope !== "all" ? session : undefined, run, nodeIds, approved }, 120_000))));
+
   server.registerTool("figma_select", {
-    description: "Select and zoom to node ids in Figma (to show the user what was created or will change).",
+    description: "Select and zoom to node ids in Figma (to show the user what was created or will change). Switches to the page of the first node.",
     inputSchema: { nodeIds: z.array(z.string()).min(1) },
   }, async ({ nodeIds }) => guard(async () => ok(await bridge.request("select", { nodeIds }))));
 

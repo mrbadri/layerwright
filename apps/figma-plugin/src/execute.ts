@@ -161,7 +161,41 @@ function applySizing(node: SceneNode, spec: ResolvedNode, ctx: Ctx) {
   set("Vertical", spec.sizingV);
 }
 
-async function buildFrame(n: ResolvedFrame, parent: BaseNode & ChildrenMixin, ctx: Ctx): Promise<FrameNode> {
+/** Resize a section to its content plus padding. Sections never shrink below what they already cover unless asked. */
+export function fitSection(s: SectionNode, pad = 80, grow = true) {
+  const kids = s.children.filter((c) => c.visible !== false);
+  if (!kids.length) return;
+  const minX = Math.min(...kids.map((c) => c.x)), minY = Math.min(...kids.map((c) => c.y));
+  // Keep content at least `pad` from the top-left edge: shift children, not the section, so nothing moves on the page.
+  const dx = minX < pad ? pad - minX : 0, dy = minY < pad ? pad - minY : 0;
+  if (dx || dy) for (const c of kids) { c.x += dx; c.y += dy; }
+  const w = Math.max(...kids.map((c) => c.x + c.width)) + pad, h = Math.max(...kids.map((c) => c.y + c.height)) + pad;
+  s.resizeWithoutConstraints(grow ? Math.max(w, s.width) : w, grow ? Math.max(h, s.height) : h);
+}
+
+/** A real Figma Section. Sections have no Auto Layout, so children are placed along the plan's direction. */
+async function buildSection(n: ResolvedFrame, parent: BaseNode & ChildrenMixin, ctx: Ctx): Promise<SectionNode> {
+  const s = figma.createSection();
+  parent.appendChild(s);
+  ctx.nodeIds[n.path] = s.id;
+  s.name = n.name;
+  // Sections created through the API default to dark grey; use white unless the plan says otherwise.
+  s.fills = [{ type: "SOLID", color: { r: 1, g: 1, b: 1 } }];
+  if (n.fill) { try { await ctx.fill(s as any, n.fill); } catch (e) { ctx.warnings.push(`${n.path}: section fill not applied (${(e as Error).message}).`); } }
+  const pad = n.layout?.padding?.left?.value ?? 80, gap = n.layout?.gap?.value ?? 80;
+  const vertical = n.layout?.direction === "VERTICAL";
+  let at = pad;
+  for (const c of n.children) {
+    const node = await buildNode(c, s, ctx);
+    if (c.absolute) continue;
+    if (vertical) { node.x = pad; node.y = at; at += node.height + gap; } else { node.x = at; node.y = pad; at += node.width + gap; }
+  }
+  fitSection(s, pad, false);
+  return s;
+}
+
+async function buildFrame(n: ResolvedFrame, parent: BaseNode & ChildrenMixin, ctx: Ctx): Promise<FrameNode | SectionNode> {
+  if (n.role === "section" && (parent.type === "PAGE" || parent.type === "SECTION")) return buildSection(n, parent, ctx);
   const f = figma.createFrame();
   parent.appendChild(f);
   ctx.nodeIds[n.path] = f.id;
@@ -241,7 +275,7 @@ async function getComponent(id: string, key: string | undefined, remote: boolean
   if (!c && remote && key && !id) { try { c = (await figma.importComponentSetByKeyAsync(key)).defaultVariant; } catch (e) { importError ??= e; } }
   if (!c && id) { try { c = await figma.getNodeByIdAsync(id); } catch (e) { importError ??= e; } }
   if (!c) throw new ExecError({ type: "COMPONENT_NOT_FOUND", path, message: `Could not load component ${id}: ${importError instanceof Error ? importError.message : String(importError ?? "not in this file")}` });
-  if (!c || c.type !== "COMPONENT") throw new ExecError({ type: "COMPONENT_NOT_FOUND", path, message: `Component ${id} no longer exists (rescan the Design System).` });
+  if (!c || c.type !== "COMPONENT" || c.removed) throw new ExecError({ type: "COMPONENT_NOT_FOUND", path, message: `Component ${id} no longer exists (rescan the Design System).` });
   return c;
 }
 
@@ -353,7 +387,29 @@ function buildNode(n: ResolvedNode, parent: BaseNode & ChildrenMixin, ctx: Ctx):
   });
 }
 
-export async function executePlan(plan: ResolvedPlan): Promise<ExecutionReport> {
+/** The page a node lives on. */
+export function pageOf(n: BaseNode): PageNode | undefined {
+  let p: BaseNode | null = n;
+  while (p && p.type !== "PAGE") p = p.parent;
+  return (p as PageNode) ?? undefined;
+}
+
+/** A page by id or exact name. */
+export async function findPage(ref: string): Promise<PageNode> {
+  await figma.loadAllPagesAsync();
+  const page = figma.root.children.find((p) => p.id === ref) ?? figma.root.children.find((p) => p.name === ref);
+  if (!page) throw new ExecError({ type: "NODE_NOT_FOUND", message: `No page "${ref}". Pages: ${figma.root.children.map((p) => p.name).join(", ")}. Create it with figma_pages.` });
+  return page;
+}
+
+/** Mark nodes Layerwright created, so a session's leftovers can be listed and cleaned up later. */
+export function tag(nodes: SceneNode[], meta?: { session?: string; run?: string }) {
+  if (!meta?.session) return;
+  const v = JSON.stringify({ session: meta.session, run: meta.run, at: new Date().toISOString() });
+  for (const n of nodes) { try { n.setPluginData("layerwright", v); } catch { /* read-only node */ } }
+}
+
+export async function executePlan(plan: ResolvedPlan, meta?: { session?: string; run?: string }): Promise<ExecutionReport> {
   const ctx = new Ctx();
   let parent: BaseNode & ChildrenMixin = figma.currentPage;
   if (plan.target.parentId) {
@@ -361,6 +417,11 @@ export async function executePlan(plan: ResolvedPlan): Promise<ExecutionReport> 
     if (!p || !("appendChild" in p)) throw new ExecError({ type: "NODE_NOT_FOUND", message: `Target parent ${plan.target.parentId} not found or cannot have children.` });
     parent = p as BaseNode & ChildrenMixin;
   }
+  // Build on the requested page (or the target's page), never silently on whatever page the user has open.
+  const page = plan.target.page ? await findPage(plan.target.page) : plan.target.parentId ? pageOf(parent) : undefined;
+  if (page && plan.target.page && plan.target.parentId && pageOf(parent)?.id !== page.id) throw new ExecError({ type: "INVALID_PLAN", message: `Target parent ${plan.target.parentId} is on page "${pageOf(parent)?.name}", not "${page.name}".` });
+  if (page && figma.currentPage.id !== page.id) await figma.setCurrentPageAsync(page);
+  if (!plan.target.parentId && page) parent = page;
   const onPage = parent.type === "PAGE";
   let x = plan.target.x ?? (onPage ? Math.max(0, ...figma.currentPage.children.map((c) => c.x + c.width)) + (figma.currentPage.children.length ? 200 : 0) : 0);
   const y = plan.target.y ?? (onPage ? Math.min(0, ...figma.currentPage.children.map((c) => c.y)) : 0);
@@ -373,6 +434,8 @@ export async function executePlan(plan: ResolvedPlan): Promise<ExecutionReport> 
       if (root.absolute) continue;
       if (onPage || !isAuto(parent)) { node.x = x; node.y = y; x += node.width + (plan.screenGap ?? 80); }
     }
+    // Content added to a section: grow the section so it still contains everything.
+    if (parent.type === "SECTION") fitSection(parent as SectionNode);
   } catch (e) {
     // Never leave a half-built design behind: remove only what this run created.
     for (const n of created) if (!n.removed) n.remove();
@@ -381,9 +444,10 @@ export async function executePlan(plan: ResolvedPlan): Promise<ExecutionReport> 
     const d = e instanceof ExecError ? e.detail : { type: "FIGMA_API_ERROR" as const, message: String(e) };
     throw new ExecError({ ...d, message: `${d.message} (execution rolled back; nothing was left on the canvas)` });
   }
-  if (onPage) { figma.currentPage.selection = created; figma.viewport.scrollAndZoomIntoView(created); }
+  tag(created, meta);
+  if (onPage || parent.type === "SECTION") { figma.currentPage.selection = created; figma.viewport.scrollAndZoomIntoView(created); }
   figma.commitUndo(); // one undo step for the whole plan
-  return { createdRootIds: created.map((n) => n.id), nodeIds: ctx.nodeIds, warnings: ctx.warnings };
+  return { createdRootIds: created.map((n) => n.id), page: { id: figma.currentPage.id, name: figma.currentPage.name }, nodeIds: ctx.nodeIds, warnings: ctx.warnings };
 }
 
 export async function applyTransformations(list: Transformation[]): Promise<TransformReport> {

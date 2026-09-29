@@ -175,7 +175,8 @@ export function verifyAgainstPlan(expected: ResolvedNode, actual: NodeSnapshot |
   const out: Mismatch[] = [];
   const walk = (e: ResolvedNode, a: NodeSnapshot | undefined) => {
     if (!a) { out.push({ path: e.path, issue: "missing node", expected: `${KIND_TYPE[e.kind]} "${e.name}"` }); return; }
-    if (a.type !== KIND_TYPE[e.kind]) out.push({ path: e.path, nodeId: a.id, issue: "wrong node type", expected: KIND_TYPE[e.kind], actual: a.type });
+    const section = e.kind === "frame" && e.role === "section" && a.type === "SECTION";
+    if (a.type !== KIND_TYPE[e.kind] && !section) out.push({ path: e.path, nodeId: a.id, issue: "wrong node type", expected: KIND_TYPE[e.kind], actual: a.type });
     if (a.name !== e.name) out.push({ path: e.path, nodeId: a.id, issue: "name differs", expected: e.name, actual: a.name });
     if (e.kind === "instance" && a.instance?.componentId && a.instance.componentId !== e.componentId) out.push({ path: e.path, nodeId: a.id, issue: "wrong component/variant", expected: e.componentName, actual: a.instance.component });
     if (e.kind === "text" && a.text && a.text.chars !== e.content) out.push({ path: e.path, nodeId: a.id, issue: "text content differs", expected: e.content, actual: a.text.chars });
@@ -208,8 +209,8 @@ export function verifyAgainstPlan(expected: ResolvedNode, actual: NodeSnapshot |
       if (src && (off(a.w, src.w) || (src.h !== undefined && e.kind !== "instance" && off(a.h, src.h)))) out.push({ path: e.path, nodeId: a.id, issue: e.kind === "instance" ? "instance size far from the element it replaced" : "size far from the source's rendered box", expected: `${src.w}×${src.h ?? "any"}`, actual: `${a.w}×${a.h}` });
     }
     if (e.kind === "frame") {
-      if (e.layout && e.layout.direction !== (a.layout?.mode ?? "NONE")) out.push({ path: e.path, nodeId: a.id, issue: "layout direction differs", expected: e.layout.direction, actual: a.layout?.mode });
-      if (e.layout?.gap?.value !== undefined && a.layout?.gap !== undefined && Math.abs(e.layout.gap.value - a.layout.gap) > 0.5) out.push({ path: e.path, nodeId: a.id, issue: "gap differs", expected: e.layout.gap.value, actual: a.layout.gap });
+      if (!section && e.layout && e.layout.direction !== (a.layout?.mode ?? "NONE")) out.push({ path: e.path, nodeId: a.id, issue: "layout direction differs", expected: e.layout.direction, actual: a.layout?.mode });
+      if (!section && e.layout?.gap?.value !== undefined && a.layout?.gap !== undefined && Math.abs(e.layout.gap.value - a.layout.gap) > 0.5) out.push({ path: e.path, nodeId: a.id, issue: "gap differs", expected: e.layout.gap.value, actual: a.layout.gap });
       if (e.layout?.gap?.variableId && !a.bound?.itemSpacing) out.push({ path: e.path, nodeId: a.id, issue: "gap not bound to token", expected: e.layout.gap.variableId });
       const kids = a.children ?? [];
       if (a.truncated) out.push({ path: e.path, nodeId: a.id, issue: "snapshot truncated; deeper checks skipped" });

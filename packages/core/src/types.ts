@@ -274,7 +274,7 @@ export type ResolvedNode = ResolvedFrame | ResolvedText | ResolvedInstance | Res
 export interface ResolvedPlan {
   planId: string;
   name: string;
-  target: { parentId?: string; x?: number; y?: number };
+  target: { parentId?: string; page?: string; x?: number; y?: number };
   screenGap?: number;
   roots: ResolvedNode[];
 }
@@ -290,6 +290,7 @@ export type Transformation =
 // ---------- Execution results ----------
 export interface ExecutionReport {
   createdRootIds: string[];
+  page?: { id: string; name: string };
   nodeIds: Record<string, string>; // plan path -> figma node id
   warnings: string[];
 }
@@ -311,7 +312,9 @@ export type BridgeMethod =
   | "importTree"
   | "ensurePages"
   | "foundations"
-  | "exportImage";
+  | "exportImage"
+  | "editNodes"
+  | "cleanup";
 
 export interface BridgeRequest { id: string; method: BridgeMethod; params?: unknown }
 export interface BridgeResponse { id: string; ok: boolean; result?: unknown; error?: StructuredError }

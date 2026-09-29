@@ -1,6 +1,6 @@
 // Builds node trees serialized from rendered HTML (see apps/mcp-server/src/html-import.ts), and manages pages.
 import type { ImportNode, ImportPaint, ImportSwapRef } from "@cde/core";
-import { ExecError } from "./execute.ts";
+import { ExecError, tag } from "./execute.ts";
 
 const rgb = (hex: string) => ({ r: parseInt(hex.slice(1, 3), 16) / 255, g: parseInt(hex.slice(3, 5), 16) / 255, b: parseInt(hex.slice(5, 7), 16) / 255 });
 const solid = (p: ImportPaint): SolidPaint => ({ type: "SOLID", color: rgb(p.hex), opacity: p.a });
@@ -235,7 +235,7 @@ function build(n: ImportNode, parent: BaseNode & ChildrenMixin, fonts: Fonts): S
   return f;
 }
 
-export async function importTree(p: { page?: string; section?: string; gap?: number; components?: boolean; replace?: boolean; screens: { name: string; tree: ImportNode }[] }) {
+export async function importTree(p: { page?: string; section?: string; gap?: number; components?: boolean; replace?: boolean; screens: { name: string; tree: ImportNode }[]; meta?: { session?: string; run?: string } }) {
   const page = await pageByName(p.page);
   const fonts: Fonts = await loadFonts(p.screens.map((s) => s.tree));
   fonts.components = await componentIndex(p.screens.map((s) => s.tree));
@@ -251,6 +251,7 @@ export async function importTree(p: { page?: string; section?: string; gap?: num
   if (p.section) {
     section = figma.createSection();
     section.name = p.section;
+    section.fills = [{ type: "SOLID", color: { r: 1, g: 1, b: 1 } }]; // the API default is dark grey
     page.appendChild(section);
     section.x = oldPos ? oldPos.x : page.children.length > 1 ? right + 200 : 0;
     section.y = oldPos ? oldPos.y : top;
@@ -299,6 +300,7 @@ export async function importTree(p: { page?: string; section?: string; gap?: num
     throw new ExecError({ type: "FIGMA_API_ERROR", message: `Import failed and was rolled back: ${(e as Error).message}` });
   }
   old?.remove();
+  tag(section ? [section] : created, p.meta);
   figma.commitUndo();
   const shown = section ? [section] : created;
   figma.currentPage.selection = shown;
