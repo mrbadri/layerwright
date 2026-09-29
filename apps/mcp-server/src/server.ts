@@ -158,14 +158,15 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
         props: z.record(z.union([z.string(), z.boolean()])).optional().describe('Component props; "$text" is the element\'s text (default: { label: "$text" })'),
       })).optional().describe("Your own element → component mappings; they win over automatic Design System matching"),
       fontMap: z.record(z.string()).optional().describe('Replace font families, e.g. { "YekanBakhFaNum": "IRANYekanX" } for a web font that isn\'t installed'),
+      page: z.string().optional().describe("Page (name or id) to build on when executed (default: the current page)"),
     },
-  }, async ({ path, viewport, useDesignSystem, selector, mappings: userMappings, fontMap }) => guard(async () => {
+  }, async ({ path, viewport, useDesignSystem, selector, mappings: userMappings, fontMap, page }) => guard(async () => {
     const cached = loadDs();
     const useDs = useDesignSystem ?? !!cached;
     if (useDs && !cached) return fail([{ type: "DESIGN_SYSTEM_NOT_SCANNED", message: "useDesignSystem needs a scan. Call figma_scan_design_system, or pass useDesignSystem: false." }]);
     const d = useDs ? cached! : emptyDesignSystem(bridge.info()?.fileName);
     const r = await renderToPlan(resolve(workdir, path), { viewports: viewport === undefined ? undefined : [viewport].flat(), selector, ds: useDs ? d : undefined, mappings: userMappings, fontMap });
-    const c = compilePlan(d, r.plan);
+    const c = compilePlan(d, page ? { ...r.plan, target: { ...(r.plan.target ?? {}), page } } : r.plan);
     if (!c.ok || !c.plan) return fail(c.errors, { warnings: [...r.warnings, ...c.warnings], summary: c.summary });
     plans.set(c.plan.planId, { plan: c.plan, summary: c.summary, sources: r.sources, webFonts: r.webFonts });
     return ok({ success: true, planId: c.plan.planId, summary: c.summary, mappedToDesignSystem: r.mapped, warnings: [...r.warnings, ...c.warnings].slice(0, 30), next: "Show the summary; then call figma_execute_plan with this planId." });
@@ -353,18 +354,19 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
     if (!compareWith.html) return fail([{ type: "INVALID_PLAN", message: "compareWith needs html or nodeId." }]);
     const snap = (await bridge.request<{ nodes: NodeSnapshot[] }>("inspect", { target: nodeId, depth: 0 })).nodes[0];
     const figmaW = snap?.w ?? 1440, figmaH = snap?.h ?? 900;
-    const html = await screenshotHtml(resolve(workdir, compareWith.html!), { selector: compareWith.selector, width: compareWith.viewport ?? figmaW });
+    const html = await screenshotHtml(resolve(workdir, compareWith.html!), { selector: compareWith.selector, width: compareWith.viewport ?? figmaW, height: compareWith.selector ? undefined : figmaH });
     // Export at the HTML's pixel size so both images line up (capped by maxDimension).
     const img = await exp(html.width / Math.max(1, figmaW));
     const diff = await diffImages({ base64: html.base64 }, { base64: img.base64, mime: mime(img.format) });
-    const sizeOff = Math.abs(figmaW - html.width) > 2 || Math.abs(figmaH - html.height) > Math.max(4, html.height * 0.02);
+    // Whole page: only content that runs past the Figma node counts; an element: its box must match.
+    const sizeOff = Math.abs(figmaW - html.width) > 2 || (html.contentHeight !== undefined ? html.contentHeight > figmaH + Math.max(4, figmaH * 0.02) : Math.abs(figmaH - html.height) > Math.max(4, html.height * 0.02));
     const verdict = diff.changedCells < 0.01 && !sizeOff ? "close match"
       : `${sizeOff ? `size differs (Figma ${figmaW}×${figmaH}, HTML ${html.width}×${html.height}); ` : ""}${diff.regions.length} changed region(s), largest first: look at them in the heatmap before reporting success`;
     return { content: [
       { type: "text", text: "Figma:" }, { type: "image", data: img.base64, mimeType: mime(img.format) },
       { type: "text", text: "HTML source:" }, { type: "image", data: html.base64, mimeType: "image/png" },
       { type: "text", text: "Diff (red = changed):" }, { type: "image", data: diff.heatmap, mimeType: "image/png" },
-      { type: "text", text: JSON.stringify({ figma: { width: figmaW, height: figmaH }, html: { width: html.width, height: html.height }, changedCells: diff.changedCells, regions: diff.regions, verdict }) },
+      { type: "text", text: JSON.stringify({ figma: { width: figmaW, height: figmaH }, html: { width: html.width, height: html.contentHeight ?? html.height }, changedCells: diff.changedCells, regions: diff.regions, verdict }) },
     ] };
   }));
 

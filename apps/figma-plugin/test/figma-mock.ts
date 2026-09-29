@@ -48,6 +48,8 @@ export class N {
   private checkSizing(v: string) {
     if (v === "FILL" && (!this.parent || this.parent.layoutMode === "NONE")) throw new Error("FILL can only be set on children of auto-layout frames");
     if (v === "HUG" && this.layoutMode === "NONE" && this.type !== "TEXT") throw new Error("HUG requires auto-layout or text");
+    // Like Figma: layout sizing only exists on auto-layout frames and children of auto-layout frames.
+    if (this.layoutMode === "NONE" && (!this.parent || this.parent.layoutMode === "NONE")) throw new Error("in set_layoutSizingHorizontal: node must be an auto-layout frame or a child of an auto-layout frame");
   }
   async setEffectStyleIdAsync() {}
   async setFillStyleIdAsync() {}

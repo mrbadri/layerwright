@@ -155,7 +155,8 @@ function applySizing(node: SceneNode, spec: ResolvedNode, ctx: Ctx) {
     const prop = `layoutSizing${axis}` as "layoutSizingHorizontal";
     if (!(prop in node)) return;
     if (mode === "fill") { if (parentAuto) (node as any)[prop] = "FILL"; else ctx.warnings.push(`${spec.path}: "fill" ignored (parent has no Auto Layout).`); }
-    else if (mode === "hug") { if (selfAuto || node.type === "TEXT") (node as any)[prop] = "HUG"; }
+    // Text outside Auto Layout hugs through textAutoResize; Figma rejects layoutSizing there.
+    else if (mode === "hug") { if (selfAuto || (node.type === "TEXT" && parentAuto)) (node as any)[prop] = "HUG"; }
     else if (mode === "fixed" && (parentAuto || selfAuto)) (node as any)[prop] = "FIXED";
   };
   set("Horizontal", spec.sizingH);

@@ -48,3 +48,41 @@ test("the MCP server exits and frees its port when Claude Code closes stdin", as
   if (code === "timeout") child.kill();
   assert.equal(code, 0);
 });
+
+(chromium ? test : test.skip)("layerwright import --to-figma builds the HTML in Figma without an AI client", async () => {
+  const { toFigma } = await import("../src/cli.ts");
+  const { mkdtempSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const WebSocket = (await import("ws")).default;
+  const port = 7337;
+  let plan: any;
+  // A fake plugin that connects once the CLI's bridge is up, like a user opening the plugin.
+  const fake = (async () => {
+    for (let i = 0; i < 100; i++) {
+      const ws = new WebSocket(`ws://127.0.0.1:${port}`);
+      const ok = await new Promise<boolean>((r) => { ws.on("open", () => r(true)); ws.on("error", () => r(false)); });
+      if (!ok) { await new Promise((r) => setTimeout(r, 100)); continue; }
+      ws.send(JSON.stringify({ type: "hello", fileName: "TEST", page: "Page 1" }));
+      ws.on("message", (m) => {
+        const req = JSON.parse(String(m));
+        let result: unknown = {};
+        if (req.method === "executePlan") { plan = req.params.plan; result = { createdRootIds: ["100:1"], page: { id: "0:1", name: "Designs" }, nodeIds: { "screens[0]": "100:1" }, warnings: [] }; }
+        // What Figma would report for the plan (no sizes: those checks need real layout).
+        const snap = (n: any, id: string): any => ({ id, name: n.name, type: { frame: "FRAME", text: "TEXT", instance: "INSTANCE", rect: "RECTANGLE", svg: "FRAME" }[n.kind as string],
+          ...(n.kind === "frame" ? { layout: { mode: n.layout?.direction ?? "NONE" }, children: n.children.map((c: any, i: number) => snap(c, `${id}.${i}`)) } : {}),
+          ...(n.kind === "text" ? { text: { chars: n.content } } : {}) });
+        if (req.method === "inspect") result = { page: "Designs", nodes: [snap(plan.roots[0], "100:1")] };
+        ws.send(JSON.stringify({ id: req.id, ok: true, result }));
+      });
+      return;
+    }
+  })();
+  const lines: string[] = [];
+  const login = fileURLToPath(new URL("../../../packages/html-import/test/fixtures/login.html", import.meta.url));
+  const code = await toFigma(login, { viewports: [390], page: "Designs", port, workdir: mkdtempSync(join(tmpdir(), "lw-cli-")) }, (s) => lines.push(s));
+  await fake;
+  assert.equal(code, 0, lines.join("\n"));
+  assert.equal(plan.target.page, "Designs");
+  assert.match(lines.join("\n"), /Connected to "TEST"[\s\S]*Plan: Sign in – 390[\s\S]*Built 1 screen\(s\) in Figma; verification passed/);
+});

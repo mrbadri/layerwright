@@ -3,8 +3,17 @@
 import { launch, withPage } from "./browser.ts";
 
 /** PNG (base64) of an element of a rendered HTML page, at CSS pixel size. */
-export async function screenshotHtml(path: string, opts: { selector?: string; width?: number; root?: string } = {}): Promise<{ base64: string; width: number; height: number }> {
+export async function screenshotHtml(path: string, opts: { selector?: string; width?: number; height?: number; root?: string } = {}): Promise<{ base64: string; width: number; height: number; contentHeight?: number }> {
   return withPage(path, { root: opts.root, width: opts.width ?? 1440, height: 900 }, async (page) => {
+    // The whole page, cut to the height being compared (a screen is at least the viewport tall, or hugs its content).
+    if (!opts.selector && opts.height) {
+      // Where the content ends (scrollHeight is never less than the viewport).
+      const contentHeight = await page.evaluate(() => Math.ceil(document.body.getBoundingClientRect().bottom + window.scrollY));
+      const width = opts.width ?? 1440;
+      const height = Math.max(1, Math.round(opts.height));
+      const buf = await page.screenshot({ fullPage: true, clip: { x: 0, y: 0, width, height }, animations: "disabled" });
+      return { base64: buf.toString("base64"), width, height, contentHeight };
+    }
     const el = page.locator(opts.selector ?? "body").first();
     const box = await el.boundingBox();
     if (!box) throw new Error(`Nothing rendered for "${opts.selector ?? "body"}".`);
