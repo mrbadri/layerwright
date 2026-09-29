@@ -16,6 +16,7 @@ All notable changes to this project are documented here. The format follows
 - HTML import: text with `line-height: normal` gets the rendered line height, so Figma's taller AUTO line height no longer shifts the layout.
 
 - Sections created by Layerwright are white instead of the API's default dark grey.
+- Componentize: padding is measured before Auto Layout is switched on (Figma moves the children at that moment), so a column's right padding mirrors its left one and text fills the card.
 - A plan resolved against a stale scan no longer builds instances of a component that was deleted in the meantime.
 
 ### Added
@@ -23,6 +24,7 @@ All notable changes to this project are documented here. The format follows
 - Componentize turns existing frames into a component, several components, or one component set (`variants: [{ State: "Expanded" }, …]`). It works on copies by default, placed next to the originals, can expose text layers as TEXT properties (`exposeText`), and gives cleanly stacked layers Auto Layout so the component adapts to new text.
 - `target.page` in plans (name or id): the plan builds there, never silently on whatever page is open. `figma_select` switches to the page of the nodes; `figma_status` warns when Figma shows a different page than the last build.
 - A top-level `section` in a plan is a real Figma Section sized to its content, and sections grow when a later plan adds to them.
+- The plugin reports its build stamp (`pluginBuild` in `figma_status`), so a stale plugin window is visible.
 - `figma_cleanup`: lists what Layerwright made in this session (or a run, or all), and removes it with `approved: true`. Every created root is tagged with its session and run.
 - `figma_export_image`: a PNG/JPG of any node, returned as an image. With `compareWith: { html }` it also screenshots the source in headless Chrome and returns a diff heatmap plus the changed regions.
 - Verification checks sizes against the plan and against the source's rendered boxes (HTML imports), text overrides inside instances, and layers hidden by overrides. `figma_import_html` now verifies screen sizes too.

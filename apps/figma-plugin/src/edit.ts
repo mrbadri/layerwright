@@ -72,12 +72,14 @@ export function stackify(f: FrameNode | ComponentNode): boolean {
   const minX = Math.min(...kids.map((c) => c.x)), minY = Math.min(...kids.map((c) => c.y));
   const maxX = Math.max(...kids.map((c) => c.x + c.width)), maxY = Math.max(...kids.map((c) => c.y + c.height));
   const w = f.width, hh = f.height;
+  // Measure before turning Auto Layout on: Figma moves the children as soon as layoutMode is set.
+  const leftAligned = kids.every((c) => Math.abs(c.x - minX) < 1);
   pick.s.forEach((c, i) => f.insertChild(i, c));
   f.layoutMode = v ? "VERTICAL" : "HORIZONTAL";
   f.itemSpacing = pick.gap;
   let [pt, pl, pr, pb] = [Math.round(minY), Math.round(minX), Math.max(0, Math.round(w - maxX)), Math.max(0, Math.round(hh - maxY))];
   // A left-aligned column: the right padding mirrors the left one (the content's right edge is just its current text).
-  if (v && kids.every((c) => Math.abs(c.x - minX) < 1)) pr = pl;
+  if (v && leftAligned) pr = pl;
   // Nearly symmetric padding (text boxes carry a few px of slack) is made symmetric.
   if (single && Math.abs(pl - pr) <= 6) pr = pl;
   if (single && Math.abs(pt - pb) <= 6) pb = pt;

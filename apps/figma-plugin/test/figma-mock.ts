@@ -17,7 +17,10 @@ const MIXED = Symbol("mixed");
 export class N {
   id: string; parent: any = null; children: any[] = []; removed = false; visible = true; name = "";
   x = 0; y = 0; width = 100; height = 100; fills: any[] = []; strokes: any[] = []; boundVariables: any = {};
-  layoutMode = "NONE"; itemSpacing = 0; paddingTop = 0; paddingRight = 0; paddingBottom = 0; paddingLeft = 0; cornerRadius = 0;
+  private _mode = "NONE"; itemSpacing = 0;
+  get layoutMode() { return this._mode; }
+  // Like Figma: turning Auto Layout on moves the children into the flow right away.
+  set layoutMode(v: string) { this._mode = v; if (v !== "NONE") for (const c of this.children) { c.x = 0; c.y = 0; } } paddingTop = 0; paddingRight = 0; paddingBottom = 0; paddingLeft = 0; cornerRadius = 0;
   private _lh = "FIXED"; private _lv = "FIXED"; private _pos = "AUTO"; private _minW: number | null = null; private _maxW: number | null = null;
   opacity = 1; effects: any[] = []; strokeWeight = 1; strokeAlign = "CENTER"; strokeTopWeight = 1; strokeRightWeight = 1; strokeBottomWeight = 1; strokeLeftWeight = 1; clipsContent = false;
   get layoutPositioning() { return this._pos; }

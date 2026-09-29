@@ -5,6 +5,9 @@ import { executePlan, applyTransformations, ExecError, pageOf } from "./execute.
 import { editNodes, cleanup } from "./edit.ts";
 import { importTree, ensurePages, foundations } from "./import.ts";
 
+declare const __BUILD__: string;
+const BUILD = typeof __BUILD__ === "string" ? __BUILD__ : "dev";
+
 figma.showUI(__html__, { width: 260, height: 180, themeColors: true });
 
 async function resolveTarget(target?: string): Promise<BaseNode[]> {
@@ -19,7 +22,7 @@ async function handle(req: BridgeRequest): Promise<unknown> {
   const p = (req.params ?? {}) as any;
   switch (req.method) {
     case "ping":
-      return { fileName: figma.root.name, page: figma.currentPage.name, selection: figma.currentPage.selection.map((n) => ({ id: n.id, name: n.name, type: n.type })) };
+      return { fileName: figma.root.name, page: figma.currentPage.name, pluginBuild: BUILD, selection: figma.currentPage.selection.map((n) => ({ id: n.id, name: n.name, type: n.type })) };
     case "scanDesignSystem":
       return scanDesignSystem(p);
     case "inspect": {
