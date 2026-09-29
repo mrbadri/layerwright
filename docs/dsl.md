@@ -8,14 +8,23 @@ reaches Figma. An invalid plan returns structured errors and never runs.
 {
   "name": "Login flow",
   "screenGap": 80,                     // px between top-level screens
-  "target": { "parentId": "12:34" },   // optional: build inside an existing node (needs approval)
-  "screens": [ /* DesignNode[], usually type "screen" */ ]
+  "target": { "page": "Flows" },       // optional: page name or id (default: the current page)
+                                       // or { "parentId": "12:34" }: build inside an existing node (needs approval)
+  "prototype": { "flows": [{ "name": "Login", "start": "Login" }] },  // optional: flow starting points
+  "screens": [ /* DesignNode[], usually type "screen" */ ],
+  "inserts": [ { "parentId": "40:2", "index": 0, "nodes": [ /* DesignNode[] */ ] } ]  // optional: fill existing parents (needs approval)
 }
 ```
+
+A plan needs `screens`, `inserts`, or both.
 
 ## Containers
 
 `screen` · `frame` · `section` · `stack` (vertical) · `row` (horizontal) · `card` · `modal` · `navigation` · `list`
+
+A `section` at the top level of a plan is a real Figma Section: its children are placed side by side (or
+stacked with `layout.direction: "vertical"`), it fits its content, and it grows when a later plan adds
+to it. A nested `section` is a vertical stack.
 
 | Field | Type | Notes |
 |---|---|---|
@@ -34,6 +43,8 @@ reaches Figma. An invalid plan returns structured errors and never runs.
 | `opacity` | 0–1 | |
 | `clip` | boolean | Clip content |
 | `direction` | `"ltr"` \| `"rtl"` | `rtl` reverses horizontal children and right-aligns text inside |
+| `scroll` | `"none"` \| `"vertical"` \| `"horizontal"` \| `"both"` | Prototype scrolling |
+| `fixedChildren` | number | Prototype: the first n children stay fixed while scrolling |
 | `component`, `role`, `variant`, `props` | | Makes the container a DS instance instead |
 | `children` | DesignNode[] | Up to 200 per container |
 
@@ -44,19 +55,44 @@ Defaults: `screen` is 390 wide with padding 24 and gap 16. `card` has padding 16
 
 ## Content
 
-**`text`**: `content`, `role` (display \| heading \| title \| subheading \| body \| label \| caption \| overline \| code, which picks the matching DS text style), `style` (an explicit text style name), `color`, `fontSize`, `fontFamily`, `weight` (thin \| extralight \| light \| regular \| medium \| semibold \| bold \| extrabold \| black), `italic`, `lineHeight` (`{unit: "px" | "percent", value}` or `{unit: "auto"}`), `letterSpacing` (`{unit, value}`), `align` (left \| center \| right \| justified), `direction`.
+**`text`**: `content`, `role` (display \| heading \| title \| subheading \| body \| label \| caption \| overline \| code), `style` (a text style name, or `null` for none), `color`, `fontSize`, `fontFamily`, `weight` (thin \| extralight \| light \| regular \| medium \| semibold \| bold \| extrabold \| black), `italic`, `lineHeight` (`{unit: "px" | "percent", value}` or `{unit: "auto"}`), `letterSpacing` (`{unit, value}`), `align` (left \| center \| right \| justified), `direction`, `runs`.
+
+Which typography wins: an explicit `style` is applied, and explicit font fields override it. A `role` picks a DS text style only when the text sets no font fields of its own. Without `role` or `style`, no style is applied.
+
+`runs: [{ text, weight?, italic?, fontFamily?, fontSize?, color?, href? }]` styles pieces of one text (a bold word, a link). Their texts joined must equal `content`.
 
 Fonts are matched to what is installed: "Semi Bold" and "SemiBold" are treated as the same style, and the nearest weight wins. A missing family falls back to Inter with a warning. Text never fails because of a font.
 
 **`link`**: `content`, `href`. Uses the DS Link component when there is one. Otherwise it renders as link-coloured text.
 
-**`button`** (default role `primary-action`), **`input`** (default role `text-input`), **`component`**, **`component-instance`**: `component` (a name), `role`, `variant` (`"Secondary"`, `"Primary, Small"` or `{ "Type": "Primary" }`), `props` (component properties by name, falling back to text layers), `allowFallback` (draw a labelled placeholder when nothing resolves).
+**`button`** (default role `primary-action`), **`input`** (default role `text-input`), **`component`**, **`component-instance`**: `component` (a name, or `{ "id": "12:34" }` / `{ "key": "…" }` for an exact component or set; a key that isn't in the scan is imported from its library, and its variants and props are matched by name), `role`, `variant` (`"Secondary"`, `"Primary, Small"` or `{ "Type": "Primary" }`), `props` (component properties by name, falling back to text layers), `allowFallback` (draw a labelled placeholder when nothing resolves).
 
 **`icon`**: either a DS icon (`component`/`role`), or `svg` (inline `<svg>…</svg>` markup) plus an optional `color` that recolours every vector.
 
 **`image`**: `src` (a `data:image/png|jpeg|gif;base64,…` URL, or an https URL that the **server** fetches, so the plugin never goes online), `fit` (fill \| fit \| crop), `alt`, `radius`, `fill` (the placeholder colour). If an image fails to load, it stays a placeholder and you get a warning.
 
 **`divider`**: the DS divider component, or a 1px rule.
+
+## Prototype
+
+Every node takes `id` (a plan-local name to point at) and `interactions`:
+
+```jsonc
+{ "type": "button", "props": { "label": "Pay" },
+  "interactions": [{ "trigger": "click", "action": "navigate", "to": "Success",
+                     "transition": { "type": "smart-animate", "duration": 400, "easing": "gentle" } }] }
+```
+
+| Field | Values |
+|---|---|
+| `trigger` | `click` (default) · `hover` · `press` · `drag` · `mouse-enter` · `mouse-leave` · `after-delay` (with `delay` in ms) |
+| `action` | `navigate` · `overlay` · `swap` · `scroll-to` · `change-to` · `back` · `close` · `url` (with `url`) |
+| `to` | a node `id` in this plan, a screen name in this plan, or an existing Figma node id |
+| `transition` | `type`: `instant` · `dissolve` · `smart-animate` · `move-in` · `move-out` · `push` · `slide-in` · `slide-out`; `direction` (left · right · top · bottom); `duration` (ms, default 300); `easing` (ease-out · ease-in · ease-in-out · linear · ease-in-back · ease-out-back · gentle · quick · bouncy · slow) |
+| `preserveScroll` | keep the scroll position |
+
+Navigate, overlay and swap targets must be top-level frames (on the page or in a section) of the same
+page. Overlays open centred: their position can't be set through the Plugin API.
 
 ## Tokens
 
@@ -82,4 +118,4 @@ variables with a plain value.
 
 ## Errors
 
-`INVALID_PLAN` (schema, with a path) · `COMPONENT_NOT_FOUND` / `INVALID_VARIANT` (with suggestions) · `TOKEN_NOT_FOUND` / `STYLE_NOT_FOUND` · `DESIGN_SYSTEM_NOT_SCANNED` · `PLUGIN_DISCONNECTED` · `TIMEOUT` · `NOT_APPROVED` · `FIGMA_API_ERROR` (execution was rolled back).
+`INVALID_PLAN` (schema, with a path) · `COMPONENT_NOT_FOUND` / `INVALID_VARIANT` (with suggestions) · `AMBIGUOUS_COMPONENT` (several components share the name; `candidates` lists their ids, pages and variants) · `TOKEN_NOT_FOUND` / `STYLE_NOT_FOUND` · `DESIGN_SYSTEM_NOT_SCANNED` · `PLUGIN_DISCONNECTED` · `TIMEOUT` · `NOT_APPROVED` · `FIGMA_API_ERROR` (execution was rolled back).

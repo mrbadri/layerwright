@@ -41,11 +41,25 @@ HTML file/folder ──Chromium──▶│  DOM → Design DSL                 
 
 ## Bridge protocol
 
-The request is `{ id, method, params }` and the response is `{ id, ok, result | error }`. The plugin announces itself with `{ type: "hello", fileName, page }`. `doctor` connects to `/doctor` and gets a status reply without displacing the plugin connection.
+The request is `{ id, method, params }` and the response is `{ id, ok, result | error }`. Methods:
+`ping`, `scanDesignSystem`, `inspect`, `executePlan`, `applyTransformations`, `editNodes`, `importTree`,
+`ensurePages`, `foundations`, `exportImage`, `cleanup`, `select`. The plugin announces itself with
+`{ type: "hello", fileName, page, pluginBuild }`; the build stamp lets `doctor` and `figma_status` spot a
+plugin window that still runs older code. `doctor` connects to `/doctor` and gets a status reply
+without displacing the plugin connection. The manifest allows localhost ports 7331–7340 only.
+
+## Verification
+
+After every plan run the created nodes are inspected (instances expanded) and compared with the plan:
+node types, names, variants, properties, text and text overrides, layout, token bindings, fixed sizes,
+prototype interactions and their destinations, and, for HTML imports, each frame's size against the
+box the browser rendered. `figma_export_image` adds the visual check: the node as an image, optionally
+diffed against a Chromium screenshot of the source or another node (24px cells, 1px shift tolerance,
+changed regions listed). Created roots carry plugin data `{ session, run }` for `figma_cleanup`.
 
 ## Testing
 
 - `packages/core/test`: DSL, resolver, analyzer.
-- `apps/figma-plugin/test`: executor, features and UI, against a **strict Figma mock** that enforces real Plugin API rules: fonts loaded before text writes, FILL/ABSOLUTE/minWidth need an Auto Layout parent, `setProperties` rejects unknown keys, only installed fonts load, and `createImage` accepts only PNG, JPEG and GIF.
+- `apps/figma-plugin/test`: executor, edits, prototypes and UI, against a **strict Figma mock** that enforces real Plugin API rules: fonts loaded before text writes, FILL/ABSOLUTE/minWidth need an Auto Layout parent, layout sizing only on Auto Layout frames and their children, turning Auto Layout on moves children, `setProperties` rejects unknown keys, only installed fonts load, `createImage` accepts only PNG, JPEG and GIF, flow starting points reject duplicate frames, and the first interaction on a page creates "Flow 1". Each of these rules was found in real Figma.
 - `packages/html-import/test`: snapshot tests for a landing page, a login form and an RTL Persian page (with a bundled font, so metrics match on every OS), plus DS mapping and end to end HTML → execute.
 - `apps/mcp-server/test`: the real MCP protocol and WebSocket bridge with a fake plugin; `init`, `doctor` and the CLI.

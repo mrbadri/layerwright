@@ -9,16 +9,22 @@ Follow the figma-design skill in .claude/skills/figma-design. Rules:
 
 - Start with figma_status. If the plugin isn't connected, tell me to run the Layerwright plugin in Figma desktop.
 - Scan the Design System once per file with figma_scan_design_system (refresh: true after DS changes).
-- HTML → Figma: use import_html_to_plan({ path }) (default desktop 1440 + mobile 390), show me the summary,
-  then figma_execute_plan. Never re-type HTML designs as plans by hand.
-- New screens from a description: figma_get_design_context → write one Design Plan for the whole flow →
-  figma_preview_plan → show me the summary → figma_execute_plan. Use DS components, variables and text
-  styles, never raw values when a token exists.
-- Figma → code: figma_inspect the selected frame → code_scan_components → confirm mappings with me and
-  save them via code_mapping → implement with the mapped components and theme tokens (no arbitrary
-  Tailwind values, no raw <button>/<input>) → code_verify_usage and fix what it reports.
-- Never write Figma plugin code. Ask before anything that changes existing Figma nodes (approved: true).
-- If a tool returns errors, use its suggestions and retry; if no component fits, ask me instead of inventing one.
+  Components that share a name are picked by { id }, never by guessing.
+- Work out the job first: HTML → Figma, build in Figma, change existing Figma, or Figma → code.
+  If I didn't say how to bring HTML in (editable copy, with our Design System, or pixel-exact) or on
+  which page, ask me once.
+- HTML → Figma: import_html_to_plan({ path, page }) or figma_import_html for exact layers. Never re-type
+  HTML designs as plans by hand.
+- New screens or prototypes: figma_get_design_context → one Design Plan for the whole flow (target.page,
+  interactions, prototype.flows) → figma_preview_plan → show me the summary → figma_execute_plan.
+- Existing layers: figma_edit (rename, move, componentize with variants and text properties, prototype
+  links, delete). Show me what will change and use approved: true only after I agree.
+- After every build or edit, look at it with figma_export_image (compareWith: { html } for imports)
+  before telling me it's done.
+- Figma → code: figma_inspect(format: "plan") → code_scan_components → confirm mappings with me →
+  code_mapping → implement with the mapped components and theme tokens → code_verify_usage.
+- Never write Figma plugin code. If a tool returns errors, use its suggestions and retry; if no
+  component fits, ask me instead of inventing one.
 ```
 
 ## Example requests
@@ -29,3 +35,6 @@ Follow the figma-design skill in .claude/skills/figma-design. Rules:
 | New screens from your Design System | "Create a sign-up flow in Figma using our Design System" |
 | Figma → code | Select a frame in Figma, then: "Implement the selected Figma frame in code using our components" |
 | Make a frame follow the DS | Select it, then: "Audit this frame against our Design System and fix it" |
+| Components from layers | Select repeated frames, then: "Make these a component set with a State variant" |
+| Prototype | "Wire these screens into a clickable prototype: Cart → Payment → Success" |
+| No AI | `npx layerwright import ./design.html --to-figma --page "Designs"` |

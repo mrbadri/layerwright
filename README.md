@@ -29,21 +29,28 @@ Layerwright closes that gap locally:
 ## Features
 
 - **HTML to Figma import** (`import_html_to_plan`)
-  - Flexbox becomes Auto Layout: direction, gap, padding, alignment and wrap.
+  - Flexbox becomes Auto Layout: direction, gap, padding, alignment and wrap. Fixed CSS sizes stay fixed.
   - Colours, borders, radii, shadows, gradients, fonts, line height and letter spacing come across.
+  - Text with inline `<b>`, `<span>` and `<a>` is one text layer with styled ranges.
   - Images and inline SVG icons are imported as real images and vectors.
   - Desktop (1440) and mobile (390) screens are rendered side by side.
   - RTL is supported (Persian, Arabic, Hebrew). Rows keep their visual order and text stays right-aligned.
-- **Design System automation.** Buttons, inputs and links in the HTML are swapped for your real Figma components after a Design System scan.
+- **Design System automation.** After a Design System scan, buttons, inputs and links become your real Figma components when they clearly match, and you can map any element yourself (`mappings: [{ selector, component }]`).
 - **AI design to Figma from a prompt.** Claude writes a typed Design Plan (a JSON DSL). The plan is validated and resolved against your components, variables and text styles, then built deterministically. Claude never writes Figma plugin code.
+- **Prototypes.** Click, hover and timed interactions, navigate / overlay / swap / back, smart animate and push transitions, scrolling frames and flow starting points, in plans or on existing frames.
+- **Work on existing designs** (`figma_edit`). Rename, move, duplicate, delete, and turn existing frames into components or variant sets with text properties, in one undo step.
+- **Figma back to a plan.** Any subtree exports as an editable Design Plan to clone, refactor or implement in code.
+- **You see what was built.** `figma_export_image` renders any node, and compares it with the source HTML (or another node) with a diff heatmap.
 - **Safe by default.**
   - Every run is one undo step.
   - A failed run rolls back completely.
-  - Results are checked against the plan.
-  - Existing nodes change only after you approve.
-- **Audit and fix existing frames.** Hard-coded colours become variables, raw text gets text styles, and custom buttons become component instances. Originals are hidden, never deleted.
+  - Results are checked against the plan: structure, sizes, variants, text overrides and prototype links.
+  - Existing nodes change only after you approve; deleting without approval only hides and labels a layer.
+  - Everything Layerwright creates is tagged, so `figma_cleanup` can list and remove a session's leftovers.
+- **Audit and fix existing frames.** Hard-coded colours become variables, raw text gets text styles, and custom buttons become component instances, in groups you can pick. Originals are hidden, never deleted.
 - **Design to code.** Map Figma components to your React components and check that the implementation uses them.
 - **Pixel-faithful mode** (`figma_import_html`) for review boards and art-heavy pages: exact layers, variant sets built from states, and instance swaps.
+- **No AI needed for a plain import.** `npx layerwright import ./design.html --to-figma` builds it in the open Figma file.
 
 ## Quickstart (3 steps)
 
@@ -67,6 +74,8 @@ Something not working? Run `npx layerwright doctor`.
 For HTML import, Layerwright needs a Chromium. It uses Google Chrome if you have it installed. Otherwise run `npx playwright install chromium`.
 
 Want to try the conversion without Figma? `npx layerwright import ./design.html` prints what would be built.
+Want it in Figma without Claude? Run the plugin, then `npx layerwright import ./design.html --to-figma --page "Designs"`
+(`--faithful` for exact layers, `--scan` to use your Design System's components).
 
 ## How it works
 
@@ -82,7 +91,7 @@ flowchart LR
 1. **Plan.** Claude, or the HTML importer, produces a **Design Plan**: a small, typed JSON DSL of screens, frames, text, components, tokens and images.
 2. **Validate and resolve.** The server checks the plan with Zod. It then resolves every component, variant, property, variable and text style against a cached scan of *your* Figma file. Unknown names come back as errors with suggestions and never reach Figma.
 3. **Execute.** The plugin builds the resolved plan with fixed Plugin API calls. There is no `eval` and no model-written code.
-4. **Verify.** The result is re-inspected and compared with the plan.
+4. **Verify.** The result is re-inspected and compared with the plan and, for HTML imports, with the page's rendered boxes. `figma_export_image` shows the result next to the source.
 
 Read more in [docs/architecture.md](https://github.com/shayan-m81/layerwright/blob/main/docs/architecture.md). The DSL is documented in [docs/dsl.md](https://github.com/shayan-m81/layerwright/blob/main/docs/dsl.md).
 
@@ -90,13 +99,16 @@ Read more in [docs/architecture.md](https://github.com/shayan-m81/layerwright/bl
 
 | Tool | What it does |
 |---|---|
-| `import_html_to_plan` | HTML file or folder → editable Design Plan (Auto Layout, DS components). Returns a `planId` |
+| `import_html_to_plan` | HTML file or folder → editable Design Plan (Auto Layout, DS components, your own mappings). Returns a `planId` |
 | `figma_execute_plan` | Builds a plan in Figma: one undo step, rollback on failure, automatic verification |
 | `figma_preview_plan` | Validates and resolves a hand-written plan and returns a summary |
-| `figma_status` / `figma_scan_design_system` / `figma_get_design_context` | Connection, Design System scan (components, variants, variables, styles), task-scoped context |
-| `figma_inspect` / `figma_verify` / `figma_select` | Compact snapshots, plan-vs-canvas checks, select and zoom |
-| `figma_analyze_design` / `figma_apply_transformations` | Audit a frame against the DS and apply approved fixes |
+| `figma_edit` | Rename, move, duplicate, set, delete, resize to fit, componentize (variants, text properties), prototype links and flows |
+| `figma_export_image` | A node as an image; compared with the source HTML or another node, with a diff heatmap |
+| `figma_status` / `figma_scan_design_system` / `figma_get_design_context` | Connection and page, Design System scan (components, variants, variables, styles, duplicate names), task-scoped context |
+| `figma_inspect` / `figma_verify` / `figma_select` | Snapshots (tree, summary, text, instances, or the subtree as a plan), plan-vs-canvas checks, select and zoom (switches page) |
+| `figma_analyze_design` / `figma_apply_transformations` | Audit a frame against the DS and apply the groups you approve |
 | `figma_import_html` / `figma_pages` / `figma_foundations` | Pixel-faithful import, page setup, variables and text styles |
+| `figma_cleanup` | List (and with approval remove) what Layerwright made in this session |
 | `code_scan_components` / `code_mapping` / `code_verify_usage` | Design to code: component mapping and usage checks |
 
 ## FAQ
@@ -108,7 +120,13 @@ No. It is an independent open-source project that works with Claude Code and Fig
 No. Claude Code runs the MCP server locally, and the Figma plugin connects to it on `localhost`. Nothing is uploaded.
 
 **Can I use it without Claude Code?**
-Yes, partly. `npx layerwright import` converts HTML to a plan from the command line, and any MCP client can call the tools. The skill and the workflow are written for Claude Code.
+Yes. `npx layerwright import ./design.html --to-figma` builds an HTML file in Figma with no AI at all, and any MCP client can call the tools. The skill and the design workflows (building from a prompt, componentizing, prototyping) are written for Claude Code.
+
+**Can it make prototypes?**
+Yes. Plans and `figma_edit` set click, hover, press, drag and timed interactions (navigate, overlay, swap, scroll to, change to, back, close, open URL) with transitions, scrolling frames and flow starting points. Overlays open centred: the Plugin API can't set their position.
+
+**Does it work with the official Figma MCP?**
+It doesn't need it. If it's connected, Claude can use its library search to find a component your file doesn't use yet and pass its key to Layerwright.
 
 **Does the output use Auto Layout?**
 Yes, where the HTML uses flexbox or evenly spaced stacks. Grid and overlapping layers become frames with absolutely positioned children, so the result still looks right.
@@ -133,17 +151,16 @@ Start with `npx layerwright doctor`. It checks Node, `.mcp.json`, the skill, the
 - The largest corner radius is used when the four corners differ.
 - Fonts must be installed on the machine that runs Figma. A missing family falls back to Inter, with a warning.
 - Images must be PNG, JPEG or GIF (a Figma limit), up to 10 MB each.
-- Library components are found only when an instance of them exists in the open file.
-- Verification is structural, not visual.
-- One Figma plugin connection per port. Parallel sessions need separate ports (`LAYERWRIGHT_PORT`).
+- The scan finds library components only when an instance of them exists in the open file. Others can be used by key (e.g. found with the official Figma MCP's library search).
+- Prototype overlays open centred (their position can't be set through the Plugin API). Plans can't hide instance layers by override yet.
+- One Figma plugin connection per port. Parallel sessions need separate ports from 7331–7340 (`LAYERWRIGHT_PORT`, and the same port in the plugin window).
 
 ## Roadmap
 
 - Per-corner radii, CSS grid → Auto Layout wrap, radial gradients
-- Visual diff (screenshot) verification
 - Design tokens export (W3C format) and import
 - Figma Community listing ([plan](https://github.com/shayan-m81/layerwright/blob/main/docs/figma-community-plan.md))
-- Instance-swap properties and nested overrides
+- Instance-swap properties and hidden-layer overrides in plans
 
 ## Contributing
 

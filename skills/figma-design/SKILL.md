@@ -1,126 +1,122 @@
 ---
 name: figma-design
-description: Work as a Design Engineer in Figma through the layerwright MCP tools (figma_*, code_*). Use when a task involves designing or changing screens/flows in Figma, applying or auditing the Design System on a Figma frame, inspecting Figma components, or implementing/verifying frontend code against a Figma design. Do not use for ordinary coding tasks with no design component.
+description: Work as a Design Engineer in Figma through the layerwright MCP tools (figma_*, code_*). Use when a task involves bringing an HTML/Claude Design export into Figma, designing or changing screens, flows or prototypes in Figma, turning layers into components, applying or auditing the Design System on a Figma frame, inspecting Figma components, or implementing/verifying frontend code against a Figma design. Do not use for ordinary coding tasks with no design component.
 ---
 
 # Figma Design Engineer
 
-You are the reasoning layer. The `layerwright` MCP server and its Figma plugin are
-deterministic hands: they scan, resolve, execute and verify. You never write Figma JavaScript —
-you write a **Design Plan** (JSON DSL) and the executor builds it with real components, Auto
-Layout, variables and styles.
+You are the reasoning layer. The `layerwright` MCP server and its Figma plugin are deterministic
+hands: they scan, resolve, build, edit and verify. You never write Figma JavaScript. You write a
+**Design Plan** (JSON DSL) or a list of **edit ops**, and the plugin applies them with real
+components, Auto Layout, variables, styles and prototype links, in one undo step.
 
-## When to use it
+## 1. Know the job before you touch Figma
 
-Use it for: new screens or flows, changes to existing designs, applying the Design System (DS)
-to rough UI, inspecting components, design → code, and checking that design and code match.
-Don't use it for code-only tasks (bugs, refactors, APIs) unless the user brings up the design.
+Every request is one of these jobs. Pick it from what the user said; **ask one short question only
+when the request doesn't say**, and ask it once, with the options spelled out:
 
-## Golden rules (they save tokens and prevent broken work)
+| Job | Signals | Path |
+|---|---|---|
+| **A. HTML → Figma** | an .html file or folder, "Claude Design export", "bring this into Figma" | §3 |
+| **B. Build in Figma** | "design / create a screen, flow, prototype" with no HTML | §4 |
+| **C. Change existing Figma** | a selection or node id; "make these components", "rename", "wire the prototype", "apply our DS", "refactor" | §5 |
+| **D. Figma → code** | "implement this frame", "build it in React" | §6 |
 
-1. **Reason once, act in batches.** Write one full plan per screen set. Never call tools once per node.
-2. **Context is compact on purpose.** Use `figma_get_design_context` for the task. Don't ask for the whole DS; call `figma_inspect` with a small `depth` unless you need more.
-3. **Reuse before you create.** Every button, input, link, card or modal should be a DS component (`type: "button" | "input" | "component"`). Use `allowFallback: true` only when the user accepts a placeholder, and say so when you do.
-4. **Tokens over raw values.** Use the token names returned by the context (`"spacing/md"`, `"color/text/secondary"`, text styles through `role` or `style`). Raw numbers or hex are fine when no token fits.
-5. **Approval boundary.** Always show the plan summary before you execute. Apply a Mode B transformation only after the user says yes, then pass `approved: true`. Never delete user work. Replaced nodes are hidden and renamed, never removed.
-6. **Errors are data.** Tools return `{ success:false, errors:[{type, message, suggestions}] }`. Fix the plan using the suggestions (a different component name, variant or token) and preview again. If no component exists, ask the user rather than inventing one.
+For job A the question that matters is **how faithful vs. how reusable**. If the user didn't say, ask:
 
-## Setup check (first time in a session)
+> How should I bring it in?
+> 1. **Editable copy**: Auto Layout frames that match the HTML (fast; no DS needed).
+> 2. **With our Design System**: buttons, inputs and repeated parts become real components and variants.
+> 3. **Pixel-exact layers**: absolutely positioned, for review boards or art-heavy pages.
+> And which page should it go on?
 
-`figma_status` → if it isn't connected, tell the user: *Figma desktop → Plugins → Development →
-Layerwright*. Then run `figma_scan_design_system` (it's cached; pass `refresh: true` after the DS changes).
-The scan summary lists component sets with their variants, variable collections and roles. Read it once.
+Don't ask what you can find out: the file, page, selection and DS come from `figma_status` and
+`figma_scan_design_system`.
 
-## Mode 0 — HTML → Figma (cheapest; use it whenever HTML exists)
+## 2. Setup, once per session
 
-Never re-type an HTML design (a Claude Design "standalone HTML" export, a prototype, a local page) as a Design Plan by hand. Let the tools read it.
+1. `figma_status`. Not connected → tell the user: *Figma desktop → Plugins → Development → Layerwright*.
+   Its `warnings` say when the scan is stale or Figma shows another page than your last build.
+2. `figma_scan_design_system` (cached; `refresh: true` after DS changes, `reload: true` after editing the cache file).
+   Read `duplicateNames`: components that share a name must be referenced by `{ id }`.
 
-**Editable import (default):** `import_html_to_plan({ path, viewport?, useDesignSystem? })`
-- `path` is an .html file or a folder with index.html. The default viewports are `[1440, 390]` (desktop and mobile screens side by side).
-- Flexbox becomes Auto Layout. Evenly spaced block stacks become vertical Auto Layout. Grid and overlapping layers become frames with absolutely positioned children. Colours, borders, radii, shadows, gradients, fonts, text (including RTL), images and SVG icons are all carried over.
-- When a Design System is scanned (the default when one is cached), buttons, inputs and links become real DS components. `mappedToDesignSystem` in the result says which ones.
-- It returns a `planId`. Show the summary, then call `figma_execute_plan({ planId })`. Undo, rollback and verification work as in Mode A.
+## 3. Job A: HTML → Figma
 
-**Pixel-faithful import (review boards, heavy art):** `figma_import_html({ file, page?, section?, dryRun? })`
-- This rebuilds exactly what was painted, as absolutely positioned layers.
-- On a review board (nested `.sc-host`), each state becomes its own screen, named by its label.
-- `targets: [{ selector, name, index? }]` picks elements. `components: true` plus names like `"Card/State=Chosen"` builds variant sets. `swaps` turns matched elements into instances of those components, with their content as overrides. `actions: [{ click }]` captures opened menus and later steps.
-- `figma_pages({ pages })` sets up the file structure. `figma_foundations({ colors, numbers, textStyles })` creates variables and text styles. Afterwards, Mode B binds the layers to them.
+- **Editable copy / with DS:** `import_html_to_plan({ path, viewport?, page?, useDesignSystem?, mappings?, fontMap? })` → show the summary → `figma_execute_plan({ planId })`.
+  - Flexbox → Auto Layout; fixed CSS sizes stay fixed; inline `<b>/<span>/<a>` become one text with styled runs; `display: contents` wrappers vanish; RTL keeps logical order.
+  - Automatic DS matching is conservative (a real name match, a label slot, a similar size). Skipped candidates are in `warnings`. When you know better, pass `mappings: [{ selector: ".btn-primary", component: "Button" | { id }, variant: { Type: "Primary" }, props: { Label: "$text" } }]`.
+  - A missing font says why (a web font only ships as .woff2): install a TTF/OTF, or re-import with `fontMap: { "WebFont": "InstalledFont" }`.
+- **Pixel-exact:** `figma_import_html({ file, page?, section?, targets?, swaps?, components?, actions? })`.
+  - `swaps` replace elements with instances: `component` by name, or `id`/`key` when names repeat; `overrides: "text"` (default: copy text, hide nothing), `"none"`, or `"match"` (also hide missing layers); `fills: true` to copy the element's fill. An unknown variant is an error, never a silent default.
+- **Then make it a system (option 2):** repeated frames → `figma_edit` componentize (§5), instances filled through text properties.
+- **Always check the picture:** `figma_export_image({ nodeId, compareWith: { html: path } })`. Look at both images and the heatmap; `regions` say where they differ. Fix and re-run until the verdict is a close match or the remaining differences are explained (font rendering).
 
-Fonts must be installed on the machine that runs Figma. A missing family falls back to Inter, with a warning.
+## 4. Job B: build in Figma
 
-## Mode A — requirement → Figma design
+1. List the screens and states (default, loading, error, empty, success) and how the user moves between them.
+2. `figma_get_design_context({ task })` → only the relevant components (variants, props), tokens, text styles.
+3. Write **one** plan for the whole flow (DSL below), with `target.page`. Put screens in a top-level `section`.
+4. For a prototype, give nodes `interactions` and the plan `prototype.flows` (DSL below).
+5. `figma_preview_plan` → fix errors from their `suggestions` → show the summary → `figma_execute_plan`.
+6. `figma_export_image` on the result. Report what you built, the verification and the warnings.
 
-1. **Understand the flow.** List the screens and the states each one needs (default, loading, error, empty, success), plus how the user moves between them. Keep this short and in your own head or reply.
-2. `figma_get_design_context({ task: "<flow description>", roles?: [...] })` returns only the relevant components (with their variants and props), tokens and text styles, plus any known code mappings.
-3. **Write one Design Plan** that covers all the screens (see the DSL below). Put screens side by side, one screen per state when states differ visually, and give them clear names such as `"Reset – Enter email"` and `"Reset – Code (error)"`.
-4. `figma_preview_plan({ plan })` validates the plan and resolves it. If it fails, fix it and preview again. If it succeeds, show the user the `summary` (screens, instances by component, tokens, warnings).
-5. Once the user approves (or has already said "go ahead"), call `figma_execute_plan({ planId })`. The whole plan is one undo step, a failure rolls it all back, and the result is verified automatically.
-6. Report the created screens, anything in `verification.mismatches` and the warnings. Use `figma_select` to show the result.
+## 5. Job C: change existing Figma
 
-## Mode B — make an existing frame follow the DS
+- **Read first, cheaply:** `figma_inspect({ target, format: "summary" })`, then `format: "instances"` or `"text"` (paged with `offset/limit`), or `"tree"` with `expandInstances: true` for a small node.
+- **Edit:** `figma_edit({ ops, approved? })`, one undo step; ops run in order and `"$n"` refers to the node op *n* produced.
+  - `rename`, `move` (parent, section or page), `duplicate`, `set` (visible, x/y, size, opacity, `text`, instance `properties`), `resizeToFit`, `delete`.
+  - `componentize`: `{ nodes, mode: "variants", name, variants: [{ State: "Expanded" }, …], exposeText: ["Title", "Body"] }`. Works on copies placed beside the originals (`duplicate: false` converts in place) and gives cleanly stacked layers Auto Layout so the component adapts to new text. Rename text layers first so the exposed properties get good names.
+  - `prototype` (`{ node, interactions }`) and `flow` (`{ name, start }`) wire existing frames, e.g. a variant `change-to` another variant for an interactive component.
+  - Changing existing nodes needs `approved: true` after the user agreed. Without it, `delete` only hides the node and prefixes 🗑.
+- **Fill many slots:** a plan with `inserts: [{ parentId, index?, nodes }]` (one run, needs approval).
+- **Refactor or clone:** `figma_inspect({ format: "plan" })` gives the subtree as a plan (instances by set id, text styles, tokens, interactions). Edit it, preview, execute; compare old and new with `figma_export_image({ nodeId, compareWith: { nodeId } })`.
+- **Apply the DS (audit):** `figma_analyze_design` → show its `groups` → `figma_apply_transformations({ analysisId, approved: true, groups | excludeGroups })`.
+- **Clean up** failed attempts: `figma_cleanup()` lists what this session made; `approved: true` removes it.
 
-1. Ask the user to select the frame, or use the node id they give you.
-2. `figma_analyze_design()` returns a grouped summary, for example "3 × custom element → Button / Primary", "7 × spacing value → spacing token", "1 × manual layout → Auto Layout".
-3. Present the summary and ask which items to apply. Nothing changes until you do.
-4. `figma_apply_transformations({ analysisId, approved: true, ids? })` applies them. Report `applied` / `failed` and remind the user that originals are hidden, not deleted, and that one undo reverts everything.
-5. For changes the analyzer can't express (restructuring, new sections), write a Design Plan with `target: { parentId }` and use Mode A. That path needs `approved: true`.
+## 6. Job D: Figma → code
 
-## Mode C — Figma → code, and verification
+`figma_inspect({ format: "plan" })` (or the plan you just built) → `code_scan_components` → confirm
+mappings with the user → `code_mapping({ action: "set" })` → implement with the mapped components
+and the project's tokens → `code_verify_usage({ file, planId })` and fix what it reports.
 
-1. `figma_inspect({ target: <frame id>, depth: 8 })` gives you the structure. Or reuse the plan you just executed.
-2. `code_scan_components()` finds the framework (Next app router, Tailwind, shadcn), the existing UI components and `mappingSuggestions`. Confirm the mappings that are right and save them with `code_mapping({ action: "set", mappings })`. The mapping file `.layerwright/mapping.json` should be committed.
-3. Implement with the **mapped components**, and import them from their `importPath`. Never re-implement a component that's already mapped. Map DS tokens to the project's token system (Tailwind theme, CSS variables) and avoid arbitrary values.
-4. `code_verify_usage({ file, planId })` flags mapped components that are missing, raw `<button>`/`<input>` duplicates and arbitrary Tailwind values. Fix them and run it again. If needed, run `figma_verify({ planId })` to confirm Figma still matches.
+## The official Figma MCP (only when it's connected)
 
-## Design DSL (validated with Zod; invalid plans never reach Figma)
+Layerwright's plugin can do every edit above; prefer it. Use the official Figma MCP only for what
+the plugin can't reach:
+- **A library component the file doesn't use yet:** `search_design_system` → take its component (set) key → `component: { key }` in a plan or `key` in a swap. Layerwright imports it by key and matches variants and props by name.
+- A second opinion on a picture: `get_screenshot`.
+Never use its `use_figma` (arbitrary plugin code) for work Layerwright's tools do: it skips
+validation, approval, rollback and verification.
+
+## Design DSL
 
 ```jsonc
-{
-  "name": "Login flow",
-  "screenGap": 80,                       // px between top-level screens
-  "target": { "parentId": "12:34" },     // optional: build inside an existing node (needs approval)
-  "screens": [ /* DesignNode[] — usually type "screen" */ ]
-}
+{ "name": "Checkout", "target": { "page": "Flows" },          // or { parentId } (needs approval)
+  "prototype": { "flows": [{ "name": "Checkout", "start": "Cart" }] },
+  "screens": [{ "type": "section", "name": "Checkout flow", "children": [
+    { "type": "screen", "name": "Cart", "scroll": "vertical", "children": [
+      { "type": "text", "role": "heading", "content": "Your cart" },
+      { "type": "component", "component": { "id": "12:34" }, "variant": { "State": "Expanded" }, "props": { "Title": "2 items" } },
+      { "type": "button", "variant": "Primary", "props": { "label": "Checkout" },
+        "interactions": [{ "action": "navigate", "to": "Payment", "transition": { "type": "push", "direction": "left", "duration": 300 } }] } ] },
+    { "type": "screen", "name": "Payment", "children": [
+      { "type": "text", "content": "← Back", "interactions": [{ "action": "back" }] } ] } ] }],
+  "inserts": [{ "parentId": "40:2", "nodes": [{ "type": "text", "content": "Slot" }] }] }
 ```
 
-**Containers.** `screen` (fixed width, 390 by default), `frame`, `section`, `stack` (vertical), `row` (horizontal), `card`, `modal`, `navigation` and `list` share these fields:
-`name, width (number|"hug"|"fill"), height, minWidth, maxWidth, layout { direction: vertical|horizontal|none, gap, padding (n | {x,y} | {top,right,bottom,left}), align: start|center|end|space-between, crossAlign, wrap }, fill, gradient { angle, stops:[{color, position 0–1}] }, stroke, strokeWeight, strokeSides (e.g. ["top"]), strokeWeights {top,right,bottom,left}, radius, effect (an effect style) or shadows [{type: drop|inner, x, y, blur, spread, color}], opacity, clip, direction: "rtl" (reverses horizontal children and right-aligns text: Persian, Arabic, Hebrew), children[]`.
-Any node takes `position: { type: "absolute", x, y }` to leave the Auto Layout flow (for badges and overlays).
-Each type comes with a sensible default layout (for example, `screen` uses padding 24 and gap 16, and `card` uses padding 16, gap 12 and radius 12).
-A container that has `component` or `role` set becomes a DS instance instead, which is useful for a card, modal or navigation bar from the DS.
+- **Containers:** `screen` (390 wide), `frame`, `section` (top level: a real Figma Section that fits its content; nested: a vertical stack), `stack`, `row`, `card`, `modal`, `navigation`, `list`. Fields: `name, width/height (number | "hug" | "fill"), minWidth, maxWidth, layout { direction, gap, padding, align, crossAlign, wrap }, fill, gradient, stroke, strokeWeight, strokeSides, strokeWeights, radius, effect | shadows, opacity, clip, direction: "rtl", scroll, fixedChildren, children`. `position: { type: "absolute", x, y }` takes a node out of the flow.
+- **Text:** `content`, and either `role` (picks a DS text style) or `style` (a style name), or explicit `fontFamily/fontSize/weight/italic/lineHeight/letterSpacing`; explicit fields always win, `style: null` never applies one. `color`, `align`, `direction`, `runs: [{ text, weight?, color?, fontSize?, href? }]` (joined = content).
+- **Components:** `button`, `input`, `component`, `icon`, `link`, `divider`: `component` (name, `{ id }` or `{ key }`), `role`, `variant` ("Primary, Small" or `{ Type: "Primary" }`), `props` (by property name; falls back to text layer names), `allowFallback`.
+- **Other:** `image` (`src`: data: or https URL, `fit`), `icon` with inline `svg`.
+- **Tokens:** numbers take a variable name (`"spacing/md"`); colours take a variable, paint style or hex.
+- **Prototype:** any node takes `id` and `interactions: [{ trigger: click | hover | press | drag | mouse-enter | mouse-leave | after-delay, delay (ms), action: navigate | overlay | swap | scroll-to | change-to | back | close | url, to (plan id, screen name or Figma node id), url, transition: { type: instant | dissolve | smart-animate | move-in | move-out | push | slide-in | slide-out, direction, duration (ms), easing }, preserveScroll }]`. Navigate/overlay/swap targets must be top-level frames on the same page. Overlays open centred (the Plugin API can't set their position).
 
-**Content.**
-- `text`: `content`, `role` (display|heading|title|subheading|body|label|caption|overline|code, which picks the matching DS text style), `style` (an explicit text style name), `color`, `fontSize`, `fontFamily` (for example "Vazirmatn"), `weight` (thin…black; matched to the font's real style names), `italic`, `lineHeight` `{unit: px|percent, value}` or `{unit: "auto"}`, `letterSpacing` `{unit, value}`, `align`, `direction`.
-- `link`: `content`, `href`. It uses the DS Link component if one exists and otherwise renders as link-colored text.
-- `button`: the default role is `primary-action`. `input`: the default role is `text-input`. `icon`, `component` and `component-instance` are the others. All of them take:
-  `component` (a name such as `"Button"` or `"Forms/Input"`), `role` (such as `primary-action`, `secondary-action`, `destructive-action`, `text-input`, `password-input`, `otp-input`, `checkbox`, `switch`, `select`, `dialog`, `toast`, `alert`, `card`, `navigation`, `tabs`, `list-item`, `avatar` or `badge`),
-  `variant` (`"Secondary"`, `"Primary, Small"` or `{ "Type": "Primary", "Size": "Small" }`) and `props` (`{ "label": "Email", "placeholder": "you@x.com", "disabled": true }`). Props map to component properties by name and fall back to text layer names.
-- `divider`: uses the DS divider component, or a 1px rule if there isn't one.
-- `image`: `src` (a `data:image/…` URL or an https URL, which the server fetches; the plugin never goes online), `fit` (fill|fit|crop), `alt`, `radius`. If an image fails to load, it stays a placeholder and you get a warning.
-- `icon`: either a DS icon component (`component`/`role`) or `svg` (inline `<svg>` markup), plus an optional `color` that recolours it.
+## Rules
 
-**Tokens.** A numeric field accepts a number or a variable name (`"spacing/md"`). A color accepts a variable name, a paint style name or a hex value.
-**Sizing.** Children of vertical containers stretch (`fill`) by default. Use `width: "hug"` to stop that, for example on an inline button.
+1. **Reason once, act in batches:** one plan per screen set, one `figma_edit` call per change set.
+2. **Reuse before you create:** DS components, variables and text styles over raw values. Use `allowFallback` only with the user's consent, and say so.
+3. **Approval boundary:** new frames need none; anything that changes or removes existing nodes needs the user's yes, then `approved: true`.
+4. **Errors are data:** `{ success: false, errors: [{ type, message, suggestions, candidates }] }`. Fix the plan from them and preview again. `AMBIGUOUS_COMPONENT` → pick a candidate `{ id }` (ask if unclear). No fitting component → ask; don't invent one.
+5. **Verify with your eyes:** `verification.passed` checks structure, sizes and links; a picture catches the rest. Never report success on a build you haven't looked at.
 
-### Example
-
-```json
-{ "name": "Login", "screens": [
-  { "type": "screen", "name": "Login", "fill": "color/bg/surface",
-    "layout": { "direction": "vertical", "padding": "spacing/lg", "gap": "spacing/md" },
-    "children": [
-      { "type": "text", "role": "heading", "content": "Welcome back" },
-      { "type": "text", "role": "body", "content": "Sign in to continue", "color": "color/text/secondary" },
-      { "type": "input", "props": { "label": "Email", "placeholder": "you@company.com" } },
-      { "type": "input", "role": "password-input", "props": { "label": "Password" } },
-      { "type": "button", "variant": "Primary", "props": { "label": "Continue" } },
-      { "type": "row", "layout": { "direction": "horizontal", "align": "center" }, "children": [
-        { "type": "link", "content": "Forgot password?" } ] }
-    ] } ] }
-```
-
-## Error types you may see
-
-`INVALID_PLAN` (schema, with a path) · `COMPONENT_NOT_FOUND` / `INVALID_VARIANT` (with suggestions) · `TOKEN_NOT_FOUND` / `STYLE_NOT_FOUND` ·
-`DESIGN_SYSTEM_NOT_SCANNED` · `PLUGIN_DISCONNECTED` · `TIMEOUT` (inspect before you retry, since the operation may have completed) · `NOT_APPROVED` · `FIGMA_API_ERROR` (execution was rolled back).
+Error types: `INVALID_PLAN` · `COMPONENT_NOT_FOUND` · `AMBIGUOUS_COMPONENT` · `INVALID_VARIANT` · `TOKEN_NOT_FOUND` · `STYLE_NOT_FOUND` · `NODE_NOT_FOUND` · `DESIGN_SYSTEM_NOT_SCANNED` · `PLUGIN_DISCONNECTED` · `TIMEOUT` (inspect before retrying) · `NOT_APPROVED` · `FIGMA_API_ERROR` (the run was rolled back).

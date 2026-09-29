@@ -77,6 +77,9 @@ Next steps:
      • "Import ./design.html into Figma"                         (HTML → Figma)
      • "Create a login screen in Figma using our Design System"  (prompt → Figma)
      • select a frame in Figma, then "Implement the selected Figma frame in code using our components"  (Figma → code)
+     • select repeated frames, then "Make these a component set with a State variant"  (layers → components)
+     • "Wire the Cart, Payment and Success screens into a clickable prototype"  (prototype)
+   Or without AI: npx ${PKG_NAME} import ./design.html --to-figma
 Optional: paste the prompt from https://github.com/shayan-m81/layerwright/blob/main/docs/claude-prompt.md into CLAUDE.md.
 Trouble? Run: npx ${PKG_NAME} doctor`);
   return 0;
