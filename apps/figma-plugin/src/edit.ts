@@ -1,7 +1,7 @@
 // Edits on existing nodes: rename, move, duplicate, set, delete, resize to fit, and turning layers into
 // components / component sets. One call = one undo step. Fixed Plugin API calls only.
 import type { ResolvedInteraction } from "@cde/core";
-import { ExecError, checkDestination, findPage, fitSection, pageOf, tag, toReaction } from "./execute.ts";
+import { ExecError, checkDestination, findPage, fitSection, loose, pageOf, tag, toReaction } from "./execute.ts";
 
 export type NodeRef = string; // a node id, or "$n": the node produced by op n of this call
 
@@ -19,7 +19,6 @@ export type EditOp =
 
 export interface EditResult { op: number; kind: EditOp["op"]; nodeId?: string; nodeIds?: string[]; note?: string }
 
-const loose = (s: string) => s.split("#")[0].toLowerCase().replace(/[\s_-]+/g, "");
 
 async function resolve(ref: NodeRef, results: EditResult[]): Promise<SceneNode> {
   let id = ref;
@@ -208,7 +207,7 @@ export async function editNodes(p: { ops: EditOp[]; approved?: boolean; meta?: {
           const dest = await container(o.parent, o.page, results);
           noteSection(n.parent);
           if (dest) { if (o.index !== undefined) dest.insertChild(Math.min(o.index, dest.children.length), n); else dest.appendChild(n); }
-          else if (o.index !== undefined && n.parent) (n.parent as BaseNode & ChildrenMixin).insertChild(o.index, n);
+          else if (o.index !== undefined && n.parent) { const host = n.parent as BaseNode & ChildrenMixin; host.insertChild(Math.min(o.index, host.children.length - 1), n); }
           if (o.x !== undefined) n.x = o.x;
           if (o.y !== undefined) n.y = o.y;
           noteSection(n.parent);

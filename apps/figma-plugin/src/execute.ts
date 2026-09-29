@@ -315,7 +315,8 @@ async function getComponent(id: string, key: string | undefined, remote: boolean
   // By id first: a library component the file already uses is a node here, reachable instantly. Import by key only
   // when it isn't (a component found in a library search), with a time limit.
   if (id) { try { c = await figma.getNodeByIdAsync(id); } catch (e) { importError = e; } }
-  if ((!c || c.removed) && remote && key) { c = null; try { c = await withTimeout(figma.importComponentByKeyAsync(key)); } catch (e) { importError = e; } }
+  // Not a live component under that id (removed, or the id now names something else): try the key.
+  if ((!c || c.removed || c.type !== "COMPONENT") && remote && key) { c = null; try { c = await withTimeout(figma.importComponentByKeyAsync(key)); } catch (e) { importError = e; } }
   // A key can also name a component set: use its default variant.
   if (!c && remote && key && !id) { try { c = (await withTimeout(figma.importComponentSetByKeyAsync(key))).defaultVariant; } catch (e) { importError ??= e; } }
   if (!c) throw new ExecError({ type: "COMPONENT_NOT_FOUND", path, message: `Could not load component ${id}: ${importError instanceof Error ? importError.message : String(importError ?? "not in this file")}` });
@@ -323,7 +324,8 @@ async function getComponent(id: string, key: string | undefined, remote: boolean
   return c;
 }
 
-const loose = (s: string) => s.split("#")[0].toLowerCase().replace(/[\s_-]+/g, "");
+/** Property and layer names compared loosely: "Label#12:3" ≈ "label", "Show icon" ≈ "show_icon". */
+export const loose = (s: string) => s.split("#")[0].toLowerCase().replace(/[\s_-]+/g, "");
 
 async function setInstanceContent(inst: InstanceNode, properties: Record<string, string | boolean>, overrides: Record<string, string>, path: string, ctx: Ctx, late: Record<string, string | boolean> = {}) {
   const texts = inst.findAllWithCriteria({ types: ["TEXT"] });
@@ -501,7 +503,7 @@ async function applyPrototype(plan: ResolvedPlan, ctx: Ctx) {
 export function pageOf(n: BaseNode): PageNode | undefined {
   let p: BaseNode | null = n;
   while (p && p.type !== "PAGE") p = p.parent;
-  return (p as PageNode) ?? undefined;
+  return p?.type === "PAGE" ? (p as PageNode) : undefined;
 }
 
 /** A page by id or exact name. */
@@ -529,7 +531,7 @@ export async function executePlan(plan: ResolvedPlan, meta?: { session?: string;
   }
   // Build on the requested page (or the target's page), never silently on whatever page the user has open.
   const page = plan.target.page ? await findPage(plan.target.page) : plan.target.parentId ? pageOf(parent) : undefined;
-  if (page && plan.target.page && plan.target.parentId && pageOf(parent)?.id !== page.id) throw new ExecError({ type: "INVALID_PLAN", message: `Target parent ${plan.target.parentId} is on page "${pageOf(parent)?.name}", not "${page.name}".` });
+  if (page && plan.target.page && plan.target.parentId && pageOf(parent)?.id !== page.id) throw new ExecError({ type: "INVALID_PLAN", message: pageOf(parent) ? `Target parent ${plan.target.parentId} is on page "${pageOf(parent)!.name}", not "${page.name}".` : `Target parent ${plan.target.parentId} isn't on any page.` });
   if (page && figma.currentPage.id !== page.id) await figma.setCurrentPageAsync(page);
   if (!plan.target.parentId && page) parent = page;
   const onPage = parent.type === "PAGE";

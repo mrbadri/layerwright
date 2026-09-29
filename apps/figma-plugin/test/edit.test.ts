@@ -189,3 +189,10 @@ test("componentize keeps a Design System instance linked: it is wrapped, not det
   assert.equal(comp.children[0].type, "INSTANCE");
   assert.deepEqual([comp.width, comp.children[0].width, comp.children[0].x], [300, 300, 0]);
 });
+
+test("move with an index past the end (and no new parent) is clamped instead of failing the call", async () => {
+  const { board: b, items } = board(3);
+  const r = await editNodes({ ops: [{ op: "move", node: items[0].id, index: 99 }], approved: true });
+  assert.equal(r.failed, undefined);
+  assert.equal(b.children.at(-1).id, items[0].id);
+});
