@@ -343,7 +343,7 @@ export type BridgeMethod =
 
 export interface BridgeRequest { id: string; method: BridgeMethod; params?: unknown }
 export interface BridgeResponse { id: string; ok: boolean; result?: unknown; error?: StructuredError }
-export interface BridgeHello { type: "hello"; fileName: string; fileKey?: string; page: string; user?: string }
+export interface BridgeHello { type: "hello"; fileName: string; fileKey?: string; page: string; user?: string; pluginBuild?: string }
 
 /** How a swapped element becomes an instance. `overrides`: "none" keeps the component as is, "text" (default) copies
  *  matching text only, "match" also hides component layers the element doesn't have. Fills are copied only with `fills`. */

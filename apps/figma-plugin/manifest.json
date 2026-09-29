@@ -4,12 +4,30 @@
   "api": "1.0.0",
   "main": "dist/code.js",
   "ui": "dist/ui.html",
-  "editorType": ["figma"],
+  "editorType": [
+    "figma"
+  ],
   "documentAccess": "dynamic-page",
-  "permissions": ["teamlibrary", "currentuser"],
+  "permissions": [
+    "teamlibrary",
+    "currentuser"
+  ],
   "networkAccess": {
-    "allowedDomains": ["none"],
-    "devAllowedDomains": ["ws://localhost:7331"],
-    "reasoning": "Connects only to the local Layerwright MCP server on localhost (started by Claude Code). No other network access."
+    "allowedDomains": [
+      "none"
+    ],
+    "devAllowedDomains": [
+      "ws://localhost:7331",
+      "ws://localhost:7332",
+      "ws://localhost:7333",
+      "ws://localhost:7334",
+      "ws://localhost:7335",
+      "ws://localhost:7336",
+      "ws://localhost:7337",
+      "ws://localhost:7338",
+      "ws://localhost:7339",
+      "ws://localhost:7340"
+    ],
+    "reasoning": "Connects only to the local Layerwright MCP server on localhost ports 7331\u20137340 (started by Claude Code). No other network access."
   }
 }

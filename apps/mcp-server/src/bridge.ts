@@ -25,11 +25,16 @@ export class WsBridge implements FigmaTransport {
   constructor(public port = Number(process.env.LAYERWRIGHT_PORT ?? process.env.CDE_PORT ?? 7331), private log: (m: string) => void = (m) => { process.stderr.write(`[layerwright] ${m}\n`); }) {}
 
   start(): Promise<void> {
+    if (this.port < 7331 || this.port > 7340) {
+      this.startError = `Port ${this.port} is outside 7331–7340, the only ports the Figma plugin may connect to. Set LAYERWRIGHT_PORT to one of them.`;
+      this.log(this.startError);
+      return Promise.resolve();
+    }
     return new Promise((resolve) => {
       const wss = (this.wss = new WebSocketServer({ host: "127.0.0.1", port: this.port }));
       wss.on("listening", () => { this.log(`listening on ws://localhost:${this.port}`); resolve(); });
       wss.on("error", (e: any) => {
-        this.startError = e.code === "EADDRINUSE" ? `Port ${this.port} is already in use (another Claude session running the bridge?). Set LAYERWRIGHT_PORT to a different port and change it in the plugin window.` : String(e.message ?? e);
+        this.startError = e.code === "EADDRINUSE" ? `Port ${this.port} is already in use (another Claude session running the bridge?). Set LAYERWRIGHT_PORT to another port from 7331–7340 and enter the same port in the plugin window.` : String(e.message ?? e);
         this.log(this.startError);
         resolve();
       });

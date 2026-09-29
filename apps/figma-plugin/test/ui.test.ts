@@ -50,23 +50,27 @@ test("UI states: connecting → connected → running op → last error", () => 
 test("changing the port leaves exactly one live socket (stale onclose no longer reconnects)", async () => {
   const ui = boot();
   ui.sockets[0].open();
-  ui.els.port.value = "7400";
+  ui.els.port.value = "7336";
   ui.els.port.onchange();
   await new Promise((r) => setTimeout(r, 0)); // let the old socket's onclose fire
   assert.equal(ui.sockets.length, 2);
-  assert.equal(ui.sockets[1].url, "ws://localhost:7400");
+  assert.equal(ui.sockets[1].url, "ws://localhost:7336");
   assert.equal(ui.timers.length, 0, "no retry was scheduled by the stale socket");
-  assert.ok(ui.posted.some((m) => m.type === "set-port" && m.port === 7400));
+  assert.ok(ui.posted.some((m) => m.type === "set-port" && m.port === 7336));
   ui.sockets[1].open();
   assert.equal(ui.els.status.textContent, "Connected to Claude");
 });
 
 test("a saved port from clientStorage is applied without re-saving; bad ports are rejected", () => {
   const ui = boot();
-  ui.fromPlugin({ type: "port", port: 7555 });
-  assert.equal(ui.sockets.at(-1).url, "ws://localhost:7555");
+  ui.fromPlugin({ type: "port", port: 7337 });
+  assert.equal(ui.sockets.at(-1).url, "ws://localhost:7337");
   assert.ok(!ui.posted.some((m) => m.type === "set-port"));
   ui.els.port.value = "80";
+  ui.els.port.onchange();
+  assert.equal(ui.els.port.value, "7331");
+  // Outside the manifest's allowed range (7331–7340) it could never connect: refused too.
+  ui.els.port.value = "7400";
   ui.els.port.onchange();
   assert.equal(ui.els.port.value, "7331");
 });

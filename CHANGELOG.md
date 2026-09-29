@@ -6,6 +6,7 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Fixed
+- Another port than 7331 could never work: the plugin manifest only allowed `ws://localhost:7331`. It now allows 7331–7340, and the plugin window, `init --port` and the server refuse ports outside that range with a clear message. `doctor` also flags a plugin window that still runs an older build than the installed one.
 - Text: explicit `fontSize`/`fontFamily`/`weight` are no longer replaced by an inferred text style, and a style is only inferred from a `role`. HTML imports used to get the body style on every text once a Design System was scanned. `style: null` opts out.
 - Components with the same name are no longer picked silently: the one that has the requested variant wins, otherwise the new `AMBIGUOUS_COMPONENT` error lists the candidates. `component` also takes `{ id }` or `{ key }`; a key that isn't in the scan (a library component) is imported by key.
 - `figma_import_html` swaps: layers are never hidden and fills never copied unless asked (`overrides: "none" | "text" | "match"`, default `"text"`; `fills`). An unknown variant is an error instead of a fallback to the default. Swaps take `id` or `key`.

@@ -25,7 +25,7 @@ const toSnap = (n: ResolvedNode, id: string): NodeSnapshot => {
 };
 
 test("MCP tools: scan → context → preview → execute → verify → code", async () => {
-  const port = 17000 + Math.floor(Math.random() * 2000);
+  const port = 7338; // inside the manifest's allowed range; 7331 is left for a real session
   const bridge = new WsBridge(port, () => {});
   await bridge.start();
   const work = mkdtempSync(join(tmpdir(), "cde-"));

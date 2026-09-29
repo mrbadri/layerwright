@@ -72,7 +72,8 @@
 
   function setPort(p, save) {
     const n = Number(p);
-    if (!Number.isInteger(n) || n < 1024 || n > 65535) { $("port").value = String((hello && hello.port) || 7331); return; }
+    // The manifest only allows localhost ports 7331–7340; anything else could never connect.
+    if (!Number.isInteger(n) || n < 7331 || n > 7340) { $("port").value = String((hello && hello.port) || 7331); $("detail").textContent = "Use a port from 7331 to 7340"; return; }
     $("port").value = String(n);
     if (save) parent.postMessage({ pluginMessage: { type: "set-port", port: n } }, "*");
     failures = 0;

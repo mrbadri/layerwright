@@ -3,7 +3,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node
 import { execFileSync } from "node:child_process";
 import { join, resolve } from "node:path";
 import WebSocket from "ws";
-import { BIN, DEFAULT_PORT, FROM_SOURCE, MIN_NODE, PKG_NAME, PKG_VERSION, REPO_ROOT, pluginHome, pluginSource, skillSource } from "./meta.ts";
+import { BIN, DEFAULT_PORT, FROM_SOURCE, MIN_NODE, PKG_NAME, PKG_VERSION, PORT_RANGE, REPO_ROOT, pluginHome, pluginSource, portAllowed, skillSource } from "./meta.ts";
 
 type Out = (s: string) => void;
 const stdout: Out = (s) => process.stdout.write(s + "\n");
@@ -25,6 +25,7 @@ export async function init(o: InitOptions = {}): Promise<number> {
   const out = o.out ?? stdout;
   const dir = resolve(o.dir ?? process.cwd());
   const port = o.port ?? DEFAULT_PORT;
+  if (!portAllowed(port)) { out(`✗ Port ${port} can't be used: the Figma plugin may only connect to localhost ports ${PORT_RANGE[0]}–${PORT_RANGE[1]}.`); return 1; }
   if (nodeMajor() < MIN_NODE) { out(`✗ Node ${process.versions.node} found; Node ${MIN_NODE} or newer is required (https://nodejs.org).`); return 1; }
   out(`✓ Node ${process.versions.node}`);
 
@@ -82,6 +83,14 @@ Trouble? Run: npx ${PKG_NAME} doctor`);
 }
 
 /** Ask a running bridge for its status over the /doctor path. */
+/** The build stamp baked into the installed plugin (see apps/figma-plugin/build.mjs). */
+function installedBuild(): string | undefined {
+  for (const dir of [pluginHome(), pluginSource()]) {
+    try { const m = readFileSync(join(dir, "dist", "code.js"), "utf8").match(/"(\d{4}-\d\d-\d\dT[\d:.]+Z)"/); if (m) return m[1]; } catch { /* not there */ }
+  }
+  return undefined;
+}
+
 export function probe(port: number, timeoutMs = 1500): Promise<{ ok: true; status: any } | { ok: false; reason: string }> {
   return new Promise((done) => {
     const ws = new WebSocket(`ws://127.0.0.1:${port}/doctor`);
@@ -116,7 +125,13 @@ export async function doctor(o: { dir?: string; port?: number; out?: Out; skipBr
     failWith(`nothing is listening on ws://localhost:${port} (${p.reason})`, "start Claude Code in this project; it launches the MCP server from .mcp.json. Check /mcp in Claude Code if it failed to start.");
   } else {
     pass(`MCP server running on port ${port} (v${p.status.version})`);
-    if (p.status.pluginConnected) pass(`Figma plugin connected — file "${p.status.hello?.fileName ?? "?"}", page "${p.status.hello?.page ?? "?"}"`);
+    if (p.status.pluginConnected) {
+      pass(`Figma plugin connected — file "${p.status.hello?.fileName ?? "?"}", page "${p.status.hello?.page ?? "?"}"`);
+      // An open plugin window keeps running the code it started with: compare it with the installed build.
+      const running = p.status.hello?.pluginBuild as string | undefined;
+      const installed = installedBuild();
+      if (installed && running !== installed) failWith(`the open plugin window runs an older build (${running ?? "before build stamps"}) than the installed one (${installed})`, "close the Layerwright plugin in Figma and run it again (or turn on Plugins → Development → Hot reload plugin)");
+    }
     else failWith("Figma plugin is not connected", `open Figma desktop, run the plugin (Plugins → Development), and make sure its port is ${port}`);
   }
 

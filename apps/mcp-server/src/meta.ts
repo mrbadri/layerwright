@@ -31,3 +31,6 @@ export function pluginHome(): string {
   return join(process.env.LAYERWRIGHT_HOME ?? join(homedir(), `.${BIN}`), "figma-plugin");
 }
 export const DEFAULT_PORT = 7331;
+/** The plugin manifest allows only these localhost ports (Figma checks network access against the manifest). */
+export const PORT_RANGE = [7331, 7340] as const;
+export const portAllowed = (p: number) => Number.isInteger(p) && p >= PORT_RANGE[0] && p <= PORT_RANGE[1];

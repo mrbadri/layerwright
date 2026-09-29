@@ -74,7 +74,7 @@ async function handle(req: BridgeRequest): Promise<unknown> {
   }
 }
 
-const hello = () => ({ type: "hello", fileName: figma.root.name, fileKey: figma.fileKey, page: figma.currentPage.name, user: figma.currentUser?.name });
+const hello = () => ({ type: "hello", fileName: figma.root.name, fileKey: figma.fileKey, page: figma.currentPage.name, user: figma.currentUser?.name, pluginBuild: BUILD });
 
 figma.ui.onmessage = async (msg: any) => {
   if (msg?.type === "ui-ready") {
