@@ -1,6 +1,6 @@
 // Builds node trees serialized from rendered HTML (see apps/mcp-server/src/html-import.ts), and manages pages.
 import type { ImportNode, ImportPaint, ImportSwapRef } from "@cde/core";
-import { ExecError, tag } from "./execute.ts";
+import { ExecError, tag, withTimeout } from "./execute.ts";
 
 const rgb = (hex: string) => ({ r: parseInt(hex.slice(1, 3), 16) / 255, g: parseInt(hex.slice(3, 5), 16) / 255, b: parseInt(hex.slice(5, 7), 16) / 255 });
 const solid = (p: ImportPaint): SolidPaint => ({ type: "SOLID", color: rgb(p.hex), opacity: p.a });
@@ -110,7 +110,7 @@ async function componentIndex(trees: ImportNode[]) {
       if (n && (n.type === "COMPONENT" || n.type === "COMPONENT_SET")) c = n;
       else throw new ExecError({ type: "COMPONENT_NOT_FOUND", component: ref.component, message: `No component or component set with id ${ref.id}.` });
     } else if (ref.key) {
-      try { c = await figma.importComponentSetByKeyAsync(ref.key); } catch { try { c = await figma.importComponentByKeyAsync(ref.key); } catch (e) {
+      try { c = await withTimeout(figma.importComponentSetByKeyAsync(ref.key)); } catch { try { c = await withTimeout(figma.importComponentByKeyAsync(ref.key)); } catch (e) {
         throw new ExecError({ type: "COMPONENT_NOT_FOUND", component: ref.component, message: `Could not import component key ${ref.key} (is the library enabled for this file?): ${(e as Error).message}` });
       } }
     } else {

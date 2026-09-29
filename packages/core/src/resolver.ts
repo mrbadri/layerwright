@@ -22,6 +22,8 @@ type Fail = { error: StructuredError };
 
 export class Resolver {
   private setById: Map<string, ComponentSetDefinition>;
+  /** name → component (set) id: earlier choices between same-named components (project memory). */
+  preferred: Record<string, string> = {};
   constructor(public ds: DesignSystem) {
     this.setById = new Map(ds.componentSets.map((s) => [s.id, s]));
   }
@@ -114,6 +116,16 @@ export class Resolver {
     const results = tied.map((x) => ({ x, r: this.within(x.c, req.variant, role, path) }));
     const fits = results.filter((y) => !("error" in y.r));
     if (fits.length === 1) return fits[0].r;
+    // The user already chose one of these in this project.
+    const chosen = req.component ? this.preferred[req.component] : undefined;
+    const pref = chosen && fits.find((y) => y.x.c.v.id === chosen);
+    if (pref) return pref.r;
+    // Copies of one library set (published versions, several libraries): the one this file uses clearly most wins.
+    if (fits.length > 1 && fits.every((y) => y.x.c.v.remote)) {
+      const used = [...fits].sort((a, b) => ((b.x.c.v as ComponentSetDefinition).usage ?? 0) - ((a.x.c.v as ComponentSetDefinition).usage ?? 0));
+      const [u0, u1] = used.map((y) => (y.x.c.v as ComponentSetDefinition).usage ?? 0);
+      if (u0 > 0 && u0 >= 2 * u1) return used[0].r;
+    }
     const candidates = tied.map((x) => this.describe(x.c.v));
     if (!fits.length) {
       const first = results[0].r as Fail;
@@ -343,8 +355,9 @@ export function emptyDesignSystem(fileName = ""): DesignSystem {
   return { fileName, scannedAt: new Date(0).toISOString(), components: [], componentSets: [], variableCollections: [], variables: [], styles: [], typography: [], semanticTokens: [] };
 }
 
-export function compilePlan(ds: DesignSystem, plan: DesignPlan): CompileResult {
+export function compilePlan(ds: DesignSystem, plan: DesignPlan, opts: { preferred?: Record<string, string> } = {}): CompileResult {
   const r = new Resolver(ds);
+  if (opts.preferred) r.preferred = opts.preferred;
   const errors: StructuredError[] = [];
   const warnings: string[] = [];
   const summary: PlanSummary = { screens: [], instances: {}, frames: 0, texts: 0, primitives: 0, tokensUsed: [], textStylesUsed: [] };

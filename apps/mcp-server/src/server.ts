@@ -12,6 +12,9 @@ import { MappingStore, scanCodebase, verifyCodeUsage } from "./code.ts";
 import { diffImages, importHtml, renderToPlan, screenshotHtml } from "@cde/html-import";
 import { inlineImages } from "./images.ts";
 import { PKG_VERSION } from "./meta.ts";
+import { cachedUpdate, checkForUpdate, type UpdateInfo } from "./update.ts";
+import { MemoryStore } from "./memory.ts";
+import { duplicateNames } from "@cde/core";
 
 type ToolResult = { content: ({ type: "text"; text: string } | { type: "image"; data: string; mimeType: string })[]; isError?: boolean };
 const ok = (data: unknown): ToolResult => ({ content: [{ type: "text", text: JSON.stringify(data) }] });
@@ -24,13 +27,14 @@ async function guard(fn: () => Promise<ToolResult>): Promise<ToolResult> {
   }
 }
 
-export interface ServerOptions { workdir?: string }
+export interface ServerOptions { workdir?: string; noUpdateCheck?: boolean }
 
 export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
   const workdir = resolve(opts.workdir ?? process.env.LAYERWRIGHT_WORKDIR ?? process.cwd());
   const home = join(workdir, ".layerwright");
   const cacheDir = join(home, "cache");
   const mappings = new MappingStore(join(home, "mapping.json"));
+  const memory = new MemoryStore(join(home, "memory.json"));
   const plans = new Map<string, { plan: ResolvedPlan; summary: PlanSummary; report?: ExecutionReport; sources?: Record<string, { w: number; h?: number }>; webFonts?: Record<string, string[]> }>();
   const analyses = new Map<string, AnalysisResult>();
   let ds: DesignSystem | undefined;
@@ -57,7 +61,39 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
     return ds && f && ds.fileName !== f ? [`Cached Design System is from "${ds.fileName}" but Figma has "${f}" open. Rescan if this file has its own components.`] : undefined;
   };
 
-  const server = new McpServer({ name: "layerwright", version: "0.1.0" });
+  const server = new McpServer({ name: "layerwright", version: PKG_VERSION });
+  // Every failed tool call is remembered for this project (see memory.ts), so recurring problems surface with a hint.
+  const register = server.registerTool.bind(server) as (...a: any[]) => unknown;
+  (server as any).registerTool = (name: string, cfg: unknown, handler: (...a: any[]) => Promise<ToolResult>) => register(name, cfg, async (...a: any[]) => {
+    const r = await handler(...a);
+    if (r.isError) {
+      try { const d = JSON.parse((r.content[0] as { text: string }).text); for (const e of (d.errors ?? []).slice(0, 3)) memory.problem(name, e.type, e.message); } catch { /* not JSON */ }
+    }
+    return r;
+  });
+  /** Choices made by id between same-named components are remembered and reused. */
+  const rememberChoices = (plan: any) => {
+    const d = loadDs();
+    const dups = new Set((d && duplicateNames(d) || []).map((x) => x.name));
+    if (!d || !dups.size) return;
+    const walk = (n: any) => {
+      if (n?.component && typeof n.component === "object" && n.component.id) {
+        const set = d.componentSets.find((x) => x.id === n.component.id) ?? d.components.find((x) => x.id === n.component.id);
+        const name = set ? ("variantIds" in set ? set.name : set.componentSet ?? set.name) : undefined;
+        const setId = set && !("variantIds" in set) && set.componentSetId ? set.componentSetId : set?.id;
+        if (name && setId && dups.has(name)) memory.rememberComponent(name, setId);
+      }
+      (n?.children ?? []).forEach(walk);
+    };
+    [...(plan.screens ?? []), ...(plan.inserts ?? []).flatMap((x: any) => x.nodes)].forEach(walk);
+  };
+  const preferred = () => Object.fromEntries(Object.entries(memory.read().components).map(([k, v]) => [k, v.id]));
+
+  // Update check: once a day at most, in the background; the plugin window and figma_status show the result.
+  let update: UpdateInfo | undefined = cachedUpdate();
+  const serverInfo = () => ({ type: "server-info", version: PKG_VERSION, update });
+  if (!opts.noUpdateCheck) checkForUpdate().then((u) => { update = u; bridge.notify?.(serverInfo()); }).catch(() => {});
+  bridge.onHello = () => bridge.notify?.(serverInfo());
 
   server.registerTool("figma_status", {
     description: "Check whether the Figma bridge plugin is connected, which file/page is open, the current selection, and whether a Design System scan is cached. Cheap; call first.",
@@ -68,8 +104,9 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
     const ping = await bridge.request<{ page: string; dsChangedSinceScan?: boolean; watchingSince?: string }>("ping", { scannedAt: ds?.scannedAt }, 10_000);
     const warnings = [...(staleWarning() ?? [])];
     if (ds && ping.dsChangedSinceScan) warnings.push("Components or styles changed in Figma since the last scan. Rescan (figma_scan_design_system refresh: true) before planning.");
+    if (update?.updateAvailable) warnings.push(`Layerwright ${update.latest} is available (this is ${update.current}). Tell the user once: ${update.steps?.join(" → ")}.`);
     if (lastPage && ping.page !== lastPage) warnings.push(`Figma now shows page "${ping.page}", but the last build went to "${lastPage}". Plans build on the current page unless target.page is set.`);
-    return ok({ ...base, ...ping, session, warnings: warnings.length ? warnings : undefined });
+    return ok({ ...base, ...ping, session, version: PKG_VERSION, memory: memory.summary(), update: update?.updateAvailable ? update : undefined, warnings: warnings.length ? warnings : undefined });
   }));
 
   server.registerTool("figma_scan_design_system", {
@@ -81,11 +118,11 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
     if (reload) { ds = undefined; if (!loadDs()) return fail([{ type: "DESIGN_SYSTEM_NOT_SCANNED", message: "No cache file for this Figma file; scan instead." }]); return ok({ cached: true, reloaded: true, ...summarize(ds!) }); }
     if (!refresh && loadDs() && !staleWarning()) return ok({ cached: true, ...summarize(ds!) });
     const raw: any = await bridge.request("scanDesignSystem", { includeLibraries, maxInstances }, 600_000);
-    const { warnings, ...rest } = raw;
+    const { warnings, timings, ...rest } = raw;
     ds = enrichDesignSystem(rest);
     mkdirSync(cacheDir, { recursive: true });
     writeFileSync(cacheFile(ds.fileName), JSON.stringify(ds));
-    return ok({ cached: false, warnings, ...summarize(ds) });
+    return ok({ cached: false, warnings, timingsMs: timings, ...summarize(ds) });
   }));
 
   server.registerTool("figma_get_design_context", {
@@ -139,7 +176,8 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
     // A plan with only raw values needs no scan; one that references components or tokens gets a clear hint.
     const cachedDs = loadDs();
     const d = cachedDs ?? emptyDesignSystem(bridge.info()?.fileName);
-    const c = compilePlan(d, v.plan);
+    rememberChoices(v.plan);
+    const c = compilePlan(d, v.plan, { preferred: preferred() });
     if (!c.ok || !c.plan) {
       const needsScan = !cachedDs && c.errors.some((e) => ["COMPONENT_NOT_FOUND", "TOKEN_NOT_FOUND", "STYLE_NOT_FOUND", "INVALID_VARIANT"].includes(e.type));
       return fail(needsScan ? [{ type: "DESIGN_SYSTEM_NOT_SCANNED", message: "This plan uses components, tokens or styles; call figma_scan_design_system first." }, ...c.errors] : c.errors, { warnings: c.warnings, summary: c.summary });
@@ -174,13 +212,19 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
     const useDs = useDesignSystem ?? !!cached;
     if (useDs && !cached) return fail([{ type: "DESIGN_SYSTEM_NOT_SCANNED", message: "useDesignSystem needs a scan. Call figma_scan_design_system, or pass useDesignSystem: false." }]);
     const d = useDs ? cached! : emptyDesignSystem(bridge.info()?.fileName);
-    const r = await renderToPlan(resolve(workdir, path), { viewports: viewport === undefined ? (targets?.length ? [1440] : undefined) : [viewport].flat(), selector, targets, ds: useDs ? d : undefined, mappings: userMappings, fontMap });
-    const c = compilePlan(d, page || target ? { ...r.plan, target: { ...(r.plan.target ?? {}), ...(target ?? {}), ...(page ? { page } : {}) } } : r.plan);
+    // What worked before in this project is the default; what's passed now wins and is remembered.
+    const mem = memory.read();
+    const usedFonts = { ...mem.fontMap, ...(fontMap ?? {}) };
+    const usedMappings = [...mem.mappings.filter((m) => !(userMappings ?? []).some((u) => u.selector === m.selector)), ...(userMappings ?? [])];
+    memory.rememberFonts(fontMap); memory.rememberMappings(userMappings);
+    const r = await renderToPlan(resolve(workdir, path), { viewports: viewport === undefined ? (targets?.length ? [1440] : undefined) : [viewport].flat(), selector, targets, ds: useDs ? d : undefined, mappings: usedMappings.length ? usedMappings : undefined, fontMap: Object.keys(usedFonts).length ? usedFonts : undefined });
+    const c = compilePlan(d, page || target ? { ...r.plan, target: { ...(r.plan.target ?? {}), ...(target ?? {}), ...(page ? { page } : {}) } } : r.plan, { preferred: preferred() });
+    const fromMemory = { fontMap: Object.keys(mem.fontMap).filter((k) => !fontMap?.[k]).length ? mem.fontMap : undefined, mappings: usedMappings.length - (userMappings?.length ?? 0) || undefined };
     if (!c.ok || !c.plan) return fail(c.errors, { warnings: [...r.warnings, ...c.warnings], summary: c.summary });
     plans.set(c.plan.planId, { plan: c.plan, summary: c.summary, sources: r.sources, webFonts: r.webFonts });
     const intoExisting = !!c.plan.target.parentId;
-    return ok({ success: true, planId: c.plan.planId, summary: c.summary, mappedToDesignSystem: r.mapped, webFonts: Object.keys(r.webFonts).length ? r.webFonts : undefined, warnings: [...r.warnings, ...c.warnings].slice(0, 30),
-      requiresApproval: intoExisting || undefined, next: intoExisting ? "Show the summary; this builds inside an existing node, so call figma_execute_plan with approved: true after the user agrees." : "Show the summary; then call figma_execute_plan with this planId." });
+    return ok({ success: true, planId: c.plan.planId, summary: c.summary, mappedToDesignSystem: r.mapped, fromMemory: fromMemory.fontMap || fromMemory.mappings ? fromMemory : undefined, webFonts: Object.keys(r.webFonts).length ? r.webFonts : undefined, warnings: [...r.warnings, ...c.warnings].slice(0, 30),
+      requiresApproval: intoExisting || undefined, next: `${intoExisting ? "Show the summary; this builds inside an existing node, so call figma_execute_plan with approved: true after the user agrees." : "Show the summary; then call figma_execute_plan with this planId."} Afterwards, match it to the Design System: figma_analyze_design({ target, mode: "sync" }).` });
   }));
 
   server.registerTool("figma_execute_plan", {
@@ -196,6 +240,7 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
     entry.report = report;
     lastPage = report.page?.name;
     const mismatches = await verifyPlan(entry.plan, report, entry.sources);
+    if (mismatches.length) memory.problem("figma_execute_plan", "VERIFICATION", `${mismatches.length} mismatch(es): ${[...new Set(mismatches.map((m) => m.issue))].join("; ")}`);
     return ok({ success: true, created: report.createdRootIds, page: report.page?.name, run: m.run, nodeCount: Object.keys(report.nodeIds).length, warnings: [...images.warnings, ...explainFonts(report.warnings, entry.webFonts)], verification: verdict(mismatches),
       next: "Check it visually with figma_export_image (pass compareWith: { html } for an HTML import)." });
   }));
@@ -237,12 +282,13 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
 
   server.registerTool("figma_analyze_design", {
     description: "Mode B. Inspect the selected frame (or node id), compare it to the Design System, and propose NON-destructive transformations: custom buttons/inputs → DS instances, raw spacing/radius → tokens, raw colors → color variables, raw text → text styles, manual layout → Auto Layout. Returns an analysisId + grouped summary. Nothing is changed.",
-    inputSchema: { target: z.string().optional().describe("'selection' (default) or node id"), verbose: z.boolean().optional().describe("Include every transformation (default: summary + first 40)") },
-  }, async ({ target, verbose }) => guard(async () => {
+    inputSchema: { target: z.string().optional().describe("'selection' (default) or node id"), verbose: z.boolean().optional().describe("Include every transformation (default: summary + first 40)"),
+      mode: z.enum(["audit", "sync"]).optional().describe("audit (default): exact matches only. sync: after an import (e.g. from HTML), match to the Design System like a designer: buttons and pills become DS components with the closest-looking variant, text gets the style with the same size and weight (even if the import used a stand-in font), colours get variables or colour styles") },
+  }, async ({ target, verbose, mode }) => guard(async () => {
     const d = needDs();
     const snap = await bridge.request<{ nodes: NodeSnapshot[] }>("inspect", { target: target ?? "selection", depth: 20, maxNodes: 20000 });
     if (!snap.nodes.length) return fail([{ type: "NODE_NOT_FOUND", message: "Nothing selected. Ask the user to select a frame." }]);
-    const results = snap.nodes.map((n) => analyzeDesign(d, n));
+    const results = snap.nodes.map((n) => analyzeDesign(d, n, { mode }));
     const merged: AnalysisResult = { analysisId: results.map((r) => r.analysisId).join("_"), transformations: results.flatMap((r) => r.transformations), summary: results.flatMap((r) => r.summary), unresolved: results.flatMap((r) => r.unresolved) };
     // Groups across all analysed nodes, by label.
     const byLabel = new Map<string, string[]>();
@@ -256,7 +302,7 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
 
   server.registerTool("figma_apply_transformations", {
     description: "Apply transformations from figma_analyze_design. REQUIRES approved=true, which you may only set after the user explicitly approved. Pass ids to apply a subset (default all). Replaced originals are hidden and renamed, never deleted. One undo step.",
-    inputSchema: { analysisId: z.string(), approved: z.boolean(), ids: z.array(z.string()).optional(), ops: z.array(z.enum(["bind_fill", "bind_number", "apply_text_style", "convert_auto_layout", "replace_with_instance"])).optional().describe("Apply only these kinds of transformation"),
+    inputSchema: { analysisId: z.string(), approved: z.boolean(), ids: z.array(z.string()).optional(), ops: z.array(z.enum(["bind_fill", "apply_fill_style", "bind_number", "apply_text_style", "convert_auto_layout", "replace_with_instance"])).optional().describe("Apply only these kinds of transformation"),
       groups: z.array(z.string()).optional().describe("Apply only these groups (ids from figma_analyze_design, e.g. g1)"), excludeGroups: z.array(z.string()).optional().describe("Apply everything except these groups") },
   }, async ({ analysisId, approved, ids, ops, groups, excludeGroups }) => guard(async () => {
     if (!approved) return fail([{ type: "NOT_APPROVED", message: "Get explicit user approval first." }]);
@@ -267,7 +313,7 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
     const chosen = a.transformations.filter((t) => (!ids || ids.includes(t.id)) && (!ops || ops.includes(t.op)) && (!only || only.has(t.id)) && !skip.has(t.id));
     // Replacements first changes structure; bindings on replaced nodes would be wasted, so drop those.
     const replaced = new Set(chosen.filter((t) => t.op === "replace_with_instance").map((t) => t.nodeId));
-    const order = { convert_auto_layout: 0, replace_with_instance: 1, bind_number: 2, bind_fill: 3, apply_text_style: 4 } as const;
+    const order = { convert_auto_layout: 0, replace_with_instance: 1, bind_number: 2, bind_fill: 3, apply_fill_style: 3, apply_text_style: 4 } as const;
     const final = chosen.filter((t) => t.op === "replace_with_instance" || !replaced.has(t.nodeId)).sort((x, y) => order[x.op] - order[y.op]);
     const report = await bridge.request<TransformReport>("applyTransformations", { transformations: final }, 180_000);
     analyses.delete(analysisId);
@@ -423,6 +469,17 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
     if (errors.length) return fail(errors);
     const res = await bridge.request<{ applied: unknown[]; failed?: { op: number; error: string } }>("editNodes", { ops: sent, approved, meta: meta() }, 180_000);
     return res.failed ? fail([{ type: "FIGMA_API_ERROR", message: `op ${res.failed.op} (${ops[res.failed.op].op}): ${res.failed.error}` }], { ...res }) : ok({ success: true, ...res, next: "Check the result with figma_export_image." });
+  }));
+
+  server.registerTool("layerwright_memory", {
+    description: "What Layerwright remembers in this project (.layerwright/memory.json, shareable with the team): font substitutions and component mappings reused by imports, which of several same-named components the user chose, the user's notes, and recurring problems with hints. Save a note whenever the user corrects you ('use the Fa styles for Persian text'), so the next session starts from it.",
+    inputSchema: { action: z.enum(["get", "note", "forget"]), note: z.string().max(500).optional().describe("note: the user's correction or preference, in their words"),
+      forget: z.object({ note: z.number().int().min(0).optional(), component: z.string().optional(), font: z.string().optional(), selector: z.string().optional(), all: z.boolean().optional() }).optional() },
+  }, async ({ action, note, forget }) => guard(async () => {
+    if (action === "note") { if (!note) return fail([{ type: "INVALID_PLAN", message: "note needs text." }]); memory.note(note); }
+    if (action === "forget") memory.forget(forget ?? {});
+    const m = memory.read();
+    return ok({ ...m, problems: m.problems.slice(-20), summary: memory.summary() });
   }));
 
   server.registerTool("figma_cleanup", {

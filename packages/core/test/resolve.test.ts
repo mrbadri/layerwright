@@ -116,3 +116,38 @@ test("analyzer: suggestions come in groups; an odd one-off spacing variable isn'
   assert.ok(r.transformations.some((t: any) => t.variableName === "spacing/md"));
   assert.deepEqual(r.groups!.map((g) => [g.id, g.label, g.count]), [["g1", "spacing value → spacing token", 4]]);
 });
+
+test("sync: an imported button and pill become the DS variants that look like them; Persian text gets the Fa style by size and weight", async () => {
+  const { analyzeDesign, enrichDesignSystem } = await import("../src/index.ts");
+  const base = fixtureDs();
+  const btnProps = [{ key: "Hierarchy", name: "Hierarchy", type: "VARIANT" as const, options: ["Contained", "Pale"] }, { key: "Size", name: "Size", type: "VARIANT" as const, options: ["sm", "md"] },
+    { key: "State", name: "State", type: "VARIANT" as const, options: ["Default", "Hover"] }, { key: "Text#1:0", name: "Text", type: "TEXT" as const }];
+  const v = (id: string, variants: Record<string, string>, h: number, fill: string, set = "B") => ({ id, key: `k${id}`, name: Object.entries(variants).map(([k, x]) => `${k}=${x}`).join(", "), remote: true, componentSetId: set, variants, dimensions: { width: 120, height: h }, textLayers: ["Text"], look: { fill } });
+  const ds = enrichDesignSystem({ ...base,
+    componentSets: [
+      { id: "B", key: "kB", name: "Button", remote: true, variantIds: [], properties: btnProps, usage: 40 },
+      { id: "G", key: "kG", name: "Badge", remote: true, variantIds: [], properties: [{ key: "Color", name: "Color", type: "VARIANT", options: ["Blue", "Success"] }, { key: "Text#2:0", name: "Text", type: "TEXT" }] },
+    ],
+    components: [
+      v("b1", { Hierarchy: "Contained", Size: "md", State: "Default" }, 40, "#7c3aed"), v("b2", { Hierarchy: "Pale", Size: "md", State: "Default" }, 40, "#f4f3ff"),
+      v("b3", { Hierarchy: "Contained", Size: "sm", State: "Default" }, 32, "#7c3aed"), v("b4", { Hierarchy: "Contained", Size: "md", State: "Hover" }, 40, "#6d28d9"),
+      v("g1", { Color: "Blue" }, 22, "#eff8ff", "G"), v("g2", { Color: "Success" }, 22, "#ecfdf3", "G"),
+    ],
+    typography: [
+      { styleId: "S:fa", name: "Fa Text sm/Bold", fontFamily: "IRANYekanX", fontStyle: "Bold", fontSize: 14 },
+      { styleId: "S:en", name: "Text sm/Bold", fontFamily: "Inter", fontStyle: "Bold", fontSize: 14 },
+    ] });
+  const snap: any = { id: "1", type: "FRAME", name: "Card", w: 700, h: 300, layout: { mode: "VERTICAL" }, children: [
+    { id: "2", type: "FRAME", name: "button", w: 140, h: 40, fills: ["#7c3aed"], radius: 8, layout: { mode: "HORIZONTAL" }, children: [{ id: "3", type: "TEXT", name: "t", text: { chars: "نوشتن انگیزه‌نامه", fontSize: 14, font: "Vazirmatn Bold" } }] },
+    { id: "4", type: "FRAME", name: "div", w: 70, h: 22, fills: ["#eef6ff"], radius: 11, layout: { mode: "HORIZONTAL" }, children: [{ id: "5", type: "TEXT", name: "t", text: { chars: "در جریان", fontSize: 12, font: "Vazirmatn Medium" } }] },
+    { id: "6", type: "TEXT", name: "title", text: { chars: "درخواست ارتقا", fontSize: 14, font: "Vazirmatn Bold" } },
+  ] };
+  const r = analyzeDesign(ds, snap, { mode: "sync" });
+  const rep = r.transformations.filter((t: any) => t.op === "replace_with_instance") as any[];
+  assert.deepEqual(rep.map((t) => [t.nodeId, t.componentId]), [["2", "b1"], ["4", "g1"]]);
+  assert.equal(Object.values(rep[0].properties)[0], "نوشتن انگیزه‌نامه");
+  const ts = r.transformations.find((t: any) => t.op === "apply_text_style" && t.nodeId === "6") as any;
+  assert.equal(ts?.styleName, "Fa Text sm/Bold");
+  // The default (audit) mode stays strict: a stand-in font gets no style.
+  assert.ok(!analyzeDesign(ds, snap).transformations.some((t: any) => t.op === "apply_text_style"));
+});

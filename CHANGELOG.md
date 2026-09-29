@@ -5,6 +5,33 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **Design System sync after an import:** `figma_analyze_design({ mode: "sync" })` matches a fresh import to the DS like a designer: buttons and pills become DS components with the closest-looking variant (size by height, hierarchy and colour by fill, text colour and border; resting state), text gets the style with the same size and weight in the same script (even when the import used a stand-in font), colours get variables or colour styles.
+- **Scan works on big library files:** main components are looked up in parallel (a real file went from over 5 minutes to about 12 seconds), library text/colour/effect styles and variables used in the file are found through the layers that use them, each variant's look and each set's usage are recorded, and copies of one library set resolve to the one the file uses most. Progress shows in the plugin window.
+- **Plugin window:** status with file, page and selection; progress bar; an activity list in plain words; errors explained in plain words with the technical line below; update banner; version and build; connection settings folded away.
+- **Update notice:** the server checks npm once a day (off with `LAYERWRIGHT_NO_UPDATE_CHECK=1`, never in CI) and shows a newer version in the plugin window, in `figma_status` (so Claude tells you) and in `doctor`.
+- **Project memory** (`.layerwright/memory.json`): font substitutions and component mappings are reused by later imports, a choice between same-named components is remembered, the user's corrections are kept as notes (`layerwright_memory`), and recurring problems appear in `figma_status` with a hint.
+- `layerwright report` drafts a redacted GitHub issue from the recurring problems for you to review and send; nothing is uploaded.
+- `layerwright fonts <folder> [--install] [--only <name>]` lists the fonts an export ships and installs its TTF/OTF files for the current user.
+- HTML import: text mixed with inline elements (`<b>`, `<span>`, `<a>`, `<br>`) is one text layer with styled ranges (weight, colour, size, links), in logical order for RTL, instead of many positioned layers. The DSL's `text` takes `runs`.
+- HTML import: `mappings: [{ selector, component, variant?, props? }]` turns chosen elements into a component (`"$text"` = the element's text), ahead of automatic matching. `fontMap` replaces font families (also in `figma_import_html`).
+- A font that's missing because the page only ships it as `.woff`/`.woff2` now says so and suggests installing a TTF/OTF or using `fontMap`. Missing-font warnings come once per family.
+- `layerwright import <file> --to-figma` builds an HTML file in the open Figma file without Claude or any MCP client: it starts the bridge, waits for the plugin, builds, verifies and prints a report (`--page`, `--faithful`, `--section`, `--scan`, `--port`). `import_html_to_plan` takes `page` too.
+- **Prototypes.** Any plan node takes an `id` and `interactions: [{ trigger, action, to, transition }]`: click, hover, press, drag, mouse enter/leave and after-delay triggers; navigate, overlay, swap, scroll-to, change-to, back, close and url actions; instant, dissolve, smart animate, move, push and slide transitions with easing and duration. `to` is a plan id, a screen name or a Figma node id. Screens take `scroll` and `fixedChildren`; plans take `prototype.flows`. `figma_edit` has `prototype` and `flow` ops for existing frames and interactive components. Interactions are verified, shown by `figma_inspect`, and kept in the plan export. (Overlay position can't be set through the Plugin API; overlays open centred.)
+- `figma_inspect({ format })`: `summary` (counts, instances per component, top-level children), `text` and `instances` (flat lists with `offset`/`limit`), and `plan`: the subtree as a Design Plan (layout, tokens, text styles or fonts, instances by set id with variants, props and overridden text) to clone, refactor or implement. Very large trees return a hint instead of a huge answer.
+- `figma_export_image({ compareWith: { nodeId } })` diffs two Figma nodes (before/after, original/rebuild).
+- Plans take `inserts: [{ parentId, index?, nodes }]` to fill several existing parents in one run and undo step (needs approval).
+- `figma_scan_design_system`: `reload` re-reads the cache file, `maxInstances` sets how many instances are checked for library components, and the summary lists `duplicateNames` (sets that share a name, with ids and pages). The plugin watches component and style changes, and `figma_status` says when the scan is stale.
+- `figma_edit`: rename, move (to a parent, section or page), duplicate, set (visibility, position, size, opacity, text, instance properties), delete, resizeToFit and componentize, in one undo step. Ops can refer to earlier results (`"$0"`). Changing existing nodes needs `approved: true`; without it, delete only hides the node and prefixes 🗑.
+- Componentize turns existing frames into a component, several components, or one component set (`variants: [{ State: "Expanded" }, …]`). It works on copies by default, placed next to the originals, can expose text layers as TEXT properties (`exposeText`), and gives cleanly stacked layers Auto Layout so the component adapts to new text.
+- `target.page` in plans (name or id): the plan builds there, never silently on whatever page is open. `figma_select` switches to the page of the nodes; `figma_status` warns when Figma shows a different page than the last build.
+- A top-level `section` in a plan is a real Figma Section sized to its content, and sections grow when a later plan adds to them.
+- The plugin reports its build stamp (`pluginBuild` in `figma_status`), so a stale plugin window is visible.
+- `figma_cleanup`: lists what Layerwright made in this session (or a run, or all), and removes it with `approved: true`. Every created root is tagged with its session and run.
+- `figma_export_image`: a PNG/JPG of any node, returned as an image. With `compareWith: { html }` it also screenshots the source in headless Chrome and returns a diff heatmap plus the changed regions.
+- Verification checks sizes against the plan and against the source's rendered boxes (HTML imports), text overrides inside instances, and layers hidden by overrides. `figma_import_html` now verifies screen sizes too.
+- `figma_inspect({ expandInstances: true })`: the layers inside instances (text, hidden layers) and which ones are overridden.
+
 ### Fixed
 - HTML import, found on a real Claude Design export:
   - Colours written as `oklch()`, `lab()`, `hsl()`, `color-mix()` and the like (Claude Design's default) were dropped; any CSS colour is now converted to sRGB.
@@ -32,26 +59,6 @@ All notable changes to this project are documented here. The format follows
 - Sections created by Layerwright are white instead of the API's default dark grey.
 - Componentize: padding is measured before Auto Layout is switched on (Figma moves the children at that moment), so a column's right padding mirrors its left one and text fills the card.
 - A plan resolved against a stale scan no longer builds instances of a component that was deleted in the meantime.
-
-### Added
-- HTML import: text mixed with inline elements (`<b>`, `<span>`, `<a>`, `<br>`) is one text layer with styled ranges (weight, colour, size, links), in logical order for RTL, instead of many positioned layers. The DSL's `text` takes `runs`.
-- HTML import: `mappings: [{ selector, component, variant?, props? }]` turns chosen elements into a component (`"$text"` = the element's text), ahead of automatic matching. `fontMap` replaces font families (also in `figma_import_html`).
-- A font that's missing because the page only ships it as `.woff`/`.woff2` now says so and suggests installing a TTF/OTF or using `fontMap`. Missing-font warnings come once per family.
-- `layerwright import <file> --to-figma` builds an HTML file in the open Figma file without Claude or any MCP client: it starts the bridge, waits for the plugin, builds, verifies and prints a report (`--page`, `--faithful`, `--section`, `--scan`, `--port`). `import_html_to_plan` takes `page` too.
-- **Prototypes.** Any plan node takes an `id` and `interactions: [{ trigger, action, to, transition }]`: click, hover, press, drag, mouse enter/leave and after-delay triggers; navigate, overlay, swap, scroll-to, change-to, back, close and url actions; instant, dissolve, smart animate, move, push and slide transitions with easing and duration. `to` is a plan id, a screen name or a Figma node id. Screens take `scroll` and `fixedChildren`; plans take `prototype.flows`. `figma_edit` has `prototype` and `flow` ops for existing frames and interactive components. Interactions are verified, shown by `figma_inspect`, and kept in the plan export. (Overlay position can't be set through the Plugin API; overlays open centred.)
-- `figma_inspect({ format })`: `summary` (counts, instances per component, top-level children), `text` and `instances` (flat lists with `offset`/`limit`), and `plan`: the subtree as a Design Plan (layout, tokens, text styles or fonts, instances by set id with variants, props and overridden text) to clone, refactor or implement. Very large trees return a hint instead of a huge answer.
-- `figma_export_image({ compareWith: { nodeId } })` diffs two Figma nodes (before/after, original/rebuild).
-- Plans take `inserts: [{ parentId, index?, nodes }]` to fill several existing parents in one run and undo step (needs approval).
-- `figma_scan_design_system`: `reload` re-reads the cache file, `maxInstances` sets how many instances are checked for library components, and the summary lists `duplicateNames` (sets that share a name, with ids and pages). The plugin watches component and style changes, and `figma_status` says when the scan is stale.
-- `figma_edit`: rename, move (to a parent, section or page), duplicate, set (visibility, position, size, opacity, text, instance properties), delete, resizeToFit and componentize, in one undo step. Ops can refer to earlier results (`"$0"`). Changing existing nodes needs `approved: true`; without it, delete only hides the node and prefixes 🗑.
-- Componentize turns existing frames into a component, several components, or one component set (`variants: [{ State: "Expanded" }, …]`). It works on copies by default, placed next to the originals, can expose text layers as TEXT properties (`exposeText`), and gives cleanly stacked layers Auto Layout so the component adapts to new text.
-- `target.page` in plans (name or id): the plan builds there, never silently on whatever page is open. `figma_select` switches to the page of the nodes; `figma_status` warns when Figma shows a different page than the last build.
-- A top-level `section` in a plan is a real Figma Section sized to its content, and sections grow when a later plan adds to them.
-- The plugin reports its build stamp (`pluginBuild` in `figma_status`), so a stale plugin window is visible.
-- `figma_cleanup`: lists what Layerwright made in this session (or a run, or all), and removes it with `approved: true`. Every created root is tagged with its session and run.
-- `figma_export_image`: a PNG/JPG of any node, returned as an image. With `compareWith: { html }` it also screenshots the source in headless Chrome and returns a diff heatmap plus the changed regions.
-- Verification checks sizes against the plan and against the source's rendered boxes (HTML imports), text overrides inside instances, and layers hidden by overrides. `figma_import_html` now verifies screen sizes too.
-- `figma_inspect({ expandInstances: true })`: the layers inside instances (text, hidden layers) and which ones are overridden.
 
 ## [0.1.4] - 2026-09-28
 

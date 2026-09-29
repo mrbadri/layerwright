@@ -142,6 +142,12 @@ export async function doctor(o: { dir?: string; port?: number; out?: Out; skipBr
     if (await chromiumAvailable()) pass("Chromium available for HTML import");
     else failWith("no Chromium for HTML import", "run: npx playwright install chromium   (or install Google Chrome)");
   }
+  {
+    const { checkForUpdate } = await import("./update.ts");
+    const u = await checkForUpdate().catch(() => undefined);
+    if (u?.updateAvailable) out(`! Layerwright ${u.latest} is available (you have ${u.current}). ${u.steps?.join(" → ")}`);
+    else if (u?.latest) pass(`Layerwright ${u.current} is the latest version`);
+  }
   out(problems ? `\n${problems} problem(s) found.` : "\nAll good.");
   return problems ? 1 : 0;
 }

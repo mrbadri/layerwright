@@ -3,6 +3,7 @@
 import type { DesignSystem, NodeSnapshot, Transformation, TypographyDefinition, VariableDefinition, ResolvedNode, StructuredError } from "./types.ts";
 import { Resolver, hash, mappingDoubt } from "./resolver.ts";
 import { norm } from "./semantics.ts";
+import { weightOfStyle } from "./weights.ts";
 
 const BUTTON_NAME = /(?:^| )(button|btn|cta|دکمه)(?= |$)/;
 const INPUT_NAME = /(?:^| )(input|text ?field|textfield|textbox|field|ورودی)(?= |$)/;
@@ -28,7 +29,21 @@ export interface AnalysisResult {
   unresolved: StructuredError[];
 }
 
-export function analyzeDesign(ds: DesignSystem, root: NodeSnapshot): AnalysisResult {
+const hexRgb = (h: string) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+/** Rough colour distance (0–441); good enough to tell a violet button from a pale one. */
+const colorDist = (a?: string, b?: string) => {
+  if (!a || !b) return a || b ? 200 : 0;
+  const [x, y] = [hexRgb(a), hexRgb(b)];
+  return Math.hypot(x[0] - y[0], x[1] - y[1], x[2] - y[2]);
+};
+const PERSIAN = /[\u0600-\u06FF]/;
+
+/** Analysis options. `sync` = matching a fresh import (e.g. from HTML) to the Design System: text styles by size and
+ *  weight (the import's font may be a stand-in), variants chosen by how the element looks, pills as badges. */
+export interface AnalyzeOptions { mode?: "audit" | "sync" }
+
+export function analyzeDesign(ds: DesignSystem, root: NodeSnapshot, opts: AnalyzeOptions = {}): AnalysisResult {
+  const sync = opts.mode === "sync";
   const r = new Resolver(ds);
   const out: Transformation[] = [];
   const unresolved: StructuredError[] = [];
@@ -63,7 +78,70 @@ export function analyzeDesign(ds: DesignSystem, root: NodeSnapshot): AnalysisRes
       && (n.text?.lineHeight === undefined || lh(t.lineHeight) === lh(n.text.lineHeight)));
   };
 
+  /** Sync: typography by size and weight, ignoring a stand-in font; Persian text prefers Persian styles. */
+  const looseTextStyle = (n: NodeSnapshot): TypographyDefinition | undefined => {
+    const size = n.text?.fontSize;
+    if (!size) return undefined;
+    const weight = weightOfStyle((n.text?.font ?? "").split(" ").slice(1).join(" ") || "Regular");
+    const fa = PERSIAN.test(n.text?.chars ?? "");
+    const isFaStyle = (t: TypographyDefinition) => /(^| )fa( |\/)|yekan|vazir|iran/i.test(`${t.name} ${t.fontFamily}`);
+    const lh = typeof n.text?.lineHeight === "number" ? n.text.lineHeight : undefined;
+    // Library styles often report no font: the style name carries the weight ("Fa Text sm/Bold", "…/Normal").
+    const styleWeight = (t: TypographyDefinition) => weightOfStyle(t.fontStyle || t.name.split("/").pop() || "");
+    // The script matters more than an exact weight: Persian text takes the nearest-weight Persian style (a DS may
+    // have no Fa SemiBold), and only falls back to the other script's styles when that size has none.
+    const W = ["thin", "extralight", "light", "regular", "medium", "semibold", "bold", "extrabold", "black"];
+    const wd = (t: TypographyDefinition) => Math.abs(W.indexOf(styleWeight(t)) - W.indexOf(weight));
+    const sized = ds.typography.filter((t) => Math.abs(t.fontSize - size) < 0.6);
+    const sameScript = sized.filter((t) => isFaStyle(t) === fa);
+    const pool = (sameScript.length ? sameScript : sized).filter((t) => wd(t) <= 1);
+    const ranked = pool.map((t) => ({ t, s: wd(t) * 10 + (lh && typeof t.lineHeight === "number" ? Math.abs(t.lineHeight - lh) : 0) }))
+      .sort((a, b) => a.s - b.s || a.t.name.length - b.t.name.length);
+    return ranked[0]?.t;
+  };
+  const pickPaintStyle = (hex: string) => {
+    const h = hex.toLowerCase().slice(0, 7);
+    return ds.styles.filter((st) => st.type === "PAINT" && typeof st.value === "string" && String(st.value).toLowerCase().slice(0, 7) === h && String(st.value).length <= 7)
+      .sort((a, b) => a.name.length - b.name.length)[0];
+  };
+
+  /** Sync: the set a drawn element should become, and the variant that looks most like it. */
+  const pickByLook = (n: NodeSnapshot, kind: "button" | "badge") => {
+    const want = kind === "button" ? /^button$/i : /^badge$/i;
+    const sets = ds.componentSets.filter((st) => want.test(st.name.trim()) && !/^[_.]/.test(st.name));
+    if (!sets.length) return undefined;
+    const set = [...sets].sort((a, b) => (b.usage ?? 0) - (a.usage ?? 0))[0];
+    const variants = ds.components.filter((c) => c.componentSetId === set.id);
+    const fill = n.fills?.find((f) => f.startsWith("#")), stroke = n.strokes?.find((f) => f.startsWith("#"));
+    const textColor = texts(n)[0]?.fills?.find((f) => f.startsWith("#"));
+    const hasIcon = (n.children ?? []).some((c) => c.type === "VECTOR" || c.type === "INSTANCE" || (c.type === "FRAME" && !c.children?.some((k) => k.type === "TEXT") && (c.w ?? 99) <= 24));
+    // Resting state: Default / False where a property offers it, unless the element shows the thing (an icon).
+    const resting = (c: typeof variants[number]) => Object.entries(c.variants ?? {}).every(([k, v]) => {
+      const opts = set.properties.find((p) => p.name === k)?.options ?? [];
+      if (/^icon$/i.test(k)) return hasIcon ? true : opts.includes("Default") ? v === "Default" : opts.includes("False") ? v === "False" : true;
+      if (opts.includes("Default") && /state|type|theme|style/i.test(k) && !/^type$/i.test(k)) return v === "Default";
+      if (opts.includes("False") && /destructive|disabled|loading|selected|current/i.test(k)) return v === "False";
+      return true;
+    });
+    const pool = variants.filter(resting);
+    const scored = (pool.length ? pool : variants).map((c) => ({ c,
+      // Colour decides the kind (primary / success / gray…), height the size: text colour tells pale variants apart.
+      s: Math.abs((c.dimensions?.height ?? 0) - (n.h ?? 0)) * 1.5 + colorDist(c.look?.fill, fill) / 3 + colorDist(c.look?.text, textColor) / 3 + (!!c.look?.stroke !== !!stroke ? 20 : colorDist(c.look?.stroke, stroke) / 8) }));
+    scored.sort((a, b) => a.s - b.s);
+    return scored[0] && { def: scored[0].c, set, score: scored[0].s };
+  };
+
   const tryReplace = (n: NodeSnapshot, role: string, label?: string): boolean => {
+    if (sync && (role.endsWith("action") || role === "badge")) {
+      const pick = pickByLook(n, role === "badge" ? "badge" : "button");
+      if (pick && pick.score < 60) {
+        const { properties, textOverrides } = r.mapProps(pick.def, pick.set, label ? { label } : undefined, n.name, warnings);
+        const componentName = `${pick.set.name} / ${Object.values(pick.def.variants ?? {}).join(", ")}`;
+        out.push({ id: id(), op: "replace_with_instance", nodeId: n.id, nodeName: n.name, componentId: pick.def.id, componentKey: pick.def.remote ? pick.def.key : undefined, remote: pick.def.remote, componentName, properties, textOverrides, reason: `${role === "badge" ? "pill" : "button"} "${label ?? n.name}" → ${componentName} (closest by size and colour)` });
+        return true;
+      }
+      if (pick) { unresolved.push({ type: "COMPONENT_NOT_FOUND", nodeId: n.id, component: pick.set.name, message: `"${label ?? n.name}" looks like a ${role} but no ${pick.set.name} variant looks close enough; left as is.` }); return false; }
+    }
     const m = r.findComponent({ role }, n.name);
     if ("error" in m) { unresolved.push({ ...m.error, nodeId: n.id, message: `"${n.name}" looks like a ${role} but ${m.error.message}` }); return false; }
     const doubt = mappingDoubt(m, { role, label, box: n.w && n.h ? { w: n.w, h: n.h } : undefined });
@@ -88,8 +166,14 @@ export function analyzeDesign(ds: DesignSystem, root: NodeSnapshot): AnalysisRes
       const hasStroke = (n.strokes ?? []).length > 0;
       const h = n.h ?? 0, w = n.w ?? 0;
       const inputish = INPUT_NAME.test(nm) || (hasStroke && !filledDark && h >= 36 && h <= 64 && w >= 160 && t.length >= 1 && t.length <= 2);
-      const buttonish = BUTTON_NAME.test(nm) || ((hasFill || hasStroke) && h >= 28 && h <= 64 && w <= 420 && t.length === 1 && (n.children?.length ?? 0) <= 3);
-      if (INPUT_NAME.test(nm) || (inputish && !BUTTON_NAME.test(nm))) {
+      // A round marker (a numbered step, an avatar initial) is neither a button nor a badge.
+      const round = h > 0 && w < h * 1.3 && (n.radius ?? 0) >= h / 2 - 1;
+      const buttonish = BUTTON_NAME.test(nm) || (!round && (hasFill || hasStroke) && h >= 28 && h <= 64 && w <= 420 && t.length === 1 && (n.children?.length ?? 0) <= 3);
+      // Sync: a small pill with one line of text is a badge (status, tag).
+      // (Wider than tall: a round step marker with a number isn't a badge.)
+      const pill = sync && hasFill && h > 0 && h <= 32 && w >= h * 1.3 && (n.radius ?? 0) >= h / 2 - 1 && t.length === 1 && (n.children?.length ?? 0) <= 3;
+      if (pill) { if (tryReplace(n, "badge", t[0]?.text?.chars)) return; }
+      else if (INPUT_NAME.test(nm) || (inputish && !BUTTON_NAME.test(nm))) {
         const role = /password|رمز/.test(nm) ? "password-input" : "text-input";
         if (tryReplace(n, role, t[t.length - 1]?.text?.chars)) return;
       } else if (buttonish) {
@@ -100,13 +184,17 @@ export function analyzeDesign(ds: DesignSystem, root: NodeSnapshot): AnalysisRes
     if (!insideInstance) {
       // Text styles
       if (n.type === "TEXT" && !n.text?.styleId) {
-        const st = pickTextStyle(n);
+        const st = pickTextStyle(n) ?? (sync ? looseTextStyle(n) : undefined);
         if (st) out.push({ id: id(), op: "apply_text_style", nodeId: n.id, nodeName: n.name, styleId: st.styleId, styleKey: ds.styles.find((s) => s.id === st.styleId)?.remote ? ds.styles.find((s) => s.id === st.styleId)?.key : undefined, styleName: st.name, reason: `raw ${n.text?.font ?? ""} ${n.text?.fontSize}px → ${st.name}` });
       }
       // Fills → color variables
       if ((n.type === "FRAME" || n.type === "RECTANGLE" || n.type === "TEXT") && n.fills?.length === 1 && !n.bound?.fills && !n.fillStyle && n.fills[0].startsWith("#")) {
         const v = pickColor(n.fills[0]);
         if (v) out.push({ id: id(), op: "bind_fill", nodeId: n.id, nodeName: n.name, from: n.fills[0], variableId: v.id, variableKey: v.remote ? v.key : undefined, variableName: v.name, reason: `${n.fills[0]} → ${v.name}` });
+        else {
+          const ps = pickPaintStyle(n.fills[0]);
+          if (ps) out.push({ id: id(), op: "apply_fill_style", nodeId: n.id, nodeName: n.name, from: n.fills[0], styleId: ps.id, styleKey: ps.remote ? ps.key : undefined, styleName: ps.name, reason: `${n.fills[0]} → ${ps.name} (colour style)` });
+        }
       }
       // Spacing / radius → variables (auto-layout frames only)
       if (n.type === "FRAME" && n.layout && n.layout.mode !== "NONE") {
@@ -124,7 +212,7 @@ export function analyzeDesign(ds: DesignSystem, root: NodeSnapshot): AnalysisRes
         if (v) out.push({ id: id(), op: "bind_number", nodeId: n.id, nodeName: n.name, field: "cornerRadius", from: n.radius, variableId: v.id, variableKey: v.remote ? v.key : undefined, variableName: v.name, reason: `radius ${n.radius} → ${v.name}` });
       }
       // Manual layout → Auto Layout
-      if (n.type === "FRAME" && n.layout?.mode === "NONE" && (n.children?.length ?? 0) >= 2) {
+      if (!sync && n.type === "FRAME" && n.layout?.mode === "NONE" && (n.children?.length ?? 0) >= 2) {
         const conv = inferAutoLayout(n);
         if (conv) out.push({ id: id(), op: "convert_auto_layout", nodeId: n.id, nodeName: n.name, ...conv, reason: `manual layout → ${conv.direction.toLowerCase()} Auto Layout (gap ${conv.gap})` });
       }
@@ -133,14 +221,15 @@ export function analyzeDesign(ds: DesignSystem, root: NodeSnapshot): AnalysisRes
   };
   visit(root, false);
 
+  const keyOf = (t: Transformation) => t.op === "replace_with_instance" ? `custom element → ${t.componentName}` : t.op === "bind_number" ? `${t.field === "cornerRadius" ? "radius" : "spacing"} value → ${t.field === "cornerRadius" ? "radius" : "spacing"} token` : t.op === "bind_fill" ? "raw color → color token" : t.op === "apply_fill_style" ? "raw color → color style" : t.op === "apply_text_style" ? `raw text → ${t.styleName}` : "manual layout → Auto Layout";
   // Human summary, grouped.
   const groups = new Map<string, number>();
   for (const t of out) {
-    const key = t.op === "replace_with_instance" ? `custom element → ${t.componentName}` : t.op === "bind_number" ? `${t.field === "cornerRadius" ? "radius" : "spacing"} value → ${t.field === "cornerRadius" ? "radius" : "spacing"} token` : t.op === "bind_fill" ? "raw color → color token" : t.op === "apply_text_style" ? `raw text → ${t.styleName}` : "manual layout → Auto Layout";
+    const key = keyOf(t);
     groups.set(key, (groups.get(key) ?? 0) + 1);
   }
   const summary = [...groups].map(([k, n]) => `${n} × ${k}`);
-  const keyOf = (t: Transformation) => t.op === "replace_with_instance" ? `custom element → ${t.componentName}` : t.op === "bind_number" ? `${t.field === "cornerRadius" ? "radius" : "spacing"} value → ${t.field === "cornerRadius" ? "radius" : "spacing"} token` : t.op === "bind_fill" ? "raw color → color token" : t.op === "apply_text_style" ? `raw text → ${t.styleName}` : "manual layout → Auto Layout";
+
   const grouped = [...groups.keys()].map((label, i) => { const ids = out.filter((t) => keyOf(t) === label).map((t) => t.id); return { id: `g${i + 1}`, label, count: ids.length, ids }; });
   return { analysisId: `an_${hash(JSON.stringify(out) + root.id)}`, transformations: out, summary, groups: grouped, unresolved };
 }

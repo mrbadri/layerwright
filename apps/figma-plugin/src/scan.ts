@@ -22,6 +22,25 @@ function layoutOf(n: FrameNode | ComponentNode | ComponentSetNode | InstanceNode
   return { mode: n.layoutMode, gap: n.layoutMode === "NONE" ? undefined : n.itemSpacing, padding: n.layoutMode === "NONE" ? undefined : { top: n.paddingTop, right: n.paddingRight, bottom: n.paddingBottom, left: n.paddingLeft } };
 }
 
+/** What a variant looks like: the fill, stroke and radius of the layer that paints it (the root, or a nested base
+ *  like "_Badge base"), and its first text colour. Used to pick the variant that looks like a drawn element. */
+function lookOf(c: ComponentNode): ComponentDefinition["look"] {
+  try {
+    const solid = (ps: readonly Paint[] | typeof figma.mixed) => (Array.isArray(ps) ? (ps as Paint[]).find((p) => p.type === "SOLID" && p.visible !== false) as SolidPaint | undefined : undefined);
+    const hex = (p?: SolidPaint) => (p ? toHex(p.color, p.opacity ?? 1) : undefined);
+    // Breadth-first to depth 2: the first layer with a fill or stroke paints the element.
+    let painter: SceneNode | undefined;
+    let level: SceneNode[] = [c];
+    for (let d = 0; d < 3 && !painter && level.length; d++) {
+      painter = level.find((n) => "fills" in n && (solid((n as GeometryMixin).fills as readonly Paint[]) || solid((n as GeometryMixin).strokes)) && n.type !== "TEXT");
+      level = level.flatMap((n) => ("children" in n ? [...(n as ChildrenMixin).children] as SceneNode[] : []));
+    }
+    const pn = (painter ?? c) as SceneNode & GeometryMixin & { cornerRadius?: number | typeof figma.mixed };
+    const text = c.findOne((n) => n.type === "TEXT" && n.visible) as TextNode | null;
+    return { fill: hex(solid(pn.fills as readonly Paint[])), stroke: hex(solid(pn.strokes)), radius: typeof pn.cornerRadius === "number" ? pn.cornerRadius : undefined, text: text ? hex(solid(text.fills as readonly Paint[])) : undefined };
+  } catch { return undefined; }
+}
+
 function componentDef(c: ComponentNode): ComponentDefinition {
   const inSet = c.parent?.type === "COMPONENT_SET";
   let properties: PropertyDefinition[] | undefined;
@@ -39,7 +58,7 @@ function componentDef(c: ComponentNode): ComponentDefinition {
     id: c.id, key: c.key, name: c.name, description: c.description || undefined, remote: c.remote, page: pageOf(c),
     componentSetId: inSet ? c.parent!.id : undefined, componentSet: inSet ? c.parent!.name : undefined,
     variants, properties,
-    dimensions: { width: c.width, height: c.height }, layout: layoutOf(c), textLayers,
+    dimensions: { width: c.width, height: c.height }, layout: layoutOf(c), textLayers, look: lookOf(c),
   };
 }
 
@@ -51,8 +70,16 @@ function setDef(s: ComponentSetNode): ComponentSetDefinition {
   return { id: s.id, key: s.key, name: s.name, description: s.description || undefined, remote: s.remote, page: pageOf(s), properties, variantIds: s.children.map((c) => c.id), defaultVariantId };
 }
 
+/** Progress for the plugin window ("Scanning the Design System… 40%"). */
+export const progress = (label: string, done?: number, total?: number) => { try { figma.ui.postMessage({ type: "progress", label, done, total }); } catch { /* no UI */ } };
+
 export async function scanDesignSystem(opts: { includeLibraries?: boolean; maxInstances?: number } = {}) {
+  const timings: Record<string, number> = {};
+  let t0 = Date.now();
+  const lap = (k: string) => { const t = Date.now(); timings[k] = t - t0; t0 = t; };
+  progress("Loading pages");
   await figma.loadAllPagesAsync();
+  lap("loadPages");
   const components: ComponentDefinition[] = [];
   const componentSets: ComponentSetDefinition[] = [];
   const seen = new Set<string>();
@@ -68,7 +95,9 @@ export async function scanDesignSystem(opts: { includeLibraries?: boolean; maxIn
     seen.add(c.id);
     components.push(componentDef(c));
   };
+  progress("Reading local components");
   for (const n of figma.root.findAllWithCriteria({ types: ["COMPONENT_SET", "COMPONENT"] })) n.type === "COMPONENT_SET" ? addSet(n) : addComp(n);
+  lap("localComponents");
 
   // Library components actually used in this file (reachable through instances).
   const warnings: string[] = [];
@@ -77,16 +106,27 @@ export async function scanDesignSystem(opts: { includeLibraries?: boolean; maxIn
   const pageIds = new Set(onPage.map((i) => i.id));
   const instances = [...onPage, ...figma.root.findAllWithCriteria({ types: ["INSTANCE"] }).filter((i) => !pageIds.has(i.id))];
   const cap = opts.maxInstances ?? Math.max(3000, Math.min(onPage.length, 30000));
+  lap("findInstances");
+  // Main components in parallel batches: one await per instance in a row takes minutes on a big file.
   const mains = new Set<string>();
-  for (const inst of instances.slice(0, cap)) {
-    try {
-      const main = await inst.getMainComponentAsync();
-      if (!main || !main.remote || mains.has(main.id)) continue;
+  const usage = new Map<string, number>();
+  const todo = instances.slice(0, cap);
+  const BATCH = 400;
+  for (let i = 0; i < todo.length; i += BATCH) {
+    progress("Finding library components", i, todo.length);
+    const got = await Promise.all(todo.slice(i, i + BATCH).map((inst) => inst.getMainComponentAsync().catch(() => null)));
+    for (const main of got) {
+      if (!main) continue;
+      const owner = main.parent?.type === "COMPONENT_SET" ? main.parent.id : main.id;
+      usage.set(owner, (usage.get(owner) ?? 0) + 1);
+      if (!main.remote || mains.has(main.id)) continue;
       mains.add(main.id);
-      addComp(main);
-    } catch { /* detached / unavailable */ }
+      try { addComp(main); } catch { /* unreadable library component */ }
+    }
   }
-  if (instances.length > cap) warnings.push(`Only the first ${cap} of ${instances.length} instances were checked for library components.`);
+  lap("libraryComponents");
+  for (const set of componentSets) set.usage = usage.get(set.id);
+  if (instances.length > cap) warnings.push(`Only the first ${cap} of ${instances.length} instances were checked for library components (maxInstances).`);
 
   // Variables (local + optionally enabled libraries).
   const variableCollections: VariableCollectionDefinition[] = [];
@@ -123,10 +163,11 @@ export async function scanDesignSystem(opts: { includeLibraries?: boolean; maxIn
   }
   if (opts.includeLibraries !== false) {
     try {
+      progress("Reading library variables");
       const libs = await figma.teamLibrary.getAvailableLibraryVariableCollectionsAsync();
-      for (const lc of libs) {
+      const all = await Promise.all(libs.map((lc) => figma.teamLibrary.getVariablesInLibraryCollectionAsync(lc.key).then((vs) => ({ lc, vs })).catch(() => ({ lc, vs: [] as LibraryVariable[] }))));
+      for (const { lc, vs } of all) {
         variableCollections.push({ id: `lib:${lc.key}`, name: `${lc.libraryName} / ${lc.name}`, remote: true, modes: [] });
-        const vs = await figma.teamLibrary.getVariablesInLibraryCollectionAsync(lc.key);
         for (const v of vs) variables.push({ id: `lib:${v.key}`, key: v.key, name: v.name, collection: `${lc.libraryName} / ${lc.name}`, type: v.resolvedType as VariableDefinition["type"], remote: true });
       }
     } catch (e) { warnings.push(`Library variables unavailable: ${(e as Error).message}`); }
@@ -145,8 +186,48 @@ export async function scanDesignSystem(opts: { includeLibraries?: boolean; maxIn
     styles.push({ id: s.id, key: s.key, name: s.name, type: "PAINT", remote: s.remote, description: s.description || undefined, value: p?.type === "SOLID" ? toHex(p.color, p.opacity ?? 1) : p?.type });
   }
   for (const s of await figma.getLocalEffectStylesAsync()) styles.push({ id: s.id, key: s.key, name: s.name, type: "EFFECT", remote: s.remote, value: s.effects.map((e) => e.type).join(",") });
+  lap("localStylesAndVariables");
 
-  return { fileName: figma.root.name, scannedAt: new Date().toISOString(), components, componentSets, variableCollections, variables, styles, typography, warnings };
+  // Library styles and variables can't be listed, only reached through the layers that use them: collect the ids
+  // used in the file (capped), then look them up in parallel.
+  progress("Finding library styles and variables");
+  const styleIds = new Set<string>(), varIds = new Set<string>();
+  const known = new Set([...styles.map((x) => x.id), ...variables.map((v) => v.id)]);
+  const layers = figma.root.findAllWithCriteria({ types: ["TEXT", "FRAME", "RECTANGLE", "ELLIPSE", "VECTOR", "COMPONENT", "INSTANCE"] });
+  for (const n of layers.slice(0, opts.maxInstances ?? 60000)) {
+    const any = n as unknown as { textStyleId?: unknown; fillStyleId?: unknown; strokeStyleId?: unknown; effectStyleId?: unknown; boundVariables?: Record<string, unknown> };
+    for (const id of [any.textStyleId, any.fillStyleId, any.strokeStyleId, any.effectStyleId]) if (typeof id === "string" && id && !known.has(id)) styleIds.add(id);
+    for (const v of Object.values(any.boundVariables ?? {})) for (const a of Array.isArray(v) ? v : [v]) { const id = (a as VariableAlias | undefined)?.id; if (id && !known.has(id)) varIds.add(id); }
+  }
+  lap("findUsedStyles");
+  const gotStyles = await Promise.all([...styleIds].map((id) => figma.getStyleByIdAsync(id).catch(() => null)));
+  for (const st of gotStyles) {
+    if (!st) continue;
+    if (st.type === "TEXT") {
+      const t = st as TextStyle;
+      const lh = t.lineHeight.unit === "AUTO" ? "AUTO" : t.lineHeight.unit === "PIXELS" ? t.lineHeight.value : `${t.lineHeight.value}%`;
+      styles.push({ id: t.id, key: t.key, name: t.name, type: "TEXT", remote: t.remote, value: `${t.fontName.family} ${t.fontName.style} ${t.fontSize}/${lh}` });
+      typography.push({ styleId: t.id, name: t.name, fontFamily: t.fontName.family, fontStyle: t.fontName.style, fontSize: t.fontSize, lineHeight: lh, letterSpacing: t.letterSpacing.unit === "PIXELS" ? t.letterSpacing.value : undefined });
+    } else if (st.type === "PAINT") {
+      const p = (st as PaintStyle).paints[0];
+      styles.push({ id: st.id, key: st.key, name: st.name, type: "PAINT", remote: st.remote, value: p?.type === "SOLID" ? toHex(p.color, p.opacity ?? 1) : p?.type });
+    } else if (st.type === "EFFECT") styles.push({ id: st.id, key: st.key, name: st.name, type: "EFFECT", remote: st.remote, value: (st as EffectStyle).effects.map((e) => e.type).join(",") });
+  }
+  const gotVars = await Promise.all([...varIds].map((id) => figma.variables.getVariableByIdAsync(id).catch(() => null)));
+  const usedCols = new Map<string, VariableCollection | null>();
+  for (const v of gotVars) if (v && !usedCols.has(v.variableCollectionId)) usedCols.set(v.variableCollectionId, null);
+  await Promise.all([...usedCols.keys()].map(async (id) => usedCols.set(id, await figma.variables.getVariableCollectionByIdAsync(id).catch(() => null))));
+  for (const [id, c] of usedCols) if (c && !variableCollections.some((x) => x.id === id)) variableCollections.push({ id, name: c.name, remote: c.remote, modes: c.modes.map((m) => ({ id: m.modeId, name: m.name })), defaultModeId: c.defaultModeId });
+  for (const v of gotVars) {
+    if (!v) continue;
+    const c = usedCols.get(v.variableCollectionId);
+    const raw = c ? v.valuesByMode[c.defaultModeId] : undefined;
+    const value = raw && typeof raw === "object" && "r" in raw ? toHex(raw as RGBA) : typeof raw === "number" || typeof raw === "string" || typeof raw === "boolean" ? raw : undefined;
+    variables.push({ id: v.id, key: v.key, name: v.name, collection: c?.name ?? "", type: v.resolvedType as VariableDefinition["type"], remote: v.remote, value, scopes: v.scopes as string[] });
+  }
+  lap("libraryStylesAndVariables");
+  progress("Design System scanned", 1, 1);
+  return { fileName: figma.root.name, scannedAt: new Date().toISOString(), components, componentSets, variableCollections, variables, styles, typography, warnings, timings };
 }
 
 // ---------------- Inspector ----------------

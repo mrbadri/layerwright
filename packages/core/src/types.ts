@@ -66,6 +66,8 @@ export interface ComponentDefinition {
   layout?: LayoutInfo;
   textLayers?: string[];
   semanticHints?: string[];
+  /** Look of the variant's root: first solid fill and stroke, corner radius (for matching drawn elements). */
+  look?: { fill?: string; stroke?: string; radius?: number; text?: string };
 }
 
 export interface ComponentSetDefinition {
@@ -79,6 +81,8 @@ export interface ComponentSetDefinition {
   variantIds: string[];
   defaultVariantId?: string;
   semanticHints?: string[];
+  /** Instances of this set found in the file (a tie-breaker between copies of the same library set). */
+  usage?: number;
 }
 
 export interface VariableDefinition {
@@ -310,6 +314,7 @@ export type Transformation =
   | { id: string; op: "replace_with_instance"; nodeId: string; nodeName: string; componentId: string; componentKey?: string; remote: boolean; componentName: string; properties: Record<string, string | boolean>; textOverrides: Record<string, string>; reason: string }
   | { id: string; op: "bind_number"; nodeId: string; nodeName: string; field: "itemSpacing" | "paddingTop" | "paddingRight" | "paddingBottom" | "paddingLeft" | "cornerRadius"; from: number; variableId: string; variableKey?: string; variableName: string; reason: string }
   | { id: string; op: "bind_fill"; nodeId: string; nodeName: string; from: string; variableId: string; variableKey?: string; variableName: string; reason: string }
+  | { id: string; op: "apply_fill_style"; nodeId: string; nodeName: string; from: string; styleId: string; styleKey?: string; styleName: string; reason: string }
   | { id: string; op: "apply_text_style"; nodeId: string; nodeName: string; styleId: string; styleKey?: string; styleName: string; reason: string }
   | { id: string; op: "convert_auto_layout"; nodeId: string; nodeName: string; direction: "HORIZONTAL" | "VERTICAL"; gap: number; padding: Padding; reason: string };
 

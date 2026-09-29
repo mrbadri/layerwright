@@ -7,6 +7,10 @@ export interface FigmaTransport {
   connected(): boolean;
   info(): BridgeHello | undefined;
   request<T = unknown>(method: BridgeMethod, params?: unknown, timeoutMs?: number): Promise<T>;
+  /** A one-way message to the plugin window (server version, update notice, what the server is doing). */
+  notify?(msg: Record<string, unknown>): void;
+  /** Called when the plugin (re)announces itself. */
+  onHello?: () => void;
 }
 
 export class BridgeError extends Error {
@@ -62,7 +66,7 @@ export class WsBridge implements FigmaTransport {
   private onMessage(raw: string) {
     let msg: any;
     try { msg = JSON.parse(raw); } catch { return; }
-    if (msg?.type === "hello") { this.hello = msg; return; }
+    if (msg?.type === "hello") { this.hello = msg; try { this.onHello?.(); } catch { /* listener */ } return; }
     const res = msg as BridgeResponse;
     const p = this.pending.get(res.id);
     if (!p) return;
@@ -70,6 +74,12 @@ export class WsBridge implements FigmaTransport {
     this.pending.delete(res.id);
     if (res.ok) p.resolve(res.result);
     else p.reject(new BridgeError(res.error ?? { type: "FIGMA_API_ERROR", message: "Unknown plugin error" }));
+  }
+
+  onHello?: () => void;
+
+  notify(msg: Record<string, unknown>) {
+    if (this.connected()) this.socket!.send(JSON.stringify(msg));
   }
 
   close() { this.socket?.close(); this.wss?.close(); }

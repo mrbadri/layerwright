@@ -6,6 +6,21 @@ export class ExecError extends Error {
   constructor(public detail: StructuredError) { super(detail.message); }
 }
 
+/** A library import can hang when the library isn't enabled for the file (e.g. a copy): never wait forever. */
+export function withTimeout<T>(p: Promise<T>, ms = 10_000, what = "library import"): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`${what} timed out after ${ms / 1000}s (is the library enabled for this file?)`)), ms);
+    p.then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
+  });
+}
+
+/** A style: by id first (library styles the file already uses are reachable that way, instantly), then by key. */
+export async function styleOf(id?: string, key?: string): Promise<BaseStyle> {
+  if (id) { const s = await figma.getStyleByIdAsync(id).catch(() => null); if (s) return s; }
+  if (key) return withTimeout(figma.importStyleByKeyAsync(key));
+  throw new ExecError({ type: "STYLE_NOT_FOUND", message: `Style ${id ?? key} not found (rescan the Design System).` });
+}
+
 const hexToRgb = (hex: string) => {
   let h = hex.replace("#", "");
   if (h.length === 3) h = h.split("").map((c) => c + c).join("");
@@ -78,7 +93,9 @@ class Ctx {
   async variable(id?: string, key?: string): Promise<Variable> {
     const k = key ?? id!;
     if (this.vars.has(k)) return this.vars.get(k)!;
-    const v = key ? await figma.variables.importVariableByKeyAsync(key) : await figma.variables.getVariableByIdAsync(id!);
+    // By id first (a library variable the file already uses is reachable that way), then import by key.
+    let v = id && !id.startsWith("lib:") ? await figma.variables.getVariableByIdAsync(id).catch(() => null) : null;
+    if (!v && key) v = await withTimeout(figma.variables.importVariableByKeyAsync(key)).catch(() => null);
     if (!v) throw new ExecError({ type: "TOKEN_NOT_FOUND", message: `Variable ${k} not found in this file (was the Design System rescanned?).` });
     this.vars.set(k, v);
     return v;
@@ -105,7 +122,7 @@ class Ctx {
   async fill(node: GeometryMixin & MinimalFillsMixin & BaseNode, p: PlanPaint | undefined, kind: "fill" | "stroke" = "fill") {
     if (!p) return;
     if (p.styleId || p.styleKey) {
-      const id = p.styleKey ? (await figma.importStyleByKeyAsync(p.styleKey)).id : p.styleId!;
+      const id = (await styleOf(p.styleId, p.styleKey)).id;
       if (kind === "fill") await (node as any).setFillStyleIdAsync(id); else await (node as any).setStrokeStyleIdAsync(id);
       return;
     }
@@ -243,7 +260,7 @@ async function buildText(n: ResolvedText, parent: BaseNode & ChildrenMixin, ctx:
   ctx.nodeIds[n.path] = t.id;
   await ctx.font(t.fontName as FontName);
   if (n.textStyleId || n.textStyleKey) {
-    const style = (n.textStyleKey ? await figma.importStyleByKeyAsync(n.textStyleKey) : await figma.getStyleByIdAsync(n.textStyleId!)) as TextStyle | null;
+    const style = (await styleOf(n.textStyleId, n.textStyleKey).catch(() => null)) as TextStyle | null;
     if (!style) throw new ExecError({ type: "STYLE_NOT_FOUND", path: n.path, message: `Text style ${n.textStyleId} not found.` });
     await ctx.font(style.fontName);
     await t.setTextStyleIdAsync(style.id);
@@ -282,10 +299,12 @@ async function getComponent(id: string, key: string | undefined, remote: boolean
   let importError: unknown;
   // Library import fails when the source library isn't enabled/published (e.g. in a copied file);
   // the remote component is usually still present in this file, so fall back to it by id.
-  if (remote && key) { try { c = await figma.importComponentByKeyAsync(key); } catch (e) { importError = e; } }
-  // A key can also name a component set (e.g. one found in a library search): use its default variant.
-  if (!c && remote && key && !id) { try { c = (await figma.importComponentSetByKeyAsync(key)).defaultVariant; } catch (e) { importError ??= e; } }
-  if (!c && id) { try { c = await figma.getNodeByIdAsync(id); } catch (e) { importError ??= e; } }
+  // By id first: a library component the file already uses is a node here, reachable instantly. Import by key only
+  // when it isn't (a component found in a library search), with a time limit.
+  if (id) { try { c = await figma.getNodeByIdAsync(id); } catch (e) { importError = e; } }
+  if ((!c || c.removed) && remote && key) { c = null; try { c = await withTimeout(figma.importComponentByKeyAsync(key)); } catch (e) { importError = e; } }
+  // A key can also name a component set: use its default variant.
+  if (!c && remote && key && !id) { try { c = (await withTimeout(figma.importComponentSetByKeyAsync(key))).defaultVariant; } catch (e) { importError ??= e; } }
   if (!c) throw new ExecError({ type: "COMPONENT_NOT_FOUND", path, message: `Could not load component ${id}: ${importError instanceof Error ? importError.message : String(importError ?? "not in this file")}` });
   if (!c || c.type !== "COMPONENT" || c.removed) throw new ExecError({ type: "COMPONENT_NOT_FOUND", path, message: `Component ${id} no longer exists (rescan the Design System).` });
   return c;
@@ -584,9 +603,16 @@ export async function applyTransformations(list: Transformation[]): Promise<Tran
           report.applied.push({ id: t.id, nodeId: t.nodeId });
           break;
         }
+        case "apply_fill_style": {
+          if (!("setFillStyleIdAsync" in node)) throw new Error("node has no fills");
+          const id = (await styleOf(t.styleId, t.styleKey)).id;
+          await (node as GeometryMixin & { setFillStyleIdAsync(id: string): Promise<void> }).setFillStyleIdAsync(id);
+          report.applied.push({ id: t.id, nodeId: t.nodeId });
+          break;
+        }
         case "apply_text_style": {
           if (node.type !== "TEXT") throw new Error("not a text node");
-          const style = (t.styleKey ? await figma.importStyleByKeyAsync(t.styleKey) : await figma.getStyleByIdAsync(t.styleId)) as TextStyle | null;
+          const style = (await styleOf(t.styleId, t.styleKey).catch(() => null)) as TextStyle | null;
           if (!style) throw new Error(`text style ${t.styleName} not found`);
           await ctx.fontsOf(node);
           await ctx.font(style.fontName);

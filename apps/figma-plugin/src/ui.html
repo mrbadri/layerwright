@@ -3,51 +3,142 @@
 <head>
 <meta charset="utf-8" />
 <style>
-  body { font: 12px/1.45 Inter, system-ui, sans-serif; margin: 12px; color: var(--figma-color-text, #111); background: var(--figma-color-bg, #fff); }
+  :root { --fg: var(--figma-color-text, #1e1e1e); --muted: var(--figma-color-text-secondary, #6b6b6b); --line: var(--figma-color-border, #e6e6e6);
+    --card: var(--figma-color-bg-secondary, #f7f7f7); --ok: #14ae5c; --run: #0d99ff; --bad: #f24822; --accent: #7c3aed; }
+  * { box-sizing: border-box; }
+  body { font: 12px/1.45 Inter, system-ui, sans-serif; margin: 0; color: var(--fg); background: var(--figma-color-bg, #fff); }
+  main { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+  .card { background: var(--card); border-radius: 8px; padding: 10px; }
   .row { display: flex; align-items: center; gap: 8px; }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: #d33; flex: none; }
-  .dot[data-state="connected"] { background: #1a9d4b; }
-  .dot[data-state="running"] { background: #1a73e8; animation: pulse 1s infinite alternate; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--bad); flex: none; }
+  .dot[data-state="connected"] { background: var(--ok); }
+  .dot[data-state="running"] { background: var(--run); animation: pulse 1s infinite alternate; }
   @keyframes pulse { to { opacity: .35; } }
-  #detail, #log { color: var(--figma-color-text-secondary, #666); }
-  #error { display: none; margin-top: 8px; padding: 6px 8px; border-radius: 6px; background: var(--figma-color-bg-danger-tertiary, #fdecea); color: var(--figma-color-text-danger, #a50e0e); white-space: pre-wrap; word-break: break-word; }
-  #help { display: none; margin-top: 8px; }
-  #log { margin-top: 8px; white-space: pre-wrap; max-height: 64px; overflow: auto; font-size: 11px; }
-  input { width: 64px; }
-  code { font-size: 11px; }
+  #status { font-weight: 600; }
+  .muted { color: var(--muted); }
+  #detail { margin-top: 2px; }
+  #progress { display: none; margin-top: 8px; height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
+  #bar { height: 100%; width: 0; background: var(--run); transition: width .3s; }
+  #help { display: none; }
+  #help ol { margin: 6px 0 0 16px; padding: 0; }
+  #help li { margin: 2px 0; }
+  #error { display: none; border-left: 3px solid var(--bad); background: var(--figma-color-bg-danger-tertiary, #fdecea); color: var(--figma-color-text-danger, #a50e0e); white-space: pre-wrap; word-break: break-word; }
+  #update { display: none; border-left: 3px solid var(--accent); }
+  .tech { margin-top: 4px; font-size: 10.5px; opacity: .75; font-family: ui-monospace, Menlo, monospace; }
+  h2 { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 4px; }
+  #activity { list-style: none; margin: 0; padding: 0; max-height: 128px; overflow: auto; }
+  #activity li { display: flex; gap: 6px; padding: 3px 0; border-bottom: 1px solid var(--line); }
+  #activity li:last-child { border-bottom: 0; }
+  #activity .t { color: var(--muted); margin-left: auto; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  #empty { color: var(--muted); }
+  details summary { cursor: pointer; color: var(--muted); }
+  input { width: 64px; font: inherit; padding: 2px 4px; }
+  button { font: inherit; border: 1px solid var(--line); background: var(--figma-color-bg, #fff); color: var(--fg); border-radius: 6px; padding: 3px 8px; cursor: pointer; }
+  code { font-size: 11px; background: var(--card); padding: 1px 4px; border-radius: 4px; }
+  footer { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; }
+  #clip { position: absolute; left: -9999px; }
 </style>
 </head>
 <body>
-  <div class="row"><span id="dot" class="dot" data-state="disconnected"></span><b id="status">Connecting…</b></div>
-  <div id="detail"></div>
-  <div class="row" style="margin-top:6px"><label for="port">Bridge port</label><input id="port" inputmode="numeric" value="7331" /></div>
-  <div id="help">No local server found. Start it from Claude Code (it runs automatically once the MCP server is added), or run <code>npx layerwright doctor</code>. See the project README for setup.</div>
-  <div id="error"></div>
-  <div id="log"></div>
-<script>
-  // The UI iframe is only a transport relay: WebSocket (localhost only) <-> plugin main thread.
-  // No secrets, no model calls, no network beyond ws://localhost.
-  let ws = null, gen = 0, timer = null, hello = null, failures = 0;
-  const running = new Map(); // request id -> { method, started }
-  const $ = (id) => document.getElementById(id);
-  const log = (m) => { const l = $("log"); l.textContent = (m + "\n" + l.textContent).slice(0, 2000); };
+<main>
+  <div class="card">
+    <div class="row"><span id="dot" class="dot" data-state="disconnected"></span><span id="status">Connecting…</span></div>
+    <div id="detail" class="muted"></div>
+    <div id="progress"><div id="bar"></div></div>
+    <div id="help" class="muted">
+      Layerwright talks to Claude Code on this computer. To connect:
+      <ol>
+        <li>Open Claude Code in your project folder (it starts Layerwright).</li>
+        <li>Keep this window open. It connects by itself.</li>
+        <li>Still nothing? Run <code>npx layerwright doctor</code> in the project.</li>
+      </ol>
+    </div>
+  </div>
 
+  <div id="update" class="card"></div>
+  <div id="error" class="card"><div class="row" style="align-items:flex-start"><div id="errorText" style="flex:1"></div><button id="dismiss" title="Dismiss" style="border:0;background:none;padding:0 2px">×</button></div><div id="errorTech" class="tech"></div></div>
+
+  <div>
+    <h2>Activity</h2>
+    <div id="empty">Nothing yet. Ask Claude to import a design or build a screen.</div>
+    <ul id="activity"></ul>
+  </div>
+
+  <details>
+    <summary>Connection settings</summary>
+    <div class="row" style="margin-top:6px"><label for="port">Port</label><input id="port" inputmode="numeric" value="7331" /><span class="muted">7331–7340</span></div>
+    <div class="muted" style="margin-top:4px">Use another port only when two Claude Code sessions run at once; set the same <code>LAYERWRIGHT_PORT</code> in the project's .mcp.json.</div>
+  </details>
+
+  <footer><span id="version">Layerwright</span><span id="build"></span></footer>
+  <textarea id="clip" aria-hidden="true"></textarea>
+</main>
+<script>
+  // The UI iframe is a transport relay (WebSocket on localhost <-> plugin main thread) and the status window.
+  // No secrets, no model calls, no network beyond ws://localhost.
+  let ws = null, gen = 0, timer = null, hello = null, failures = 0, server = null;
+  const running = new Map(); // request id -> { method, started, label }
+  const events = [];         // newest first: { ok, text, at }
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+  // What each request means to a person. Quiet ones (status checks, reading layers) don't clutter the activity.
+  const LABEL = {
+    executePlan: "Building the design", importTree: "Importing HTML", scanDesignSystem: "Scanning the Design System",
+    applyTransformations: "Applying the Design System", editNodes: "Editing layers", exportImage: "Taking a picture",
+    cleanup: "Cleaning up", foundations: "Creating variables and styles", ensurePages: "Setting up pages", select: "Showing it on the canvas", inspect: "Reading layers",
+  };
+  const QUIET = { ping: 1, inspect: 1, select: 1, exportImage: 1 };
+  const count = (n, one, many) => n + " " + (n === 1 ? one : many);
+  function summary(method, r) {
+    if (!r) return LABEL[method] || method;
+    if (method === "executePlan") return "Built " + count((r.createdRootIds || []).length, "frame", "frames");
+    if (method === "importTree") return "Imported " + count((r.screens || []).length, "screen", "screens");
+    if (method === "scanDesignSystem") return "Scanned the Design System: " + count((r.componentSets || []).length, "component set", "component sets") + ", " + count((r.typography || []).length, "text style", "text styles");
+    if (method === "applyTransformations") return "Applied " + count((r.applied || []).length, "change", "changes") + ((r.failed || []).length ? ", " + (r.failed || []).length + " failed" : "");
+    if (method === "editNodes") return "Edited layers: " + count((r.applied || []).length, "change", "changes") + (r.failed ? ", stopped at a problem" : "");
+    if (method === "cleanup") return (r.removed ? "Removed " : "Found ") + count((r.nodes || []).length, "leftover", "leftovers");
+    if (method === "foundations") return "Created variables and styles";
+    if (method === "ensurePages") return "Set up pages";
+    return LABEL[method] || method;
+  }
+  // Errors in plain words; the technical line stays underneath for bug reports.
+  const FRIENDLY = {
+    COMPONENT_NOT_FOUND: "A component the design needs isn't in this file.", AMBIGUOUS_COMPONENT: "Several components have the same name; Claude has to pick one.",
+    INVALID_VARIANT: "That component doesn't have the requested variant.", NODE_NOT_FOUND: "A layer it needed was deleted or isn't on this page.",
+    STYLE_NOT_FOUND: "A text or colour style is missing.", TOKEN_NOT_FOUND: "A variable is missing.", NOT_APPROVED: "Waiting for your approval in Claude Code.",
+    FIGMA_API_ERROR: "Figma refused a change. Nothing was left half-done.", TIMEOUT: "That took too long.",
+  };
+  function friendly(err) {
+    const m = String(err.message || "");
+    if (/font .*could not be loaded|Cannot unwrap symbol|unloaded font/i.test(m)) return "A font isn't installed on this computer, so its text can't be changed. Install the font and restart Figma.";
+    if (/timed out/i.test(m) && /library/i.test(m)) return "A library didn't answer. Is it enabled for this file (Assets → Libraries)?";
+    return FRIENDLY[err.type] || "Something went wrong.";
+  }
+  const ago = (t) => { const s = Math.round((Date.now() - t) / 1000); return s < 60 ? s + "s ago" : Math.round(s / 60) + "m ago"; };
+
+  function renderActivity() {
+    $("empty").style.display = events.length ? "none" : "block";
+    $("activity").innerHTML = events.slice(0, 20).map((e) => '<li><span>' + (e.ok ? "✓" : "✗") + '</span><span>' + esc(e.text) + '</span><span class="t">' + esc(e.took || ago(e.at)) + '</span></li>').join("");
+  }
   function render() {
     const open = ws && ws.readyState === 1;
     const state = !open ? "disconnected" : running.size ? "running" : "connected";
     $("dot").dataset.state = state;
     if (state === "running") {
       const [r] = running.values();
-      $("status").textContent = "Running " + r.method + "…";
-      $("detail").textContent = Math.round((Date.now() - r.started) / 1000) + "s" + (running.size > 1 ? " · " + running.size + " queued" : "");
+      $("status").textContent = (LABEL[r.method] || r.method) + "…";
+      $("detail").textContent = Math.round((Date.now() - r.started) / 1000) + "s" + (running.size > 1 ? " · " + (running.size - 1) + " more waiting" : "");
     } else if (state === "connected") {
-      $("status").textContent = "Connected to Claude";
-      $("detail").textContent = "ws://localhost:" + $("port").value;
+      $("status").textContent = "Connected to Claude Code";
+      const sel = hello && hello.selection ? hello.selection : 0;
+      $("detail").textContent = hello ? (hello.fileName + " · " + String(hello.page || "").trim() + (sel ? " · " + count(sel, "layer", "layers") + " selected" : "")) : "Ready";
     } else {
-      $("status").textContent = failures > 1 ? "Disconnected — retrying" : "Connecting…";
-      $("detail").textContent = "ws://localhost:" + $("port").value;
+      $("status").textContent = failures > 1 ? "Waiting for Claude Code" : "Connecting…";
+      $("detail").textContent = "Looking on localhost:" + $("port").value;
     }
     $("help").style.display = !open && failures >= 3 ? "block" : "none";
+    if (state !== "running") $("progress").style.display = "none";
   }
 
   function connect() {
@@ -62,13 +153,28 @@
     sock.onmessage = (ev) => {
       if (my !== gen) return;
       let req; try { req = JSON.parse(ev.data); } catch { return; }
+      if (req.type === "server-info") { server = req; renderServer(); return; }
       running.set(req.id, { method: req.method, started: Date.now() });
-      log("→ " + req.method); render();
+      render();
       parent.postMessage({ pluginMessage: { type: "request", req } }, "*");
     };
     render();
   }
   function retry() { clearTimeout(timer); timer = setTimeout(connect, Math.min(1500 * Math.max(1, failures), 6000)); }
+
+  function renderServer() {
+    $("version").textContent = "Layerwright " + (server && server.version ? server.version : "");
+    const u = server && server.update;
+    if (u && u.updateAvailable) {
+      $("update").style.display = "block";
+      $("update").innerHTML = "<b>Layerwright " + esc(u.latest) + " is available</b> <span class='muted'>(you have " + esc(u.current) + ")</span><ol style='margin:6px 0 6px 16px;padding:0'>" +
+        (u.steps || []).map((s) => "<li>" + esc(s) + "</li>").join("") + "</ol><button id='copy'>Copy update command</button>";
+      const b = $("copy"); if (b) b.onclick = () => copy(u.command);
+    } else $("update").style.display = "none";
+  }
+  function copy(text) {
+    const c = $("clip"); c.value = text; try { c.select(); document.execCommand("copy"); const b = $("copy"); if (b) b.textContent = "Copied"; } catch (e) {}
+  }
 
   function setPort(p, save) {
     const n = Number(p);
@@ -83,23 +189,41 @@
     connect();
   }
   $("port").onchange = () => setPort($("port").value, true);
+  $("dismiss").onclick = () => { $("error").style.display = "none"; };
 
   window.onmessage = (ev) => {
     const msg = ev.data && ev.data.pluginMessage;
     if (!msg) return;
-    if (msg.type === "hello") { hello = msg.hello; if (ws && ws.readyState === 1) ws.send(JSON.stringify(hello)); }
+    if (msg.type === "hello") { hello = msg.hello; $("build").textContent = hello.pluginBuild ? "plugin " + String(hello.pluginBuild).slice(0, 16).replace("T", " ") : ""; if (ws && ws.readyState === 1) ws.send(JSON.stringify(hello)); render(); }
+    if (msg.type === "selection") { if (hello) hello.selection = msg.count; render(); }
     if (msg.type === "port") setPort(msg.port, false);
+    if (msg.type === "progress") {
+      $("progress").style.display = msg.total ? "block" : "none";
+      if (msg.total) $("bar").style.width = Math.round(((msg.done || 0) / msg.total) * 100) + "%";
+      if (running.size) $("detail").textContent = msg.label + (msg.total ? " · " + Math.round(((msg.done || 0) / msg.total) * 100) + "%" : "");
+    }
     if (msg.type === "response") {
+      const r = running.get(msg.res.id);
       running.delete(msg.res.id);
       if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg.res));
-      log((msg.res.ok ? "✓ " : "✗ ") + msg.res.id);
-      if (!msg.res.ok && msg.res.error) { $("error").style.display = "block"; $("error").textContent = "Last error (" + msg.res.error.type + "): " + msg.res.error.message; }
-      else if (msg.res.ok) $("error").style.display = "none";
+      const method = r ? r.method : "";
+      const took = r ? Math.round((Date.now() - r.started) / 1000) + "s" : "";
+      if (!msg.res.ok && msg.res.error) {
+        $("error").style.display = "block";
+        $("errorText").textContent = friendly(msg.res.error);
+        $("errorTech").textContent = msg.res.error.type + ": " + msg.res.error.message;
+        events.unshift({ ok: false, text: (LABEL[method] || method) + " failed", at: Date.now(), took });
+      } else {
+        if (msg.res.ok) $("error").style.display = "none";
+        if (!QUIET[method]) events.unshift({ ok: true, text: summary(method, msg.res.result), at: Date.now(), took });
+      }
+      renderActivity();
       render();
     }
   };
   setInterval(() => { if (running.size) render(); }, 1000);
   parent.postMessage({ pluginMessage: { type: "ui-ready" } }, "*");
+  renderActivity();
   connect();
 </script>
 </body>

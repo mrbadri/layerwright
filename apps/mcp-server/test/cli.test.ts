@@ -86,3 +86,23 @@ test("the MCP server exits and frees its port when Claude Code closes stdin", as
   assert.equal(plan.target.page, "Designs");
   assert.match(lines.join("\n"), /Connected to "TEST"[\s\S]*Plan: Sign in – 390[\s\S]*Built 1 screen\(s\) in Figma; verification passed/);
 });
+
+test("layerwright fonts lists an export's fonts and installs only TTF/OTF, once", async () => {
+  const { fontsCommand } = await import("../src/cli.ts");
+  const { mkdtempSync, mkdirSync, writeFileSync, readdirSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const src = mkdtempSync(join(tmpdir(), "lw-fonts-"));
+  mkdirSync(join(src, "_ds", "kit", "fonts"), { recursive: true });
+  for (const f of ["A-Regular.ttf", "A-Bold.otf", "A-Web.woff2"]) writeFileSync(join(src, "_ds", "kit", "fonts", f), "x");
+  const dest = mkdtempSync(join(tmpdir(), "lw-dest-"));
+  const lines: string[] = [];
+  assert.equal(await fontsCommand([src], (s) => lines.push(s), dest), 0);
+  assert.match(lines.join("\n"), /2 installable font file\(s\), 1 web-only/);
+  assert.deepEqual(readdirSync(dest), []);
+  assert.equal(await fontsCommand([src, "--install"], () => {}, dest), 0);
+  assert.deepEqual(readdirSync(dest).sort(), ["A-Bold.otf", "A-Regular.ttf"]);
+  const again: string[] = [];
+  await fontsCommand([src, "--install"], (s) => again.push(s), dest);
+  assert.match(again.join("\n"), /0 font\(s\) installed/);
+});

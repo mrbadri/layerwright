@@ -10,7 +10,7 @@
   "scripts": {
     "build": "npm run build -w @cde/figma-plugin && npm run build -w layerwright",
     "typecheck": "tsc -p packages/core && tsc -p packages/html-import && tsc -p apps/mcp-server && tsc -p apps/figma-plugin",
-    "test": "node --import tsx --test packages/core/test/*.test.ts packages/html-import/test/*.test.ts apps/mcp-server/test/*.test.ts apps/figma-plugin/test/*.test.ts",
+    "test": "LAYERWRIGHT_NO_UPDATE_CHECK=1 node --import tsx --test packages/core/test/*.test.ts packages/html-import/test/*.test.ts apps/mcp-server/test/*.test.ts apps/figma-plugin/test/*.test.ts",
     "mcp": "tsx apps/mcp-server/src/cli.ts"
   },
   "devDependencies": {

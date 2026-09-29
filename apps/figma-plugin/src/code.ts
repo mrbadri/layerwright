@@ -8,7 +8,7 @@ import { importTree, ensurePages, foundations } from "./import.ts";
 declare const __BUILD__: string;
 const BUILD = typeof __BUILD__ === "string" ? __BUILD__ : "dev";
 
-figma.showUI(__html__, { width: 260, height: 180, themeColors: true });
+figma.showUI(__html__, { width: 300, height: 480, themeColors: true });
 
 async function resolveTarget(target?: string): Promise<BaseNode[]> {
   if (!target || target === "selection") return [...figma.currentPage.selection];
@@ -74,7 +74,7 @@ async function handle(req: BridgeRequest): Promise<unknown> {
   }
 }
 
-const hello = () => ({ type: "hello", fileName: figma.root.name, fileKey: figma.fileKey, page: figma.currentPage.name, user: figma.currentUser?.name, pluginBuild: BUILD });
+const hello = () => ({ type: "hello", fileName: figma.root.name, fileKey: figma.fileKey, page: figma.currentPage.name, user: figma.currentUser?.name, pluginBuild: BUILD, selection: figma.currentPage.selection.length });
 
 figma.ui.onmessage = async (msg: any) => {
   if (msg?.type === "ui-ready") {
@@ -97,6 +97,7 @@ figma.ui.onmessage = async (msg: any) => {
   figma.ui.postMessage({ type: "response", res });
 };
 figma.on("currentpagechange", () => figma.ui.postMessage({ type: "hello", hello: hello() }));
+figma.on("selectionchange", () => figma.ui.postMessage({ type: "selection", count: figma.currentPage.selection.length }));
 
 // Watch for Design System changes (components, component sets, styles) so a stale scan can be flagged.
 let dsChanged = false;

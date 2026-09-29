@@ -21,6 +21,10 @@ const HELP = () => `Usage:
         --section <name>       --faithful: wrap the screens in a section
         --scan                 scan the file's Design System first and use its components
         --port <7331-7340>     bridge port (default from .mcp.json, else 7331)
+  ${BIN} fonts <folder>          list the fonts an export ships (TTF/OTF can be installed; WOFF/WOFF2 can't)
+      --install                copy the TTF/OTF files to your user fonts folder (restart Figma afterwards)
+      --only <text>            only files whose name contains this (e.g. --only IRANYekanX)
+  ${BIN} report                 draft a GitHub issue from this project's recurring problems (redacted; you review and send it)
   ${BIN} help`;
 
 const VALUE_FLAGS = ["--viewport", "--selector", "--page", "--section", "--port"];
@@ -100,11 +104,73 @@ export async function toFigma(path: string, o: { viewports?: number[]; selector?
   } finally { bridge.close(); }
 }
 
+/** The per-user fonts folder Figma desktop reads. */
+export function userFontsDir(): string {
+  const { homedir, platform } = { homedir: process.env.HOME ?? process.env.USERPROFILE ?? "", platform: process.platform };
+  if (platform === "darwin") return `${homedir}/Library/Fonts`;
+  if (platform === "win32") return `${process.env.LOCALAPPDATA ?? `${homedir}\\AppData\\Local`}\\Microsoft\\Windows\\Fonts`;
+  return `${homedir}/.local/share/fonts`;
+}
+
+/** Find the fonts in an export (e.g. a Claude Design folder with _ds/…/fonts) and optionally install them. */
+export async function fontsCommand(args: string[], out: (s: string) => void = (s) => process.stdout.write(s + "\n"), dest = userFontsDir()): Promise<number> {
+  const { readdirSync, statSync, existsSync, mkdirSync, copyFileSync } = await import("node:fs");
+  const { join, basename } = await import("node:path");
+  const onlyAt = args.indexOf("--only");
+  const only = onlyAt >= 0 ? args[onlyAt + 1]?.toLowerCase() : undefined;
+  const dir = args.find((a, i) => !a.startsWith("--") && args[i - 1] !== "--only");
+  if (!dir || !existsSync(dir)) { out(HELP()); return 2; }
+  const found: string[] = [];
+  const walk = (d: string, depth: number) => {
+    if (depth > 6) return;
+    for (const f of readdirSync(d)) {
+      if (f === "node_modules" || f.startsWith(".")) continue;
+      const p = join(d, f);
+      try { if (statSync(p).isDirectory()) walk(p, depth + 1); else if (/\.(ttf|otf|woff2?)$/i.test(f)) found.push(p); } catch { /* unreadable */ }
+    }
+  };
+  walk(resolve(dir), 0);
+  const installable = found.filter((f) => /\.(ttf|otf)$/i.test(f) && (!only || basename(f).toLowerCase().includes(only)));
+  const webOnly = found.filter((f) => /\.woff2?$/i.test(f));
+  if (!found.length) { out("No font files in this folder."); return 1; }
+  out(`${installable.length} installable font file(s)${webOnly.length ? `, ${webOnly.length} web-only (WOFF/WOFF2: Figma can't use these; get a TTF/OTF)` : ""}.`);
+  for (const f of installable) out(`  ${basename(f)}`);
+  if (!args.includes("--install")) { if (installable.length) out(`\nInstall them for this user: ${BIN} fonts ${dir} --install`); return 0; }
+  mkdirSync(dest, { recursive: true });
+  let copied = 0;
+  for (const f of installable) {
+    const target = join(dest, basename(f));
+    if (existsSync(target)) { out(`  = ${basename(f)} (already installed)`); continue; }
+    copyFileSync(f, target); copied++;
+    out(`  + ${basename(f)}`);
+  }
+  out(`\n✓ ${copied} font(s) installed to ${dest}. Restart Figma so it sees them, then reopen the Layerwright plugin.`);
+  return 0;
+}
+
+/** Draft (never send) an issue for the maintainers from .layerwright/memory.json. */
+export async function reportCommand(dir = process.cwd(), out: (s: string) => void = (s) => process.stdout.write(s + "\n")): Promise<number> {
+  const { MemoryStore, reportDraft } = await import("./memory.ts");
+  const { writeFileSync, mkdirSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { PKG_VERSION } = await import("./meta.ts");
+  const m = new MemoryStore(join(dir, ".layerwright", "memory.json")).read();
+  const d = reportDraft(m, { version: PKG_VERSION, node: process.versions.node, os: `${process.platform} ${process.arch}` });
+  const file = join(dir, ".layerwright", "report.md");
+  mkdirSync(join(dir, ".layerwright"), { recursive: true });
+  writeFileSync(file, `# ${d.title}\n\n${d.body}\n`);
+  out(`Draft written to ${file}. Nothing was sent.`);
+  out(`Read it, then open this link to file it on GitHub (you can edit it there):\n${d.url}`);
+  return 0;
+}
+
 export async function main(argv = process.argv.slice(2)) {
   const [cmd, ...rest] = argv;
   if (!cmd || cmd === "serve") { await import("./index.ts"); return; }
   const port = (() => { const i = rest.indexOf("--port"); return i >= 0 ? Number(rest[i + 1]) : undefined; })();
   if (cmd === "import") process.exitCode = await importCommand(rest);
+  else if (cmd === "fonts") process.exitCode = await fontsCommand(rest);
+  else if (cmd === "report") process.exitCode = await reportCommand();
   else if (cmd === "init") process.exitCode = await (await import("./setup.ts")).init({ port, skipInstall: rest.includes("--skip-install") });
   else if (cmd === "doctor") process.exitCode = await (await import("./setup.ts")).doctor({ port });
   else if (cmd === "--version" || cmd === "-v") process.stdout.write((await import("./meta.ts")).PKG_VERSION + "\n");
