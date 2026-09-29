@@ -1,6 +1,6 @@
 // Deterministic executor: ResolvedPlan -> real Figma nodes, and Transformation[] -> edits.
 // No model calls, no eval. Every operation is a fixed Plugin API call.
-import type { ExecutionReport, Num, Paint as PlanPaint, ResolvedFrame, ResolvedGradient, ResolvedInstance, ResolvedNode, ResolvedPlan, ResolvedRect, ResolvedShadow, ResolvedSvg, ResolvedText, StructuredError, Transformation, TransformReport } from "@cde/core";
+import type { ExecutionReport, Num, Paint as PlanPaint, ResolvedFrame, ResolvedGradient, ResolvedInstance, ResolvedInteraction, ResolvedNode, ResolvedPlan, ResolvedRect, ResolvedShadow, ResolvedSvg, ResolvedText, StructuredError, Transformation, TransformReport } from "@cde/core";
 
 export class ExecError extends Error {
   constructor(public detail: StructuredError) { super(detail.message); }
@@ -398,6 +398,72 @@ function buildNode(n: ResolvedNode, parent: BaseNode & ChildrenMixin, ctx: Ctx):
   });
 }
 
+/** A plugin Reaction from a resolved interaction whose destination is already a real node id. */
+export function toReaction(i: ResolvedInteraction, destinationId: string | null): Reaction {
+  const trigger: Trigger = i.trigger === "AFTER_TIMEOUT" ? { type: "AFTER_TIMEOUT", timeout: i.delay ?? 0.8 }
+    : i.trigger === "MOUSE_ENTER" || i.trigger === "MOUSE_LEAVE" ? { type: i.trigger, delay: i.delay ?? 0, deprecatedVersion: false }
+    : { type: i.trigger };
+  const easing = { type: i.transition?.easing ?? "EASE_OUT" } as Easing;
+  const t = i.transition;
+  const transition: Transition | null = !t ? null
+    : t.direction ? { type: t.type as DirectionalTransition["type"], direction: t.direction, matchLayers: false, easing, duration: t.duration }
+    : { type: t.type as SimpleTransition["type"], easing, duration: t.duration };
+  let action: Action;
+  if (i.action === "BACK" || i.action === "CLOSE") action = { type: i.action };
+  else if (i.action === "URL") action = { type: "URL", url: i.url! };
+  else action = { type: "NODE", destinationId, navigation: i.action, transition, ...(i.preserveScroll !== undefined ? { preserveScrollPosition: i.preserveScroll } : {}) };
+  return { trigger, actions: [action] };
+}
+
+/** Where a prototype can go: navigate/overlay/swap need a top-level frame (on the page or in a section) of the same page. */
+export function checkDestination(i: ResolvedInteraction, from: SceneNode, dest: BaseNode | null, path: string, warnings: string[]): boolean {
+  if (!dest || dest.removed) { warnings.push(`${path}: interaction target not found; skipped.`); return false; }
+  if (["NAVIGATE", "OVERLAY", "SWAP"].includes(i.action)) {
+    const top = dest.parent?.type === "PAGE" || dest.parent?.type === "SECTION";
+    if (!top || (dest.type !== "FRAME" && dest.type !== "COMPONENT" && dest.type !== "INSTANCE")) { warnings.push(`${path}: "${dest.name}" is not a top-level frame, so it can't be a ${i.action.toLowerCase()} destination; skipped.`); return false; }
+    if (pageOf(dest)?.id !== pageOf(from)?.id) { warnings.push(`${path}: "${dest.name}" is on another page; prototypes only link frames on the same page. Skipped.`); return false; }
+  }
+  return true;
+}
+
+/** Wire prototype interactions and flows once every node of the plan exists. */
+async function applyPrototype(plan: ResolvedPlan, ctx: Ctx) {
+  const idOf = (to: ResolvedInteraction["to"]) => (!to ? null : "path" in to ? ctx.nodeIds[to.path] ?? null : to.nodeId);
+  const all: ResolvedNode[] = [];
+  const walk = (n: ResolvedNode) => { all.push(n); if (n.kind === "frame") n.children.forEach(walk); };
+  [...plan.roots, ...(plan.inserts ?? []).flatMap((x) => x.roots)].forEach(walk);
+  for (const n of all) {
+    const nodeId = ctx.nodeIds[n.path];
+    const node = nodeId ? ((await figma.getNodeByIdAsync(nodeId)) as SceneNode | null) : null;
+    if (!node) continue;
+    if (n.kind === "frame" && node.type === "FRAME") {
+      if (n.scroll) node.overflowDirection = n.scroll;
+      if (n.fixedChildren !== undefined) node.numberOfFixedChildren = n.fixedChildren;
+    }
+    if (!n.interactions?.length || !("setReactionsAsync" in node)) continue;
+    const reactions: Reaction[] = [];
+    for (const i of n.interactions) {
+      const dest = idOf(i.to);
+      if (i.to && !checkDestination(i, node, dest ? await figma.getNodeByIdAsync(dest) : null, n.path, ctx.warnings)) continue;
+      reactions.push(toReaction(i, dest));
+    }
+    if (reactions.length) await (node as SceneNode & ReactionMixin).setReactionsAsync(reactions);
+  }
+  if (plan.flows?.length) {
+    const starts: { nodeId: string; name: string }[] = [];
+    for (const f of plan.flows) {
+      const id = idOf(f.to);
+      const n = id ? await figma.getNodeByIdAsync(id) : null;
+      if (!n || !(n.parent?.type === "PAGE" || n.parent?.type === "SECTION")) { ctx.warnings.push(`Flow "${f.name}": start must be a top-level frame; skipped.`); continue; }
+      starts.push({ nodeId: n.id, name: f.name });
+    }
+    const page = figma.currentPage;
+    // Replace flows with the same name or the same start frame (Figma adds a "Flow 1" by itself with the first
+    // interaction on a page, and one frame can start only one flow); keep the others.
+    page.flowStartingPoints = [...page.flowStartingPoints.filter((x) => !starts.some((s) => s.name === x.name || s.nodeId === x.nodeId)), ...starts];
+  }
+}
+
 /** The page a node lives on. */
 export function pageOf(n: BaseNode): PageNode | undefined {
   let p: BaseNode | null = n;
@@ -460,6 +526,7 @@ export async function executePlan(plan: ResolvedPlan, meta?: { session?: string;
       }
       if (host.type === "SECTION") fitSection(host as SectionNode);
     }
+    await applyPrototype(plan, ctx);
   } catch (e) {
     // Never leave a half-built design behind: remove only what this run created.
     for (const n of created) if (!n.removed) n.remove();

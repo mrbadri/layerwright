@@ -170,6 +170,8 @@ export interface NodeSnapshot {
   strokeWeight?: number;
   opacity?: number;
   clip?: boolean;
+  /** Prototype interactions, summarized: trigger, action and destination. */
+  reactions?: { trigger?: string; delay?: number; action?: string; to?: string; toName?: string; url?: string; transition?: { type: string; direction?: string; duration: number; easing?: string } }[];
   instance?: { componentId?: string; component?: string; componentSet?: string; componentSetId?: string; variants?: Record<string, string>; props?: Record<string, unknown>; overrides?: Record<string, string[]> };
   children?: NodeSnapshot[];
   truncated?: number;
@@ -181,9 +183,21 @@ export type Num = { value?: number; variableId?: string; variableKey?: string };
 
 export type Sizing = "fixed" | "hug" | "fill";
 
+/** A prototype interaction ready for the plugin: `to` is a plan path or an existing node id. */
+export interface ResolvedInteraction {
+  trigger: "ON_CLICK" | "ON_HOVER" | "ON_PRESS" | "ON_DRAG" | "MOUSE_ENTER" | "MOUSE_LEAVE" | "AFTER_TIMEOUT";
+  delay?: number; // seconds
+  action: "NAVIGATE" | "OVERLAY" | "SWAP" | "SCROLL_TO" | "CHANGE_TO" | "BACK" | "CLOSE" | "URL";
+  to?: { path: string } | { nodeId: string };
+  url?: string;
+  transition?: { type: "DISSOLVE" | "SMART_ANIMATE" | "MOVE_IN" | "MOVE_OUT" | "PUSH" | "SLIDE_IN" | "SLIDE_OUT"; direction?: "LEFT" | "RIGHT" | "TOP" | "BOTTOM"; duration: number; easing: string };
+  preserveScroll?: boolean;
+}
+
 export interface ResolvedBase {
   path: string;
   name: string;
+  interactions?: ResolvedInteraction[];
   width?: number;
   height?: number;
   sizingH?: Sizing;
@@ -220,6 +234,8 @@ export interface ResolvedFrame extends ResolvedBase {
   strokeWeights?: { top?: number; right?: number; bottom?: number; left?: number };
   gradient?: ResolvedGradient;
   clip?: boolean;
+  scroll?: "NONE" | "VERTICAL" | "HORIZONTAL" | "BOTH";
+  fixedChildren?: number;
   children: ResolvedNode[];
 }
 
@@ -282,6 +298,8 @@ export interface ResolvedPlan {
   target: { parentId?: string; page?: string; x?: number; y?: number };
   screenGap?: number;
   roots: ResolvedNode[];
+  /** Prototype flow starting points. */
+  flows?: { name: string; description?: string; to: { path: string } | { nodeId: string } }[];
   /** Nodes added into existing parents. */
   inserts?: { parentId: string; index?: number; roots: ResolvedNode[] }[];
 }

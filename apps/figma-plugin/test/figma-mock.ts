@@ -72,6 +72,18 @@ export class N {
     const key = `${name}#${++seq}:0`; this.componentPropertyDefinitions[key] = { type, defaultValue }; return key;
   }
   componentPropertyReferences: any = null;
+  reactions: any[] = []; overflowDirection = "NONE"; numberOfFixedChildren = 0;
+  private _flows: any[] = [];
+  get flowStartingPoints() { return this._flows; }
+  set flowStartingPoints(v: any[]) { if (new Set(v.map((f) => f.nodeId)).size !== v.length) throw new Error("in set_flowStartingPoints: Found duplicate input nodeIds"); this._flows = v; }
+  async setReactionsAsync(r: any[]) {
+    for (const x of r) for (const a of x.actions ?? []) if (a.type === "NODE" && a.destinationId && !nodes.get(a.destinationId)) throw new Error(`destination ${a.destinationId} does not exist`);
+    this.reactions = r;
+    // Like Figma: the first interaction on a page without flows creates "Flow 1" at the top-level frame it starts in.
+    let top: any = this; while (top.parent && top.parent.type !== "PAGE") top = top.parent;
+    const page = top.parent;
+    if (page && r.length && !page._flows.length) page._flows = [{ nodeId: top.id, name: "Flow 1" }];
+  }
   findAllWithCriteriaPlugin(keys: string[]): any[] { return this.children.flatMap((c) => [...(keys.some((k) => c.hasPluginData(k)) ? [c] : []), ...c.findAllWithCriteriaPlugin(keys)]); }
 }
 

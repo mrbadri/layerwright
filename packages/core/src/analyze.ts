@@ -160,6 +160,8 @@ export interface Mismatch { path: string; nodeId?: string; issue: string; expect
 export interface VerifyOptions {
   /** Rendered source size per plan path (HTML imports): frames far from it are reported. */
   sources?: Record<string, { w: number; h?: number }>;
+  /** Plan path → created node id (from the execution report), to check interaction destinations. */
+  nodeIds?: Record<string, string>;
 }
 
 /** Sizes are "far off" beyond 4px or 5%, whichever is larger (font metrics shift text a little). */
@@ -196,6 +198,15 @@ export function verifyAgainstPlan(expected: ResolvedNode, actual: NodeSnapshot |
       }
       const hidden = Object.entries(a.instance?.overrides ?? {}).filter(([, f]) => f.includes("visible")).map(([n]) => n);
       if (hidden.length) out.push({ path: e.path, nodeId: a.id, issue: "layers hidden by an override the plan didn't ask for", actual: hidden });
+    }
+    // Prototype: every interaction exists and points at the node the plan meant.
+    if (e.interactions?.length) {
+      const got = a.reactions ?? [];
+      for (const it of e.interactions) {
+        const want = it.to ? ("path" in it.to ? opts.nodeIds?.[it.to.path] : it.to.nodeId) : undefined;
+        const hit = got.find((r) => r.action === it.action && (r.trigger === it.trigger) && (!want || r.to === want));
+        if (!hit) out.push({ path: e.path, nodeId: a.id, issue: "interaction missing", expected: `${it.trigger} → ${it.action}${want ? ` → ${want}` : ""}`, actual: got.map((r) => `${r.trigger} → ${r.action}${r.to ? ` → ${r.to}` : ""}`) });
+      }
     }
     // Size: fixed sizes from the plan, and the rendered box of the source (HTML import). Text is left out: its
     // width depends on font metrics, and its container is checked instead.

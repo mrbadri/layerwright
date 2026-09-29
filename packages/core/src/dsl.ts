@@ -43,7 +43,30 @@ export const Gradient = z.object({
 /** Take a child out of the Auto Layout flow and place it at x/y inside its parent. */
 export const Position = z.object({ type: z.literal("absolute"), x: z.number(), y: z.number() }).strict();
 
+/** A prototype interaction. `to` is a node `id` from this plan, a screen name from this plan, or an existing Figma
+ *  node id ("12:34"). Durations are milliseconds. */
+export const Interaction = z.object({
+  trigger: z.enum(["click", "hover", "press", "drag", "mouse-enter", "mouse-leave", "after-delay"]).default("click"),
+  delay: z.number().min(0).max(60000).optional().describe("ms, for after-delay / mouse-enter / mouse-leave"),
+  action: z.enum(["navigate", "overlay", "swap", "scroll-to", "change-to", "back", "close", "url"]),
+  to: z.string().min(1).optional(),
+  url: z.string().url().optional(),
+  transition: z.object({
+    type: z.enum(["instant", "dissolve", "smart-animate", "move-in", "move-out", "push", "slide-in", "slide-out"]).default("instant"),
+    direction: z.enum(["left", "right", "top", "bottom"]).optional(),
+    duration: z.number().min(0).max(10000).default(300),
+    easing: z.enum(["ease-out", "ease-in", "ease-in-out", "linear", "ease-in-back", "ease-out-back", "gentle", "quick", "bouncy", "slow"]).default("ease-out"),
+  }).strict().optional(),
+  preserveScroll: z.boolean().optional(),
+}).strict().superRefine((i, ctx) => {
+  if (["navigate", "overlay", "swap", "scroll-to", "change-to"].includes(i.action) && !i.to) ctx.addIssue({ code: "custom", message: `"${i.action}" needs "to"` });
+  if (i.action === "url" && !i.url) ctx.addIssue({ code: "custom", message: '"url" needs "url"' });
+});
+
 const Base = {
+  /** A plan-local id, so interactions and flows can point at this node. */
+  id: z.string().min(1).max(100).optional(),
+  interactions: z.array(Interaction).max(20).optional(),
   name: z.string().min(1).max(200).optional(),
   width: SizeValue.optional(),
   height: SizeValue.optional(),
@@ -80,6 +103,9 @@ const ContainerStyle = {
   clip: z.boolean().optional(),
   /** "rtl" reverses the visual order of horizontal children and right-aligns text inside (Persian/Arabic/Hebrew). */
   direction: z.enum(["ltr", "rtl"]).optional(),
+  /** Prototype: how the frame scrolls when its content is bigger than it, and how many first children stay fixed. */
+  scroll: z.enum(["none", "vertical", "horizontal", "both"]).optional(),
+  fixedChildren: z.number().int().min(0).max(200).optional(),
 };
 
 const ComponentRef = {
@@ -139,6 +165,8 @@ export const DesignPlanSchema = z
     /** Horizontal gap between multiple top-level screens. */
     screenGap: z.number().min(0).max(2000).default(80),
     screens: z.array(DesignNodeSchema).max(30).default([]),
+    /** Prototype flows: named starting points (a screen name, a node id from this plan, or a Figma node id). */
+    prototype: z.object({ flows: z.array(z.object({ name: z.string().min(1), start: z.string().min(1), description: z.string().optional() }).strict()).max(20).optional() }).strict().optional(),
     /** Add nodes into existing parents (e.g. fill 9 slots) in the same run and undo step. Needs approval. */
     inserts: z.array(z.object({ parentId: z.string().min(1), index: z.number().int().min(0).optional(), nodes: z.array(DesignNodeSchema).min(1).max(100) }).strict()).max(50).optional(),
   })

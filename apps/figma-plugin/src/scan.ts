@@ -184,6 +184,19 @@ export async function snapshot(node: BaseNode, opts: { depth?: number; maxNodes?
     if ("opacity" in sn && sn.opacity < 1) s.opacity = Math.round(sn.opacity * 100) / 100;
     if ("clipsContent" in sn && (sn as FrameNode).clipsContent && n.type !== "INSTANCE") s.clip = true;
     if ("fillStyleId" in sn && typeof sn.fillStyleId === "string" && sn.fillStyleId) s.fillStyle = sn.fillStyleId;
+    if ("reactions" in sn && (sn as ReactionMixin).reactions.length) {
+      const out: NonNullable<NodeSnapshot["reactions"]> = [];
+      for (const r of (sn as ReactionMixin).reactions) {
+        const a = r.actions?.[0] ?? r.action;
+        const trig = r.trigger as { type: string; timeout?: number; delay?: number } | null;
+        const item: NonNullable<NodeSnapshot["reactions"]>[number] = { trigger: trig?.type, delay: trig?.timeout ?? (trig?.delay || undefined), action: a?.type === "NODE" ? a.navigation : a?.type };
+        if (a?.type === "NODE" && a.destinationId) { item.to = a.destinationId; item.toName = (await figma.getNodeByIdAsync(a.destinationId))?.name; }
+        if (a?.type === "URL") item.url = a.url;
+        if (a?.type === "NODE" && a.transition) item.transition = { type: a.transition.type, direction: "direction" in a.transition ? a.transition.direction : undefined, duration: Math.round(a.transition.duration * 1000), easing: a.transition.easing.type };
+        out.push(item);
+      }
+      s.reactions = out;
+    }
     if ("boundVariables" in sn && sn.boundVariables) {
       const b: Record<string, string> = {};
       for (const [k, v] of Object.entries(sn.boundVariables)) {

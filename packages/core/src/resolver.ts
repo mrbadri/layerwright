@@ -1,6 +1,6 @@
 // Resolver: maps semantic requirements (component names, roles, variants, tokens) to real
 // Design System entities, and compiles a validated DesignPlan into an executable ResolvedPlan.
-import type { ComponentDefinition, ComponentSetDefinition, DesignSystem, Num, Paint, ResolvedFrame, ResolvedInstance, ResolvedNode, ResolvedPlan, Sizing, StructuredError, TypographyDefinition, VariableDefinition } from "./types.ts";
+import type { ComponentDefinition, ComponentSetDefinition, DesignSystem, Num, Paint, ResolvedFrame, ResolvedInstance, ResolvedInteraction, ResolvedNode, ResolvedPlan, Sizing, StructuredError, TypographyDefinition, VariableDefinition } from "./types.ts";
 import type { DesignPlan } from "./dsl.ts";
 import { norm } from "./semantics.ts";
 
@@ -265,6 +265,33 @@ export function mappingDoubt(found: { def: ComponentDefinition; set?: ComponentS
   return undefined;
 }
 
+// ---------------- Prototype interactions ----------------
+
+const TRIGGER = { click: "ON_CLICK", hover: "ON_HOVER", press: "ON_PRESS", drag: "ON_DRAG", "mouse-enter": "MOUSE_ENTER", "mouse-leave": "MOUSE_LEAVE", "after-delay": "AFTER_TIMEOUT" } as const;
+const ACTION = { navigate: "NAVIGATE", overlay: "OVERLAY", swap: "SWAP", "scroll-to": "SCROLL_TO", "change-to": "CHANGE_TO", back: "BACK", close: "CLOSE", url: "URL" } as const;
+const EASING: Record<string, string> = { "ease-out": "EASE_OUT", "ease-in": "EASE_IN", "ease-in-out": "EASE_IN_AND_OUT", linear: "LINEAR", "ease-in-back": "EASE_IN_BACK", "ease-out-back": "EASE_OUT_BACK", gentle: "GENTLE", quick: "QUICK", bouncy: "BOUNCY", slow: "SLOW" };
+/** Figma node ids ("12:34", instance sublayers "I12:34;5:6"). */
+export const isFigmaId = (s: string) => /^I?\d+:\d+(;\d+:\d+)*$/.test(s);
+
+/** DSL interaction → plugin-ready one. `lookup` maps a plan-local id or screen name to its plan path. */
+export function resolveInteraction(i: any, path: string, lookup: (ref: string) => string | undefined, errors: StructuredError[], known: () => string[]): ResolvedInteraction | undefined {
+  let to: ResolvedInteraction["to"];
+  if (i.to) {
+    const p = lookup(i.to);
+    if (p) to = { path: p };
+    else if (isFigmaId(i.to)) to = { nodeId: i.to };
+    else { errors.push({ type: "INVALID_PLAN", path: `${path}.interactions`, message: `Interaction target "${i.to}" is not a node id or screen name in this plan, nor a Figma node id.`, suggestions: known().slice(0, 12) }); return undefined; }
+  }
+  const t = i.transition;
+  const needsDir = t && ["move-in", "move-out", "push", "slide-in", "slide-out"].includes(t.type);
+  return {
+    trigger: TRIGGER[(i.trigger ?? "click") as keyof typeof TRIGGER], delay: i.delay !== undefined ? i.delay / 1000 : i.trigger === "after-delay" ? 0.8 : undefined,
+    action: ACTION[i.action as keyof typeof ACTION], to, url: i.url,
+    transition: t && t.type !== "instant" ? { type: t.type.toUpperCase().replace(/-/g, "_") as any, direction: needsDir ? (t.direction ?? "left").toUpperCase() : undefined, duration: (t.duration ?? 300) / 1000, easing: EASING[t.easing ?? "ease-out"] } : undefined,
+    preserveScroll: i.preserveScroll,
+  };
+}
+
 // ---------------- Plan compilation ----------------
 
 const CONTAINERS = new Set(["screen", "frame", "section", "stack", "row", "card", "modal", "navigation", "list"]);
@@ -369,8 +396,21 @@ export function compilePlan(ds: DesignSystem, plan: DesignPlan): CompileResult {
     minWidth: node.minWidth, maxWidth: node.maxWidth,
   });
 
+  // Interaction targets: plan-local ids and screen names, by the paths build() will give them.
+  const refs = new Map<string, string>();
+  const collect = (n: any, path: string, top: boolean) => {
+    if (n.id) { if (refs.has(n.id) && refs.get(n.id) !== path) errors.push({ type: "INVALID_PLAN", path, message: `Duplicate node id "${n.id}".` }); refs.set(n.id, path); }
+    if (top && n.name && !refs.has(n.name)) refs.set(n.name, path);
+    (n.children ?? []).forEach((c: any, i: number) => collect(c, `${path}.children[${i}]`, top && n.type === "section"));
+  };
+  plan.screens.forEach((s: any, i: number) => collect(s, `screens[${i}]`, true));
+  (plan.inserts ?? []).forEach((ins: any, i: number) => ins.nodes.forEach((n: any, j: number) => collect(n, `inserts[${i}].nodes[${j}]`, true)));
+  const known = () => [...refs.keys()];
+  const interactions = (node: any, path: string) => node.interactions?.map((i: any) => resolveInteraction(i, path, (r) => refs.get(r), errors, known)).filter(Boolean) as ResolvedInteraction[] | undefined;
+
   const build = (node: any, path: string, parentDir: "HORIZONTAL" | "VERTICAL" | "NONE" | null, rtl = false): ResolvedNode | undefined => {
     const res = buildInner(node, path, parentDir, rtl);
+    if (res && node.interactions?.length) res.interactions = interactions(node, path);
     if (res) Object.assign(res, Object.fromEntries(Object.entries(common(node)).filter(([, v]) => v !== undefined)));
     // An absolutely positioned child doesn't stretch with the flow.
     if (res && node.position && res.sizingH === "fill" && node.width === undefined) res.sizingH = undefined;
@@ -423,6 +463,7 @@ export function compilePlan(ds: DesignSystem, plan: DesignPlan): CompileResult {
         shadows: node.shadows?.map((s: any, i: number) => ({ type: s.type === "inner" ? "INNER_SHADOW" : "DROP_SHADOW", x: s.x, y: s.y, blur: s.blur, spread: s.spread, hex: hexOf(s.color, `${path}.shadows[${i}].color`) ?? "#00000040" })),
         gradient: node.gradient && { angle: node.gradient.angle, stops: node.gradient.stops.map((s: any, i: number) => ({ hex: hexOf(s.color, `${path}.gradient.stops[${i}].color`) ?? "#000000", position: s.position })) },
         clip: node.clip,
+        scroll: node.scroll ? node.scroll.toUpperCase() : undefined, fixedChildren: node.fixedChildren,
         width: w.size ?? (t === "screen" ? 390 : undefined),
         height: h.size,
         sizingH: t === "screen" ? w.mode ?? "fixed" : defaultH(stretch ?? (parentDir === null ? "hug" : undefined)),
@@ -536,6 +577,11 @@ export function compilePlan(ds: DesignSystem, plan: DesignPlan): CompileResult {
   summary.tokensUsed = [...tokenSet];
   summary.textStylesUsed = [...styleSet];
   const body = JSON.stringify({ plan, roots, inserts, scanned: ds.scannedAt });
-  const resolved: ResolvedPlan = { planId: `plan_${hash(body)}`, name: plan.name, target: { ...(plan.target ?? {}) }, screenGap: plan.screenGap, roots, inserts: inserts.length ? inserts : undefined };
+  const flows = (plan.prototype?.flows ?? []).map((f: any, i: number) => {
+    const p = refs.get(f.start);
+    if (!p && !isFigmaId(f.start)) { errors.push({ type: "INVALID_PLAN", path: `prototype.flows[${i}].start`, message: `Flow start "${f.start}" is not a screen name or node id in this plan, nor a Figma node id.`, suggestions: known().slice(0, 12) }); return undefined; }
+    return { name: f.name, description: f.description, to: p ? { path: p } : { nodeId: f.start } };
+  }).filter(Boolean) as NonNullable<ResolvedPlan["flows"]>;
+  const resolved: ResolvedPlan = { planId: `plan_${hash(body)}`, name: plan.name, target: { ...(plan.target ?? {}) }, screenGap: plan.screenGap, roots, inserts: inserts.length ? inserts : undefined, flows: flows.length ? flows : undefined };
   return { ok: errors.length === 0, plan: errors.length === 0 ? resolved : undefined, errors, warnings, summary };
 }

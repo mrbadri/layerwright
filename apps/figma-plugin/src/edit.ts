@@ -1,6 +1,7 @@
 // Edits on existing nodes: rename, move, duplicate, set, delete, resize to fit, and turning layers into
 // components / component sets. One call = one undo step. Fixed Plugin API calls only.
-import { ExecError, findPage, fitSection, pageOf, tag } from "./execute.ts";
+import type { ResolvedInteraction } from "@cde/core";
+import { ExecError, checkDestination, findPage, fitSection, pageOf, tag, toReaction } from "./execute.ts";
 
 export type NodeRef = string; // a node id, or "$n": the node produced by op n of this call
 
@@ -11,6 +12,8 @@ export type EditOp =
   | { op: "set"; node: NodeRef; visible?: boolean; locked?: boolean; x?: number; y?: number; width?: number; height?: number; opacity?: number; text?: string; properties?: Record<string, string | boolean> }
   | { op: "delete"; node: NodeRef }
   | { op: "resizeToFit"; node: NodeRef; padding?: number }
+  | { op: "prototype"; node: NodeRef; interactions: ResolvedInteraction[]; replace?: boolean }
+  | { op: "flow"; name: string; start?: NodeRef; description?: string; remove?: boolean }
   | { op: "componentize"; nodes: NodeRef[]; mode?: "single" | "multiple" | "variants"; name?: string; variants?: Record<string, string>[];
       duplicate?: boolean; exposeText?: boolean | string[]; autoLayout?: boolean; parent?: NodeRef; x?: number; y?: number };
 
@@ -261,6 +264,36 @@ export async function editNodes(p: { ops: EditOp[]; approved?: boolean; meta?: {
             n.resize(Math.max(...kids.map((c) => c.x + c.width)) + pad, Math.max(...kids.map((c) => c.y + c.height)) + pad);
           } else throw new Error(`${n.name} (${n.type}) can't be resized to fit.`);
           r = { op: i, kind: o.op, nodeId: n.id, note: `${Math.round(n.width)}×${Math.round(n.height)}` };
+          break;
+        }
+        case "prototype": {
+          const n = await resolve(o.node, results);
+          if (!("setReactionsAsync" in n)) throw new Error(`${n.name} (${n.type}) can't have interactions.`);
+          const warnings: string[] = [];
+          const reactions: Reaction[] = [];
+          for (const it of o.interactions) {
+            let dest: string | null = null;
+            if (it.to) dest = "path" in it.to ? (await resolve(it.to.path, results)).id : it.to.nodeId;
+            if (it.to && !checkDestination(it, n, dest ? await figma.getNodeByIdAsync(dest) : null, n.name, warnings)) continue;
+            reactions.push(toReaction(it, dest));
+          }
+          if (warnings.length && !reactions.length) throw new Error(warnings.join(" "));
+          const keep = o.replace === false ? [...(n as SceneNode & ReactionMixin).reactions] : [];
+          await (n as SceneNode & ReactionMixin).setReactionsAsync([...keep, ...reactions]);
+          r = { op: i, kind: o.op, nodeId: n.id, note: `${reactions.length} interaction(s)${warnings.length ? `; ${warnings.join(" ")}` : ""}` };
+          break;
+        }
+        case "flow": {
+          const page = figma.currentPage;
+          const rest = page.flowStartingPoints.filter((f) => f.name !== o.name);
+          if (o.remove) { page.flowStartingPoints = rest; r = { op: i, kind: o.op, note: `removed flow "${o.name}"` }; break; }
+          if (!o.start) throw new Error(`flow "${o.name}" needs a start node.`);
+          const n = await resolve(o.start, results);
+          if (!(n.parent?.type === "PAGE" || n.parent?.type === "SECTION")) throw new Error(`A flow starts at a top-level frame; "${n.name}" is inside "${n.parent?.name}".`);
+          if (pageOf(n)?.id !== page.id) await figma.setCurrentPageAsync(pageOf(n)!);
+          // One flow per start frame: replace a same-named flow or the one already starting there (e.g. Figma's "Flow 1").
+          figma.currentPage.flowStartingPoints = [...figma.currentPage.flowStartingPoints.filter((f) => f.name !== o.name && f.nodeId !== n.id), { nodeId: n.id, name: o.name }];
+          r = { op: i, kind: o.op, nodeId: n.id, note: `flow "${o.name}" starts at "${n.name}"` };
           break;
         }
         case "componentize": { r = { ...(await componentize(o, results, p.meta)), op: i }; const n = await figma.getNodeByIdAsync(r.nodeId!); noteSection(n?.parent ?? null); break; }

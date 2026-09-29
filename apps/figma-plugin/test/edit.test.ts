@@ -126,3 +126,52 @@ test("inserts fill several existing parents in one run, at the given index", asy
   assert.equal(items[0].children.at(-1).characters, "Slot A");
   assert.equal(b.children[0].name, "Header");
 });
+
+test("prototype: interactions by plan id / screen name, transitions, scroll, flows; invalid targets are plan errors", async () => {
+  resetFigma();
+  loaded.add("Inter::Regular");
+  const v = validatePlan({ name: "Flow", prototype: { flows: [{ name: "Checkout", start: "Cart" }] }, screens: [
+    { type: "screen", name: "Cart", scroll: "vertical", children: [
+      { type: "frame", id: "pay", name: "Pay", width: 200, height: 44, interactions: [{ action: "navigate", to: "Done", transition: { type: "smart-animate", duration: 400 } }] },
+      { type: "frame", name: "Help", width: 44, height: 44, interactions: [{ trigger: "hover", action: "overlay", to: "tip" }] } ] },
+    { type: "screen", name: "Done", interactions: [{ trigger: "after-delay", delay: 1500, action: "back" }] },
+    { type: "frame", id: "tip", name: "Tip", width: 200, height: 80 },
+  ] });
+  assert.ok(v.success, JSON.stringify(!v.success && v.errors));
+  const c = compilePlan(emptyDesignSystem(), v.plan);
+  assert.deepEqual(c.errors, []);
+  const r = await executePlan(c.plan!);
+  const page = F().currentPage;
+  const [cart, done, tip] = page.children;
+  const pay = cart.children[0];
+  assert.deepEqual(pay.reactions[0], { trigger: { type: "ON_CLICK" }, actions: [{ type: "NODE", destinationId: done.id, navigation: "NAVIGATE", transition: { type: "SMART_ANIMATE", easing: { type: "EASE_OUT" }, duration: 0.4 } }] });
+  assert.equal(cart.children[1].reactions[0].actions[0].navigation, "OVERLAY");
+  assert.equal(cart.children[1].reactions[0].actions[0].destinationId, tip.id);
+  assert.deepEqual(done.reactions[0], { trigger: { type: "AFTER_TIMEOUT", timeout: 1.5 }, actions: [{ type: "BACK" }] });
+  assert.equal(cart.overflowDirection, "VERTICAL");
+  assert.deepEqual(page.flowStartingPoints, [{ nodeId: cart.id, name: "Checkout" }]);
+  assert.ok(r.warnings.every((w: string) => !/interaction/.test(w)));
+
+  const bad = validatePlan({ name: "x", screens: [{ type: "screen", name: "A", interactions: [{ action: "navigate", to: "Nope" }] }] });
+  assert.ok(bad.success);
+  const e = compilePlan(emptyDesignSystem(), bad.plan).errors[0];
+  assert.match(e.message, /"Nope" is not a node id or screen name/);
+  assert.deepEqual(e.suggestions, ["A"]);
+});
+
+test("prototype via figma_edit on existing frames: a nested frame is refused as a navigate destination; flow ops", async () => {
+  const page = resetFigma();
+  const a = F().createFrame(); a.name = "Home"; page.appendChild(a);
+  const b = F().createFrame(); b.name = "Details"; page.appendChild(b);
+  const btn = F().createFrame(); btn.name = "Open"; a.appendChild(btn);
+  const r = await editNodes({ ops: [
+    { op: "prototype", node: btn.id, interactions: [{ trigger: "ON_CLICK", action: "NAVIGATE", to: { nodeId: b.id }, transition: { type: "PUSH", direction: "LEFT", duration: 0.3, easing: "EASE_IN_AND_OUT" } }] },
+    { op: "prototype", node: btn.id, interactions: [{ trigger: "ON_CLICK", action: "NAVIGATE", to: { nodeId: btn.id } }] },
+    { op: "flow", name: "Main", start: a.id },
+  ] });
+  assert.equal(r.failed?.op, 1, "a nested frame can't be a navigate destination");
+  assert.equal(btn.reactions[0].actions[0].transition.direction, "LEFT");
+  const r2 = await editNodes({ ops: [{ op: "flow", name: "Main", start: a.id }] });
+  assert.equal(r2.failed, undefined);
+  assert.deepEqual(page.flowStartingPoints, [{ nodeId: a.id, name: "Main" }]);
+});

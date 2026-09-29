@@ -29,6 +29,7 @@ export function snapshotToPlan(root: NodeSnapshot, ds?: DesignSystem, opts: { na
     const origin = parent?.type === "GROUP" ? { x: parent.x ?? 0, y: parent.y ?? 0 } : { x: 0, y: 0 };
     const position = parent && !inFlow && parent.type !== "SECTION" && n.x !== undefined ? { type: "absolute", x: (n.x ?? 0) - origin.x, y: (n.y ?? 0) - origin.y } : undefined;
     const common: any = { name: n.name, ...(position ? { position } : {}), ...(n.opacity !== undefined ? { opacity: n.opacity } : {}) };
+    if (n.reactions?.length) common.interactions = n.reactions.map((r) => interactionOf(r, path, warnings)).filter(Boolean);
 
     if (n.type === "TEXT" && n.text) {
       const t: any = { type: "text", ...common, content: n.text.chars.replace(/…$/, "") };
@@ -112,6 +113,22 @@ export function snapshotToPlan(root: NodeSnapshot, ds?: DesignSystem, opts: { na
   const top = node(root, undefined, "screens[0]");
   const plan = { version: 1, name: opts.name ?? root.name, screenGap: 80, screens: top ? [top] : [] } as unknown as DesignPlan;
   return { plan, warnings };
+}
+
+const TRIG: Record<string, string> = { ON_CLICK: "click", ON_HOVER: "hover", ON_PRESS: "press", ON_DRAG: "drag", MOUSE_ENTER: "mouse-enter", MOUSE_LEAVE: "mouse-leave", AFTER_TIMEOUT: "after-delay" };
+const ACT: Record<string, string> = { NAVIGATE: "navigate", OVERLAY: "overlay", SWAP: "swap", SCROLL_TO: "scroll-to", CHANGE_TO: "change-to", BACK: "back", CLOSE: "close", URL: "url" };
+const EASE: Record<string, string> = { EASE_OUT: "ease-out", EASE_IN: "ease-in", EASE_IN_AND_OUT: "ease-in-out", LINEAR: "linear", EASE_IN_BACK: "ease-in-back", EASE_OUT_BACK: "ease-out-back", GENTLE: "gentle", QUICK: "quick", BOUNCY: "bouncy", SLOW: "slow" };
+
+/** A snapshot reaction as a DSL interaction; destinations stay Figma node ids. */
+function interactionOf(r: NonNullable<NodeSnapshot["reactions"]>[number], path: string, warnings: string[]) {
+  const trigger = TRIG[r.trigger ?? ""], action = ACT[r.action ?? ""];
+  if (!trigger || !action) { warnings.push(`${path}: a ${r.trigger ?? "?"} → ${r.action ?? "?"} interaction can't be expressed in the DSL; skipped.`); return undefined; }
+  const out: any = { trigger, action };
+  if (r.delay) out.delay = Math.round(r.delay * 1000);
+  if (r.to) out.to = r.to;
+  if (r.url) out.url = r.url;
+  if (r.transition) out.transition = { type: r.transition.type.toLowerCase().replace(/_/g, "-"), ...(r.transition.direction ? { direction: r.transition.direction.toLowerCase() } : {}), duration: r.transition.duration, easing: EASE[r.transition.easing ?? ""] ?? "ease-out" };
+  return out;
 }
 
 function pad(n: NodeSnapshot) {

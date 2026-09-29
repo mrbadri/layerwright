@@ -4,7 +4,7 @@ import { z } from "zod";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
-  analyzeDesign, compilePlan, emptyDesignSystem, enrichDesignSystem, retrieve, snapshotToPlan, summarize, validatePlan, verifyAgainstPlan,
+  analyzeDesign, compilePlan, emptyDesignSystem, enrichDesignSystem, Interaction, resolveInteraction, retrieve, snapshotToPlan, summarize, validatePlan, verifyAgainstPlan,
   type AnalysisResult, type DesignSystem, type ExecutionReport, type NodeSnapshot, type ResolvedPlan, type StructuredError, type TransformReport, type PlanSummary,
 } from "@cde/core";
 import { BridgeError, type FigmaTransport } from "./bridge.ts";
@@ -203,7 +203,7 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
     for (let i = 0; i < roots.length; i++) {
       const id = report.createdRootIds[i];
       const snap = id ? ((await bridge.request<{ nodes: NodeSnapshot[] }>("inspect", { target: id, depth: 12, maxNodes: 4000, expandInstances: true })).nodes[0]) : undefined;
-      all.push(...verifyAgainstPlan(roots[i], snap, { sources }));
+      all.push(...verifyAgainstPlan(roots[i], snap, { sources, nodeIds: report.nodeIds }));
     }
     return all;
   };
@@ -377,6 +377,9 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
       opacity: z.number().min(0).max(1).optional(), text: z.string().optional().describe("Characters of a text layer"), properties: z.record(z.union([z.string(), z.boolean()])).optional().describe("Instance properties/variants by name") }).strict(),
     z.object({ op: z.literal("delete"), node: Ref }).strict(),
     z.object({ op: z.literal("resizeToFit"), node: Ref.describe("A section, an Auto Layout frame (set to hug) or a frame"), padding: z.number().min(0).optional() }).strict(),
+    z.object({ op: z.literal("prototype"), node: Ref, interactions: z.array(Interaction).min(1).max(20).describe('e.g. [{ trigger: "click", action: "navigate", to: "12:34", transition: { type: "smart-animate", duration: 300 } }]; "to" is a node id or "$n"'),
+      replace: z.boolean().optional().describe("Replace the node's interactions (default true) or add to them") }).strict(),
+    z.object({ op: z.literal("flow"), name: z.string().min(1), start: Ref.optional().describe("Top-level frame where the flow starts"), description: z.string().optional(), remove: z.boolean().optional() }).strict(),
     z.object({ op: z.literal("componentize"), nodes: z.array(Ref).min(1).max(100), mode: z.enum(["single", "multiple", "variants"]).optional(),
       name: z.string().optional().describe("Component (single) or component set (variants) name"),
       variants: z.array(z.record(z.string())).optional().describe('One entry per node, e.g. [{ State: "Expanded", Step: "Evidence" }, …]'),
@@ -385,15 +388,19 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
       autoLayout: z.boolean().optional().describe("Give absolutely positioned layers that stack cleanly Auto Layout first, so the component adapts to new text (default true; uneven layouts are left as they are)"),
       parent: Ref.optional(), x: z.number().optional(), y: z.number().optional() }).strict(),
   ]);
-  const MUTATES = new Set(["rename", "move", "set", "delete", "resizeToFit"]);
+  const MUTATES = new Set(["rename", "move", "set", "delete", "resizeToFit", "prototype", "flow"]);
 
   server.registerTool("figma_edit", {
-    description: "Change existing layers in one undo step: rename, move (to a parent, section or page), duplicate, set (visible, position, size, opacity, text, instance properties), delete, resizeToFit (sections grow to their content), and componentize (turn existing frames into a component, several components, or one component set with variants; works on copies by default, and can expose text layers as TEXT properties). Ops run in order and can use \"$n\" for the node made by op n. Changing or deleting existing nodes needs approved=true; without it, delete only hides and renames the node (🗑).",
+    description: "Change existing layers in one undo step: rename, move (to a parent, section or page), duplicate, set (visible, position, size, opacity, text, instance properties), delete, resizeToFit (sections grow to their content), prototype (click/hover/after-delay interactions: navigate, overlay, swap, scroll-to, back, close, url, and change-to between variants for interactive components, with transitions), flow (a prototype starting point), and componentize (turn existing frames into a component, several components, or one component set with variants; works on copies by default, and can expose text layers as TEXT properties). Ops run in order and can use \"$n\" for the node made by op n. Changing or deleting existing nodes needs approved=true; without it, delete only hides and renames the node (🗑).",
     inputSchema: { ops: z.array(EditOp).min(1).max(200), approved: z.boolean().optional().describe("Required for ops that change existing nodes; for delete it means really remove") },
   }, async ({ ops, approved }) => guard(async () => {
     const needs = ops.filter((o) => MUTATES.has(o.op) && o.op !== "delete" || (o.op === "componentize" && o.duplicate === false));
     if (needs.length && !approved) return fail([{ type: "NOT_APPROVED", message: `${needs.length} op(s) change existing nodes (${[...new Set(needs.map((o) => o.op))].join(", ")}). Show the user what will change, then call again with approved: true.` }]);
-    const res = await bridge.request<{ applied: unknown[]; failed?: { op: number; error: string } }>("editNodes", { ops, approved, meta: meta() }, 180_000);
+    // Prototype ops: DSL interactions → plugin-ready ones ("$n" stays a reference to an earlier op's node).
+    const errors: StructuredError[] = [];
+    const sent = ops.map((o, k) => o.op !== "prototype" ? o : { ...o, interactions: o.interactions.map((it) => resolveInteraction(it, `ops[${k}]`, (r) => (/^\$\d+$/.test(r) ? r : undefined), errors, () => ["a Figma node id", '"$n"'])).filter(Boolean) });
+    if (errors.length) return fail(errors);
+    const res = await bridge.request<{ applied: unknown[]; failed?: { op: number; error: string } }>("editNodes", { ops: sent, approved, meta: meta() }, 180_000);
     return res.failed ? fail([{ type: "FIGMA_API_ERROR", message: `op ${res.failed.op} (${ops[res.failed.op].op}): ${res.failed.error}` }], { ...res }) : ok({ success: true, ...res, next: "Check the result with figma_export_image." });
   }));
 
