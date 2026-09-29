@@ -6,7 +6,7 @@ import { withPage } from "./browser.ts";
 export interface ImportTarget { selector: string; name?: string; index?: number }
 /** Replace matching elements with instances of an existing component. Variant = first rule whose test matches
  *  (a CSS selector inside the element, or "text:<substring>"); otherwise `default`. */
-export interface ImportSwap { selector: string; component: string; variants?: { test: string; variant: string }[]; default?: string }
+export interface ImportSwap { selector: string; component: string; id?: string; key?: string; variants?: { test: string; variant: string }[]; default?: string; overrides?: "none" | "text" | "match"; fills?: boolean }
 export interface ImportAction { click: string; index?: number; waitMs?: number }
 export interface ImportedScreen { name: string; width: number; height: number; tree: ImportNode; nodeCount: number }
 
@@ -125,7 +125,7 @@ const SERIALIZE = ({ targets, swaps }: { targets: ImportTarget[] | null; swaps: 
 
     if (notch) { count++; const w = r.width, h = r.height; return [{ type: "svg", name: "notch-fillet", x: r.left - ox, y: r.top - oy, w, h, svg: `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><path d="M0 0A${w} ${h} 0 0 0 ${w} ${h}L0 ${h}Z" fill="${notch.hex}"/></svg>` }]; }
 
-    const visual = isRoot || (!isRoot && swaps.some((s) => el.matches(s.selector))) || bg || grad || sh || bw.some(Boolean) || clip || blend || opacity !== undefined || tag === "image-slot";
+    const visual = isRoot || (cs.display !== "contents" && swaps.some((s) => el.matches(s.selector))) || bg || grad || sh || bw.some(Boolean) || clip || blend || opacity !== undefined || tag === "image-slot";
     const kids: any[] = [];
     const cx = visual ? r.left : ox, cy = visual ? r.top : oy;
     if (tag !== "image-slot") {
@@ -136,7 +136,7 @@ const SERIALIZE = ({ targets, swaps }: { targets: ImportTarget[] | null; swaps: 
     count++;
     const swap = isRoot ? undefined : swaps.find((s) => el.matches(s.selector));
     const swapInfo = swap && {
-      component: swap.component,
+      component: swap.component, id: swap.id, key: swap.key, overrides: swap.overrides, fills: swap.fills,
       variant: swap.variants?.find((v) => v.test.startsWith("text:") ? (el.textContent ?? "").includes(v.test.slice(5)) : !!el.querySelector(v.test))?.variant ?? swap.default,
     };
     const node: any = {

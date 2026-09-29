@@ -1,5 +1,5 @@
 // Builds node trees serialized from rendered HTML (see apps/mcp-server/src/html-import.ts), and manages pages.
-import type { ImportNode, ImportPaint } from "@cde/core";
+import type { ImportNode, ImportPaint, ImportSwapRef } from "@cde/core";
 import { ExecError } from "./execute.ts";
 
 const rgb = (hex: string) => ({ r: parseInt(hex.slice(1, 3), 16) / 255, g: parseInt(hex.slice(3, 5), 16) / 255, b: parseInt(hex.slice(5, 7), 16) / 255 });
@@ -76,43 +76,83 @@ function gradientPaint(g: { angle: number; stops: (ImportPaint & { pos: number }
   };
 }
 
-type Fonts = Awaited<ReturnType<typeof loadFonts>> & { components?: Map<string, ComponentNode | ComponentSetNode> };
+type Fonts = Awaited<ReturnType<typeof loadFonts>> & { components?: Map<string, ComponentNode | ComponentSetNode>; swapWarnings?: string[] };
 
-/** Index local components/sets by name and pre-load their fonts so overrides can be applied synchronously. */
+const refKey = (r: ImportSwapRef) => (r.id ? `id:${r.id}` : r.key ? `key:${r.key}` : `name:${r.component}`);
+/** "State=Open, Size=M" as a set of pairs, so the order of the properties doesn't matter. */
+const pairs = (v: string) => v.split(",").map((p) => p.trim().toLowerCase().replace(/\s*=\s*/, "=")).filter(Boolean).sort().join(",");
+const hasVariant = (c: ComponentNode | ComponentSetNode, v: string) => c.type === "COMPONENT" || c.children.some((k) => k.name === v || pairs(k.name) === pairs(v));
+
+function pageName(n: BaseNode): string {
+  let p: BaseNode | null = n;
+  while (p && p.type !== "PAGE") p = p.parent;
+  return p?.name ?? "?";
+}
+
+/** Resolve every swap's component once (by id, key or name, with the same rules as plans) and pre-load their fonts,
+ *  so overrides can be applied synchronously. Duplicate names are never picked silently. */
 async function componentIndex(trees: ImportNode[]) {
-  const wanted = new Set<string>();
-  const visit = (n: ImportNode) => { if (n.type === "frame") { if (n.swap) wanted.add(n.swap.component); n.children.forEach(visit); } };
+  const wanted = new Map<string, { ref: ImportSwapRef; variants: Set<string> }>();
+  const visit = (n: ImportNode) => {
+    if (n.type !== "frame") return;
+    if (n.swap) { const k = refKey(n.swap); const e = wanted.get(k) ?? { ref: n.swap, variants: new Set<string>() }; if (n.swap.variant) e.variants.add(n.swap.variant); wanted.set(k, e); }
+    n.children.forEach(visit);
+  };
   trees.forEach(visit);
   const map = new Map<string, ComponentNode | ComponentSetNode>();
   if (!wanted.size) return map;
   await figma.loadAllPagesAsync();
-  for (const c of figma.root.findAllWithCriteria({ types: ["COMPONENT_SET", "COMPONENT"] })) {
-    if (wanted.has(c.name) && !(c.type === "COMPONENT" && c.parent?.type === "COMPONENT_SET")) map.set(c.name, c);
+  let local: (ComponentNode | ComponentSetNode)[] | undefined;
+  for (const [k, { ref, variants }] of wanted) {
+    let c: ComponentNode | ComponentSetNode | null = null;
+    if (ref.id) {
+      const n = await figma.getNodeByIdAsync(ref.id);
+      if (n && (n.type === "COMPONENT" || n.type === "COMPONENT_SET")) c = n;
+      else throw new ExecError({ type: "COMPONENT_NOT_FOUND", component: ref.component, message: `No component or component set with id ${ref.id}.` });
+    } else if (ref.key) {
+      try { c = await figma.importComponentSetByKeyAsync(ref.key); } catch { try { c = await figma.importComponentByKeyAsync(ref.key); } catch (e) {
+        throw new ExecError({ type: "COMPONENT_NOT_FOUND", component: ref.component, message: `Could not import component key ${ref.key} (is the library enabled for this file?): ${(e as Error).message}` });
+      } }
+    } else {
+      local ??= figma.root.findAllWithCriteria({ types: ["COMPONENT_SET", "COMPONENT"] }).filter((x) => !(x.type === "COMPONENT" && x.parent?.type === "COMPONENT_SET"));
+      const named = local.filter((x) => x.name === ref.component);
+      if (!named.length) throw new ExecError({ type: "COMPONENT_NOT_FOUND", component: ref.component, message: `No local component named "${ref.component}". For a library component pass its key.` });
+      const fit = named.filter((x) => [...variants].every((v) => hasVariant(x, v)));
+      if (fit.length === 1 || (named.length === 1 && !fit.length)) c = fit[0] ?? named[0];
+      else {
+        const describe = (x: ComponentNode | ComponentSetNode) => ({ id: x.id, page: pageName(x), variantCount: x.type === "COMPONENT_SET" ? x.children.length : 0 });
+        throw new ExecError({ type: "AMBIGUOUS_COMPONENT", component: ref.component, candidates: (fit.length ? fit : named).map(describe),
+          message: `${named.length} components are named "${ref.component}"${fit.length ? " and all have the requested variants" : " and none has all the requested variants"}. Pass the swap's id to choose one.` });
+      }
+    }
+    map.set(k, c);
   }
-  const missing = [...wanted].filter((w) => !map.has(w));
-  if (missing.length) throw new ExecError({ type: "COMPONENT_NOT_FOUND", message: `No local component named ${missing.map((m) => `"${m}"`).join(", ")}.` });
   const fonts = new Set<string>();
   for (const c of map.values()) for (const t of c.findAllWithCriteria({ types: ["TEXT"] })) if (t.fontName !== figma.mixed) fonts.add(JSON.stringify(t.fontName));
-  await Promise.all([...fonts].map((f) => figma.loadFontAsync(JSON.parse(f))));
+  await Promise.all([...fonts].map((f) => figma.loadFontAsync(JSON.parse(f)).catch(() => undefined)));
   return map;
 }
 
+/** The requested variant, matched by name (property order doesn't matter). Unknown variants are an error. */
 function variantOf(c: ComponentNode | ComponentSetNode, variant?: string): ComponentNode {
   if (c.type === "COMPONENT") return c;
   const kids = c.children as ComponentNode[];
-  return kids.find((k) => k.name === variant) ?? (c.defaultVariant as ComponentNode) ?? kids[0];
+  if (!variant) return (c.defaultVariant as ComponentNode) ?? kids[0];
+  const hit = kids.find((k) => k.name === variant) ?? kids.find((k) => pairs(k.name) === pairs(variant));
+  if (!hit) throw new ExecError({ type: "INVALID_VARIANT", component: c.name, message: `Variant "${variant}" not found on "${c.name}".`, suggestions: kids.slice(0, 12).map((k) => k.name) });
+  return hit;
 }
 
-/** Copy the serialized element's content onto an instance: match children by type and position, set text and fills,
- *  hide instance layers the element doesn't have (e.g. a missing price). */
-function override(inst: SceneNode, src: ImportNode) {
+/** Copy the serialized element's content onto an instance: match children by type and position and set text.
+ *  "match" also hides instance layers the element doesn't have (e.g. a missing price); fills only when asked. */
+function override(inst: SceneNode, src: ImportNode, mode: "text" | "match", fills: boolean) {
   if (inst.type === "TEXT" && src.type === "text") { if (inst.characters !== src.content) inst.characters = src.content; return; }
   if (src.type !== "frame" || !("children" in inst)) return;
-  if ("fills" in inst && (src.fill || src.gradient)) {
-    const fills: Paint[] = [];
-    if (src.fill) fills.push(solid(src.fill));
-    if (src.gradient) fills.push(gradientPaint(src.gradient));
-    if (JSON.stringify((inst as FrameNode).fills) !== JSON.stringify(fills)) (inst as FrameNode).fills = fills;
+  if (fills && "fills" in inst && (src.fill || src.gradient)) {
+    const f: Paint[] = [];
+    if (src.fill) f.push(solid(src.fill));
+    if (src.gradient) f.push(gradientPaint(src.gradient));
+    if (JSON.stringify((inst as FrameNode).fills) !== JSON.stringify(f)) (inst as FrameNode).fills = f;
   }
   const used = new Set<ImportNode>();
   for (const c of inst.children) {
@@ -123,9 +163,9 @@ function override(inst: SceneNode, src: ImportNode) {
       const dist = Math.abs(s.x - c.x) + Math.abs(s.y - c.y) - (s.type === "svg" ? 0 : 0.5);
       if (dist < d) { d = dist; best = s; }
     }
-    if (!best) { if (c.type === "TEXT" || c.type === "FRAME") c.visible = false; continue; }
+    if (!best) { if (mode === "match" && (c.type === "TEXT" || c.type === "FRAME")) c.visible = false; continue; }
     used.add(best);
-    if (best.type !== "svg") override(c, best);
+    if (best.type !== "svg") override(c, best, mode, fills);
   }
 }
 
@@ -157,12 +197,13 @@ function build(n: ImportNode, parent: BaseNode & ChildrenMixin, fonts: Fonts): S
     t.y = n.y;
     return t;
   }
-  if (n.swap && fonts.components?.has(n.swap.component)) {
-    const inst = variantOf(fonts.components.get(n.swap.component)!, n.swap.variant).createInstance();
+  if (n.swap && fonts.components?.has(refKey(n.swap))) {
+    const inst = variantOf(fonts.components.get(refKey(n.swap))!, n.swap.variant).createInstance();
     parent.appendChild(inst);
     inst.x = n.x; inst.y = n.y;
     if (Math.abs(inst.width - n.w) > 0.5 || Math.abs(inst.height - n.h) > 0.5) inst.resize(n.w, n.h);
-    override(inst, n);
+    const mode = n.swap.overrides ?? "text";
+    if (mode !== "none") override(inst, n, mode, !!n.swap.fills);
     return inst;
   }
   const f = figma.createFrame();

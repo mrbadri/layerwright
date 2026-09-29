@@ -211,6 +211,9 @@ async function buildText(n: ResolvedText, parent: BaseNode & ChildrenMixin, ctx:
     if (!style) throw new ExecError({ type: "STYLE_NOT_FOUND", path: n.path, message: `Text style ${n.textStyleId} not found.` });
     await ctx.font(style.fontName);
     await t.setTextStyleIdAsync(style.id);
+    // Explicit font fields override the style (the style stays linked, with overrides).
+    if (n.fontFamily || n.fontWeight || n.italic !== undefined) t.fontName = await ctx.resolveFont(n.fontFamily ?? style.fontName.family, n.fontWeight ?? style.fontName.style, n.italic ?? /italic/i.test(style.fontName.style), n.path);
+    if (n.fontSize) t.fontSize = n.fontSize;
   } else {
     t.fontName = await ctx.resolveFont(n.fontFamily ?? "Inter", n.fontWeight ?? "Regular", !!n.italic, n.path);
     if (n.fontSize) t.fontSize = n.fontSize;
@@ -234,13 +237,17 @@ async function getComponent(id: string, key: string | undefined, remote: boolean
   // Library import fails when the source library isn't enabled/published (e.g. in a copied file);
   // the remote component is usually still present in this file, so fall back to it by id.
   if (remote && key) { try { c = await figma.importComponentByKeyAsync(key); } catch (e) { importError = e; } }
-  if (!c) { try { c = await figma.getNodeByIdAsync(id); } catch (e) { importError ??= e; } }
+  // A key can also name a component set (e.g. one found in a library search): use its default variant.
+  if (!c && remote && key && !id) { try { c = (await figma.importComponentSetByKeyAsync(key)).defaultVariant; } catch (e) { importError ??= e; } }
+  if (!c && id) { try { c = await figma.getNodeByIdAsync(id); } catch (e) { importError ??= e; } }
   if (!c) throw new ExecError({ type: "COMPONENT_NOT_FOUND", path, message: `Could not load component ${id}: ${importError instanceof Error ? importError.message : String(importError ?? "not in this file")}` });
   if (!c || c.type !== "COMPONENT") throw new ExecError({ type: "COMPONENT_NOT_FOUND", path, message: `Component ${id} no longer exists (rescan the Design System).` });
   return c;
 }
 
-async function setInstanceContent(inst: InstanceNode, properties: Record<string, string | boolean>, overrides: Record<string, string>, path: string, ctx: Ctx) {
+const loose = (s: string) => s.split("#")[0].toLowerCase().replace(/[\s_-]+/g, "");
+
+async function setInstanceContent(inst: InstanceNode, properties: Record<string, string | boolean>, overrides: Record<string, string>, path: string, ctx: Ctx, late: Record<string, string | boolean> = {}) {
   const texts = inst.findAllWithCriteria({ types: ["TEXT"] });
   for (const t of texts) await ctx.fontsOf(t);
   const available = inst.componentProperties;
@@ -249,9 +256,28 @@ async function setInstanceContent(inst: InstanceNode, properties: Record<string,
     if (k in available) valid[k] = v;
     else ctx.warnings.push(`${path}: property "${k.split("#")[0]}" not on instance; skipped.`);
   }
+  // Unscanned library component: match names now that the real properties are known.
+  overrides = { ...overrides };
+  for (const [k, v] of Object.entries(late)) {
+    const key = Object.keys(available).find((a) => loose(a) === loose(k));
+    if (key) {
+      const def = available[key];
+      if (def.type === "BOOLEAN") valid[key] = v === true || v === "true";
+      else if (def.type === "VARIANT") {
+        const opts = (inst.mainComponent?.parent?.type === "COMPONENT_SET" ? (inst.mainComponent.parent as ComponentSetNode).componentPropertyDefinitions[key]?.variantOptions : undefined) ?? [];
+        const opt = opts.find((o) => loose(o) === loose(String(v)));
+        if (opt || !opts.length) valid[key] = opt ?? String(v);
+        else throw new ExecError({ type: "INVALID_VARIANT", path, message: `Variant ${key}="${v}" not found. Options: ${opts.join(" | ")}` });
+      } else valid[key] = String(v);
+    } else if (typeof v === "string" && texts.some((t) => loose(t.name) === loose(k))) overrides[texts.find((t) => loose(t.name) === loose(k))!.name] = v;
+    else ctx.warnings.push(`${path}: "${k}" is not a property or text layer of this component; skipped. Available: ${Object.keys(available).map((a) => a.split("#")[0]).join(", ") || "none"}.`);
+  }
   if (Object.keys(valid).length) inst.setProperties(valid);
+  // A variant change can rebuild the instance's layers: look the text layers up again.
+  const after = Object.keys(valid).length ? inst.findAllWithCriteria({ types: ["TEXT"] }) : texts;
+  if (after !== texts) for (const t of after) await ctx.fontsOf(t);
   for (const [layer, value] of Object.entries(overrides)) {
-    const t = texts.find((x) => x.name === layer);
+    const t = after.find((x) => x.name === layer);
     if (!t) { ctx.warnings.push(`${path}: text layer "${layer}" not found in instance.`); continue; }
     t.characters = value;
   }
@@ -263,7 +289,7 @@ async function buildInstance(n: ResolvedInstance, parent: BaseNode & ChildrenMix
   parent.appendChild(inst);
   ctx.nodeIds[n.path] = inst.id;
   if (n.name && n.name !== comp.name) inst.name = n.name;
-  await setInstanceContent(inst, n.properties, n.textOverrides, n.path, ctx);
+  await setInstanceContent(inst, n.properties, n.textOverrides, n.path, ctx, n.lateProps);
   applySizing(inst, n, ctx);
   return inst;
 }
@@ -343,6 +369,8 @@ export async function executePlan(plan: ResolvedPlan): Promise<ExecutionReport> 
     for (const root of plan.roots) {
       const node = await buildNode(root, parent, ctx);
       created.push(node);
+      // A root with an explicit absolute position keeps it; the others are laid out side by side.
+      if (root.absolute) continue;
       if (onPage || !isAuto(parent)) { node.x = x; node.y = y; x += node.width + (plan.screenGap ?? 80); }
     }
   } catch (e) {

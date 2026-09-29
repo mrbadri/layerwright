@@ -109,3 +109,18 @@ test("DSL rejects bad image sources and non-SVG icon markup at compile time", ()
   const c = compilePlan(fixtureDs(), v.plan);
   assert.equal(c.errors.length, 2);
 });
+
+test("a root with position absolute inside target.parentId keeps its x/y instead of being placed at 0,0", async () => {
+  const page = resetFigma();
+  const host: any = (globalThis as any).figma.createFrame();
+  page.appendChild(host);
+  const v = validatePlan({ name: "t", target: { parentId: host.id }, screens: [
+    { type: "frame", name: "Title", width: 200, height: 40 },
+    { type: "frame", name: "Badge", width: 40, height: 40, position: { type: "absolute", x: 80, y: 180 } },
+  ] });
+  assert.ok(v.success);
+  const c = compilePlan({ ...fixtureDs(), typography: [] }, v.plan);
+  await executePlan(c.plan!);
+  const badge = host.children.find((n: any) => n.name === "Badge");
+  assert.deepEqual([badge.x, badge.y], [80, 180]);
+});

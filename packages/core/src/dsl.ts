@@ -77,8 +77,10 @@ const ContainerStyle = {
 };
 
 const ComponentRef = {
-  /** Component or component set name, e.g. "Button" or "Forms/Input". */
-  component: z.string().min(1).optional(),
+  /** Component or component set: a name ("Button", "Forms/Input"), or an exact { id } / { key } when names are
+   *  ambiguous. A { key } may also be a library component that isn't used in this file yet. */
+  component: z.union([z.string().min(1), z.object({ id: z.string().min(1).optional(), key: z.string().min(1).optional() }).strict()
+    .refine((c) => !!c.id !== !!c.key, "give exactly one of id or key")]).optional(),
   /** Semantic role used to find a component, e.g. "primary-action", "text-input". */
   role: z.string().min(1).optional(),
   /** Variant name ("Primary") or explicit variant properties ({ Type: "Primary", Size: "Large" }). */
@@ -100,7 +102,9 @@ export const DesignNodeSchema: z.ZodType<any> = z.lazy(() =>
     ...(["screen", "frame", "section", "stack", "row", "card", "modal", "navigation", "list"] as const).map((t) =>
       z.object({ type: z.literal(t), ...Base, ...ContainerStyle, ...ComponentRef, children: z.array(DesignNodeSchema).max(200).default([]) }).strict(),
     ) as any,
-    z.object({ type: z.literal("text"), ...Base, content: z.string().max(5000), role: TextRole.optional(), style: z.string().optional(), color: ColorRef.optional(), fontSize: z.number().min(1).max(400).optional(),
+    /** Typography: an explicit `style` is applied first and explicit font fields override it. A `role` picks a DS text
+     *  style only when no font fields are given. `style: null` never applies a style. */
+    z.object({ type: z.literal("text"), ...Base, content: z.string().max(5000), role: TextRole.optional(), style: z.string().nullable().optional(), color: ColorRef.optional(), fontSize: z.number().min(1).max(400).optional(),
       fontFamily: z.string().min(1).max(100).optional(), weight: Weight.optional(), italic: z.boolean().optional(),
       lineHeight: LineHeight.optional(), letterSpacing: LetterSpacing.optional(),
       align: z.enum(["left", "center", "right", "justified"]).optional(), direction: z.enum(["ltr", "rtl"]).optional() }).strict(),

@@ -119,3 +119,24 @@ maybe("single-line labels (buttons, links) hug their text so Figma's font metric
     assert.equal(t.parent.width, "hug", `${label} container`);
   }
 });
+
+maybe("display: contents wrappers vanish; fixed CSS sizes stay fixed; content-sized boxes still hug", async () => {
+  const { plan } = await renderToPlan(fixture("sizing.html"), { viewports: [1440] });
+  const find = (n: any, pred: (x: any) => boolean): any => (pred(n) ? n : (n.children ?? []).map((c: any) => find(c, pred)).find(Boolean));
+  const row = find(plan.screens[0], (n) => n.layout?.direction === "horizontal" && n.children?.length === 3);
+  assert.ok(row, "row found");
+  const [tile, step, chip] = row.children;
+  // The icon sits directly in the tile: no frame for the display:contents wrapper, no page-sized padding.
+  assert.equal(tile.children.length, 1);
+  assert.equal(tile.children[0].type, "icon");
+  assert.equal(tile.width, 44);
+  assert.equal(tile.height, 44);
+  assert.ok(typeof tile.layout.padding !== "object" || Object.values(tile.layout.padding).every((p: any) => p < 44));
+  // A 32×32 step circle keeps its size; its single-line label still hugs.
+  assert.equal(step.width, 32);
+  assert.equal(step.height, 32);
+  assert.equal(step.children[0].width, "hug");
+  // A padded chip is exactly its content: it hugs.
+  assert.equal(chip.width, "hug");
+  assert.equal(chip.height, "hug");
+});

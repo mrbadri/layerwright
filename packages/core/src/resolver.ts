@@ -16,7 +16,8 @@ const ROLE_BASE: Record<string, string> = {
 };
 const ROLE_EMPHASIS: Record<string, string> = { "primary-action": "primary", "secondary-action": "secondary", "destructive-action": "destructive", "password-input": "password" };
 
-type Match = { def: ComponentDefinition; set?: ComponentSetDefinition };
+type Match = { def: ComponentDefinition; set?: ComponentSetDefinition; unscanned?: boolean };
+export interface ComponentRequest { component?: string | { id?: string; key?: string }; role?: string; variant?: string | Record<string, string> }
 type Fail = { error: StructuredError };
 
 export class Resolver {
@@ -29,15 +30,56 @@ export class Resolver {
     return this.ds.components.filter((c) => c.componentSetId === set.id);
   }
 
-  /** Find a component (and variant) by name and/or semantic role. */
-  findComponent(req: { component?: string; role?: string; variant?: string | Record<string, string> }, path = ""): Match | Fail {
+  /** Resolve a variant inside a chosen set or standalone component. */
+  private within(c: { kind: "set"; v: ComponentSetDefinition } | { kind: "comp"; v: ComponentDefinition }, variant: ComponentRequest["variant"], role: string | undefined, path: string, start?: ComponentDefinition): Match | Fail {
+    if (c.kind === "comp") return { def: c.v }; // standalone component: a variant is ignored, not fatal
+    const set = c.v;
+    const variants = this.variantsOf(set);
+    if (variants.length === 0) return { error: { type: "COMPONENT_NOT_FOUND", path, component: set.name, message: `Component set "${set.name}" has no variants available.` } };
+    const def = start ?? variants.find((v) => v.id === set.defaultVariantId) ?? variants[0];
+    if (start && !variant) return { def: start, set };
+    const pick = this.pickVariant(set, variants, def, variant, role, path);
+    if ("error" in pick) return pick;
+    return { def: pick.def, set };
+  }
+
+  /** One line per candidate, so an ambiguity error says exactly which set is which. */
+  describe(set: ComponentSetDefinition | ComponentDefinition) {
+    const variants = "variantIds" in set ? this.variantsOf(set) : [];
+    const props = "variantIds" in set ? set.properties : set.properties ?? [];
+    return { id: set.id, key: set.key, name: set.name, page: set.page, remote: set.remote, variantCount: variants.length,
+      properties: props.map((p) => (p.type === "VARIANT" ? `${p.name}: ${(p.options ?? []).join(" | ")}` : `${p.name} (${p.type.toLowerCase()})`)) };
+  }
+
+  /** Find a component (and variant) by exact id/key, name and/or semantic role. Equal name matches are never
+   *  picked silently: the one that has the requested variant wins, otherwise AMBIGUOUS_COMPONENT. */
+  findComponent(req: ComponentRequest, path = ""): Match | Fail {
     const standalone = this.ds.components.filter((c) => !c.componentSetId);
     type Cand = { kind: "set"; v: ComponentSetDefinition } | { kind: "comp"; v: ComponentDefinition };
+    const role = req.role;
+
+    if (req.component && typeof req.component === "object") {
+      const { id, key } = req.component;
+      const hit = (x: { id: string; key: string }) => (id ? x.id === id : x.key === key);
+      const set = this.ds.componentSets.find(hit);
+      if (set) return this.within({ kind: "set", v: set }, req.variant, role, path);
+      const comp = this.ds.components.find(hit);
+      if (comp) {
+        const parent = comp.componentSetId ? this.setById.get(comp.componentSetId) : undefined;
+        return parent ? this.within({ kind: "set", v: parent }, req.variant, role, path, comp) : { def: comp };
+      }
+      if (key) {
+        // Not in the scan (a library component this file doesn't use yet): the plugin imports it by key, and
+        // variants/props are matched by name on the instance.
+        return { def: { id: "", key, name: `library:${key}`, remote: true }, unscanned: true };
+      }
+      return { error: { type: "COMPONENT_NOT_FOUND", path, component: id, message: `No component or component set with id "${id}" in the scan. Rescan (figma_scan_design_system refresh: true) if it was just created.` } };
+    }
+
     const cands: Cand[] = [...this.ds.componentSets.map((v) => ({ kind: "set" as const, v })), ...standalone.map((v) => ({ kind: "comp" as const, v }))];
-    let best: { c: Cand; score: number } | undefined;
+    const scored: { c: Cand; score: number }[] = [];
     const want = req.component ? norm(req.component) : undefined;
     const wantLast = req.component ? norm(req.component.split("/").pop()!) : undefined;
-    const role = req.role;
     const baseRole = role ? ROLE_BASE[role] ?? role : undefined;
     for (const c of cands) {
       const n = norm(c.v.name);
@@ -60,22 +102,24 @@ export class Resolver {
       if (c.v.remote) score += 1;
       if (c.kind === "set") score += 2; // prefer sets (they carry variants)
       score -= n.split(" ").length * 0.1; // prefer shorter, canonical names
-      if (!best || score > best.score) best = { c, score };
+      scored.push({ c, score });
     }
-    if (!best) {
-      return { error: { type: "COMPONENT_NOT_FOUND", path, component: req.component ?? req.role, message: `No component matches ${req.component ? `name "${req.component}"` : ""}${req.component && role ? " / " : ""}${role ? `role "${role}"` : ""}.`, suggestions: this.suggest(req.component ?? role ?? "") } };
+    if (!scored.length) {
+      return { error: { type: "COMPONENT_NOT_FOUND", path, component: (req.component as string | undefined) ?? req.role, message: `No component matches ${req.component ? `name "${req.component}"` : ""}${req.component && role ? " / " : ""}${role ? `role "${role}"` : ""}.`, suggestions: this.suggest((req.component as string | undefined) ?? role ?? "") } };
     }
-    if (best.c.kind === "comp") {
-      if (req.variant) return { def: best.c.v }; // standalone component: variant ignored but not fatal
-      return { def: best.c.v };
+    const top = Math.max(...scored.map((x) => x.score));
+    const tied = scored.filter((x) => Math.abs(x.score - top) < 1e-9);
+    if (!want || tied.length === 1 || top < 80) return this.within(tied[0].c, req.variant, role, path);
+    // Several components with the same name: keep the ones that can satisfy the request.
+    const results = tied.map((x) => ({ x, r: this.within(x.c, req.variant, role, path) }));
+    const fits = results.filter((y) => !("error" in y.r));
+    if (fits.length === 1) return fits[0].r;
+    const candidates = tied.map((x) => this.describe(x.c.v));
+    if (!fits.length) {
+      const first = results[0].r as Fail;
+      return { error: { ...first.error, message: `${first.error.message} (${tied.length} components are named "${req.component}"; none has this variant.)`, candidates } };
     }
-    const set = best.c.v;
-    const variants = this.variantsOf(set);
-    if (variants.length === 0) return { error: { type: "COMPONENT_NOT_FOUND", path, component: set.name, message: `Component set "${set.name}" has no variants available.` } };
-    const def = variants.find((v) => v.id === set.defaultVariantId) ?? variants[0];
-    const pick = this.pickVariant(set, variants, def, req.variant, role, path);
-    if ("error" in pick) return pick;
-    return { def: pick.def, set };
+    return { error: { type: "AMBIGUOUS_COMPONENT", path, component: req.component as string, message: `${fits.length} components are named "${req.component}" and all match. Pass component: { id } (or { key }) to choose one.`, candidates: fits.map((y) => this.describe(y.x.c.v)) } };
   }
 
   private pickVariant(set: ComponentSetDefinition, variants: ComponentDefinition[], def: ComponentDefinition, variant: string | Record<string, string> | undefined, role: string | undefined, path: string): { def: ComponentDefinition } | Fail {
@@ -265,6 +309,15 @@ export function compilePlan(ds: DesignSystem, plan: DesignPlan): CompileResult {
   const instanceFrom = (node: any, path: string, role?: string, defaultName?: string): ResolvedInstance | Fail => {
     const m = r.findComponent({ component: node.component, role: node.role ?? role, variant: node.variant }, path);
     if ("error" in m) return m;
+    if (m.unscanned) {
+      // A library component this file doesn't use yet: variants and props are matched by name when it's imported.
+      const variant = typeof node.variant === "string" ? Object.fromEntries(node.variant.split(",").map((p: string) => p.split("=").map((x) => x.trim())).filter((kv: string[]) => kv.length === 2)) : node.variant ?? {};
+      if (typeof node.variant === "string" && !node.variant.includes("=")) warnings.push(`${path}: variant "${node.variant}" needs "Prop=Value" form for an unscanned library component; ignored.`);
+      const lateProps = { ...variant, ...Object.fromEntries(Object.entries(node.props ?? {}).map(([k, v]) => [k, typeof v === "number" ? String(v) : v])) } as Record<string, string | boolean>;
+      summary.instances[m.def.name] = (summary.instances[m.def.name] ?? 0) + 1;
+      const w = sizing(node.width), h = sizing(node.height);
+      return { kind: "instance", path, name: node.name ?? defaultName ?? "Instance", componentId: "", componentKey: m.def.key, remote: true, componentName: m.def.name, properties: {}, textOverrides: {}, lateProps, width: w.size, height: h.size, sizingH: w.mode, sizingV: h.mode };
+    }
     const { properties, textOverrides } = r.mapProps(m.def, m.set, node.props, path, warnings);
     const label = m.set ? `${m.set.name} / ${Object.values(m.def.variants ?? {}).join(", ")}` : m.def.name;
     summary.instances[label] = (summary.instances[label] ?? 0) + 1;
@@ -372,10 +425,14 @@ export function compilePlan(ds: DesignSystem, plan: DesignPlan): CompileResult {
     if (t === "text" || (t === "link" && !node.component && !node.role)) {
       summary.texts++;
       const role = t === "link" ? "body" : node.role ?? "body";
-      const st = r.findTextStyle(node.style, role);
-      if (node.style && !st) errors.push({ type: "STYLE_NOT_FOUND", path: `${path}.style`, message: `No text style matches "${node.style}".`, suggestions: ds.typography.map((x) => x.name).slice(0, 10) });
+      // Explicit font fields always win. A style is applied when named explicitly, or inferred from a role only
+      // when the node sets no font fields of its own (an HTML import sets them all, and must keep them).
+      const explicitType = node.fontSize !== undefined || node.fontFamily !== undefined || node.weight !== undefined;
+      const inferFromRole = t === "text" && node.role && !explicitType && node.style !== null;
+      const st = typeof node.style === "string" ? r.findTextStyle(node.style, undefined) : inferFromRole ? r.findTextStyle(undefined, role) : undefined;
+      if (typeof node.style === "string" && !st) errors.push({ type: "STYLE_NOT_FOUND", path: `${path}.style`, message: `No text style matches "${node.style}".`, suggestions: ds.typography.map((x) => x.name).slice(0, 10) });
       if (st) styleSet.add(st.name);
-      else if (!node.style && ds.typography.length) warnings.push(`${path}: no text style for role "${role}"; using raw font size.`);
+      else if (inferFromRole && ds.typography.length) warnings.push(`${path}: no text style for role "${role}"; using raw font size.`);
       const fb = ROLE_FALLBACK[role] ?? ROLE_FALLBACK.body;
       let color = node.color;
       if (!color && t === "link") color = r.findVariable("link", "COLOR")?.name ?? r.findVariable("primary", "COLOR")?.name;
@@ -386,7 +443,7 @@ export function compilePlan(ds: DesignSystem, plan: DesignPlan): CompileResult {
         letterSpacing: node.letterSpacing ? { unit: LH_UNIT[node.letterSpacing.unit as "px"], value: node.letterSpacing.value } : undefined,
         kind: "text", path, name: node.name ?? (t === "link" ? "Link" : node.content.slice(0, 40)), content: node.content,
         textStyleId: st?.styleId, textStyleKey: st ? ds.styles.find((s) => s.id === st.styleId && s.remote)?.key : undefined,
-        fontSize: st ? undefined : node.fontSize ?? fb.size, fontWeight: node.weight ? WEIGHT[node.weight as keyof typeof WEIGHT] : st ? undefined : fb.weight,
+        fontSize: node.fontSize ?? (st ? undefined : fb.size), fontWeight: node.weight ? WEIGHT[node.weight as keyof typeof WEIGHT] : st ? undefined : fb.weight,
         fill: notePaint(r.resolvePaint(color, `${path}.color`, errors)),
         align, hyperlink: node.href,
         width: w.size, height: h.size, sizingH: defaultH(stretch), sizingV: h.mode,

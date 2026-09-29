@@ -88,9 +88,10 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
   }));
 
   server.registerTool("figma_inspect", {
-    description: "Return a compact semantic snapshot (type, name, size, auto layout, fills, bound variables, text style, instance component/variant/props, children) of the selection (default), the current page (top level), or a node id. Instances are not expanded.",
-    inputSchema: { target: z.string().optional().describe("'selection' (default) | 'page' | a node id"), depth: z.number().int().min(0).max(12).optional(), maxNodes: z.number().int().min(1).max(2000).optional() },
-  }, async ({ target, depth, maxNodes }) => guard(async () => ok(await bridge.request("inspect", { target, depth, maxNodes }))));
+    description: "Return a compact semantic snapshot (type, name, size, auto layout, fills, bound variables, text style, instance component/variant/props, children) of the selection (default), the current page (top level), or a node id. With expandInstances, instances also list their layers (text, hidden layers) and which layers are overridden.",
+    inputSchema: { target: z.string().optional().describe("'selection' (default) | 'page' | a node id"), depth: z.number().int().min(0).max(12).optional(), maxNodes: z.number().int().min(1).max(2000).optional(),
+      expandInstances: z.boolean().optional().describe("Descend into instances: their text, hidden layers and overrides (default false)") },
+  }, async ({ target, depth, maxNodes, expandInstances }) => guard(async () => ok(await bridge.request("inspect", { target, depth, maxNodes, expandInstances }))));
 
   server.registerTool("figma_preview_plan", {
     description: "Validate a Design Plan (Design DSL JSON) with Zod, resolve every component/variant/property/token against the cached Design System, and return a planId + human-readable summary WITHOUT touching Figma. Invalid plans or unresolved components return structured errors with suggestions — fix the plan and preview again.",
@@ -204,8 +205,15 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
       file: z.string().describe("Path to the .html file"),
       root: z.string().optional().describe("Directory to serve (default: the file's grandparent, so ../fonts works)"),
       targets: z.array(z.object({ selector: z.string(), name: z.string().optional(), index: z.number().int().min(0).optional().describe("Take only the nth match") })).optional().describe("CSS selectors of the elements to import as screens"),
-      swaps: z.array(z.object({ selector: z.string(), component: z.string(), variants: z.array(z.object({ test: z.string(), variant: z.string() })).optional(), default: z.string().optional() })).optional()
-        .describe("Replace matching elements with instances of existing components (variant chosen by rules; content copied as overrides)"),
+      swaps: z.array(z.object({
+        selector: z.string(), component: z.string().describe("Component or set name (label for errors when id/key is given)"),
+        id: z.string().optional().describe("Exact local component/set id (use when names are ambiguous)"),
+        key: z.string().optional().describe("Component/set key, e.g. a library component found by a library search"),
+        variants: z.array(z.object({ test: z.string(), variant: z.string() })).optional(), default: z.string().optional(),
+        overrides: z.enum(["none", "text", "match"]).optional().describe("none: keep the component as is; text (default): copy matching text; match: also hide layers the element lacks"),
+        fills: z.boolean().optional().describe("Copy the element's fill onto the instance (default false)"),
+      })).optional()
+        .describe("Replace matching elements with instances of existing components. Variant = first rule whose test matches, else default; an unknown variant is an error, never a silent fallback."),
       actions: z.array(z.object({ click: z.string(), index: z.number().int().min(0).optional(), waitMs: z.number().min(0).max(10000).optional() })).optional().describe("Clicks to perform before capturing (open menus, advance steps)"),
       replace: z.boolean().optional().describe("Remove an existing section with the same name on that page first"),
       components: z.boolean().optional().describe("Turn each imported root into a component. Names like \"Wish card/State=Chosen\" are combined into component sets."),

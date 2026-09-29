@@ -159,7 +159,7 @@ function paints(p: readonly Paint[] | typeof figma.mixed | undefined): string[] 
   return out.length ? out : undefined;
 }
 
-export async function snapshot(node: BaseNode, opts: { depth?: number; maxNodes?: number } = {}): Promise<NodeSnapshot> {
+export async function snapshot(node: BaseNode, opts: { depth?: number; maxNodes?: number; expandInstances?: boolean } = {}): Promise<NodeSnapshot> {
   let budget = opts.maxNodes ?? 400;
   const varNames = new Map<string, string>();
   const varName = async (id: string) => {
@@ -201,10 +201,14 @@ export async function snapshot(node: BaseNode, opts: { depth?: number; maxNodes?
       const props: Record<string, unknown> = {};
       const variants: Record<string, string> = {};
       for (const [k, p] of Object.entries(i.componentProperties)) (p.type === "VARIANT" ? (variants[k] = String(p.value)) : (props[k] = p.value));
-      s.instance = { componentId: main?.id, component: main?.name, componentSet: main?.parent?.type === "COMPONENT_SET" ? main.parent.name : undefined, variants: Object.keys(variants).length ? variants : undefined, props: Object.keys(props).length ? props : undefined };
-      return s; // do not descend into instance internals
+      s.instance = { componentId: main?.id, component: main?.name, componentSet: main?.parent?.type === "COMPONENT_SET" ? main.parent.name : undefined, componentSetId: main?.parent?.type === "COMPONENT_SET" ? main.parent.id : undefined, variants: Object.keys(variants).length ? variants : undefined, props: Object.keys(props).length ? props : undefined };
+      if (!opts.expandInstances || depth <= 0) return s; // instance internals only on request
+      // What differs from the main component: which layers have overrides, and which fields.
+      const ov: Record<string, string[]> = {};
+      try { for (const o of i.overrides) { const t = await figma.getNodeByIdAsync(o.id); ov[t && t.id !== i.id ? t.name : "(self)"] = o.overriddenFields as string[]; } } catch { /* not available */ }
+      if (Object.keys(ov).length) s.instance.overrides = ov;
     }
-    if ("children" in n && CONTAINER_TYPES.has(n.type)) {
+    if ("children" in n && (CONTAINER_TYPES.has(n.type) || n.type === "INSTANCE")) {
       const kids = (n as ChildrenMixin).children;
       if (depth <= 0 || budget <= 0) { if (kids.length) s.truncated = kids.length; return s; }
       s.children = [];

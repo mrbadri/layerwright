@@ -16,6 +16,7 @@ export type ErrorType =
   | "TIMEOUT"
   | "PARTIAL_EXECUTION"
   | "NOT_APPROVED"
+  | "AMBIGUOUS_COMPONENT"
   | "DESIGN_SYSTEM_NOT_SCANNED";
 
 export interface StructuredError {
@@ -166,7 +167,7 @@ export interface NodeSnapshot {
   bound?: Record<string, string>; // field -> variable name/id
   fillStyle?: string;
   text?: { chars: string; fontSize?: number; font?: string; lineHeight?: number | "AUTO" | string; styleId?: string; style?: string };
-  instance?: { componentId?: string; component?: string; componentSet?: string; variants?: Record<string, string>; props?: Record<string, unknown> };
+  instance?: { componentId?: string; component?: string; componentSet?: string; componentSetId?: string; variants?: Record<string, string>; props?: Record<string, unknown>; overrides?: Record<string, string[]> };
   children?: NodeSnapshot[];
   truncated?: number;
 }
@@ -247,6 +248,8 @@ export interface ResolvedInstance extends ResolvedBase {
   properties: Record<string, string | boolean>;
   /** Fallback: text layer name -> content. */
   textOverrides: Record<string, string>;
+  /** Props/variants matched by name on the instance at execution time (a library component that wasn't scanned). */
+  lateProps?: Record<string, string | boolean>;
 }
 
 export interface ResolvedRect extends ResolvedBase {
@@ -313,12 +316,16 @@ export interface BridgeRequest { id: string; method: BridgeMethod; params?: unkn
 export interface BridgeResponse { id: string; ok: boolean; result?: unknown; error?: StructuredError }
 export interface BridgeHello { type: "hello"; fileName: string; fileKey?: string; page: string; user?: string }
 
+/** How a swapped element becomes an instance. `overrides`: "none" keeps the component as is, "text" (default) copies
+ *  matching text only, "match" also hides component layers the element doesn't have. Fills are copied only with `fills`. */
+export interface ImportSwapRef { component: string; id?: string; key?: string; variant?: string; overrides?: "none" | "text" | "match"; fills?: boolean }
+
 /** A node serialized from rendered HTML (absolute boxes, relative to the parent node). */
 export interface ImportPaint { hex: string; a: number }
 export type ImportNode =
   | { type: "frame"; name: string; x: number; y: number; w: number; h: number; fill?: ImportPaint; gradient?: { angle: number; stops: (ImportPaint & { pos: number })[] };
       shadows?: (ImportPaint & { inset: boolean; x: number; y: number; blur: number; spread: number })[]; stroke?: ImportPaint & { weights: number[] };
-      radius?: number[]; clip?: boolean; blend?: string; opacity?: number; placeholder?: string; swap?: { component: string; variant?: string }; children: ImportNode[] }
+      radius?: number[]; clip?: boolean; blend?: string; opacity?: number; placeholder?: string; swap?: ImportSwapRef; children: ImportNode[] }
   | { type: "text"; name: string; x: number; y: number; w: number; h: number; content: string; font: { family: string; style: string }; size: number;
       lineHeight?: number; letterSpacing?: number; color?: string; opacity?: number; align: "LEFT" | "RIGHT" | "CENTER"; wrap: boolean }
   | { type: "svg"; name: string; x: number; y: number; w: number; h: number; svg: string };

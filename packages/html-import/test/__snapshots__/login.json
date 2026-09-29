@@ -77,7 +77,7 @@
                   "type": "frame",
                   "name": "input",
                   "width": "fill",
-                  "height": "hug",
+                  "height": 44,
                   "layout": {
                     "direction": "vertical",
                     "gap": 0,
@@ -137,7 +137,7 @@
                   "type": "frame",
                   "name": "input",
                   "width": "fill",
-                  "height": "hug",
+                  "height": 44,
                   "layout": {
                     "direction": "vertical",
                     "gap": 0,
@@ -173,7 +173,7 @@
               "type": "frame",
               "name": "button",
               "width": "fill",
-              "height": "hug",
+              "height": 48,
               "layout": {
                 "direction": "vertical",
                 "gap": 0,
@@ -304,7 +304,7 @@
                   "type": "frame",
                   "name": "input",
                   "width": "fill",
-                  "height": "hug",
+                  "height": 44,
                   "layout": {
                     "direction": "vertical",
                     "gap": 0,
@@ -364,7 +364,7 @@
                   "type": "frame",
                   "name": "input",
                   "width": "fill",
-                  "height": "hug",
+                  "height": 44,
                   "layout": {
                     "direction": "vertical",
                     "gap": 0,
@@ -400,7 +400,7 @@
               "type": "frame",
               "name": "button",
               "width": "fill",
-              "height": "hug",
+              "height": 48,
               "layout": {
                 "direction": "vertical",
                 "gap": 0,

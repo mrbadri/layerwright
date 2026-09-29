@@ -114,9 +114,31 @@ const SERIALIZE_DOM = (selector: string) => {
     return clone.outerHTML;
   };
 
+  const textChild = (n: Node, cs: CSSStyleDeclaration, ox: number, oy: number, style?: any): any => {
+    const raw = n.textContent ?? "";
+    if (!raw.trim()) return null;
+    const range = document.createRange(); range.selectNodeContents(n);
+    const tr = range.getBoundingClientRect();
+    if (!tr.width) return null;
+    let text = raw.replace(/\s+/g, " ").trim();
+    if (cs.textTransform === "uppercase") text = text.toUpperCase();
+    else if (cs.textTransform === "lowercase") text = text.toLowerCase();
+    const parent = n.parentElement!;
+    return { kind: "text", tag: "#text", name: text.slice(0, 40), box: { x: tr.left - ox, y: tr.top - oy, w: tr.width, h: tr.height }, style: style ?? styleOf(parent, cs), text, lines: new Set([...range.getClientRects()].filter((q) => q.width > 0).map((q) => Math.round(q.top))).size || 1, attrs: {}, children: [] };
+  };
+
   const walk = (el: Element, ox: number, oy: number): any => {
     const cs = getComputedStyle(el);
     if (cs.display === "none" || cs.visibility === "hidden" || +cs.opacity === 0) return null;
+    // display: contents generates no box (its rect is 0×0 at the page origin): its children belong to the parent.
+    if (cs.display === "contents") {
+      const lifted: any[] = [];
+      for (const n of el.childNodes) {
+        if (n.nodeType === 3) { const t = textChild(n, cs, ox, oy); if (t) lifted.push(t); }
+        else if (n.nodeType === 1) { const c = walk(n as Element, ox, oy); if (c) lifted.push(...(c.kind === "contents" ? c.children : [c])); }
+      }
+      return { kind: "contents", children: lifted };
+    }
     const r = el.getBoundingClientRect();
     const tag = el.tagName.toLowerCase();
     if (["script", "style", "template", "noscript", "head", "meta", "link"].includes(tag)) return null;
@@ -141,18 +163,11 @@ const SERIALIZE_DOM = (selector: string) => {
     }
     for (const n of el.childNodes) {
       if (n.nodeType === 3) {
-        const raw = n.textContent ?? "";
-        if (!raw.trim()) continue;
-        const range = document.createRange(); range.selectNodeContents(n);
-        const tr = range.getBoundingClientRect();
-        if (!tr.width) continue;
-        let text = raw.replace(/\s+/g, " ").trim();
-        if (cs.textTransform === "uppercase") text = text.toUpperCase();
-        else if (cs.textTransform === "lowercase") text = text.toLowerCase();
-        base.children.push({ kind: "text", tag: "#text", name: text.slice(0, 40), box: { x: tr.left - r.left, y: tr.top - r.top, w: tr.width, h: tr.height }, style: base.style, text, lines: new Set([...range.getClientRects()].filter((q) => q.width > 0).map((q) => Math.round(q.top))).size || 1, attrs: {}, children: [] });
+        const t = textChild(n, cs, r.left, r.top, base.style);
+        if (t) base.children.push(t);
       } else if (n.nodeType === 1) {
         const c = walk(n as Element, r.left, r.top);
-        if (c) base.children.push(c);
+        if (c) base.children.push(...(c.kind === "contents" ? c.children : [c]));
       }
     }
     return { ...base, kind: "element" };
@@ -161,7 +176,8 @@ const SERIALIZE_DOM = (selector: string) => {
   const el = document.querySelector(selector);
   if (!el) return null;
   const r = el.getBoundingClientRect();
-  const root = walk(el, r.left, r.top);
+  let root = walk(el, r.left, r.top);
+  if (root?.kind === "contents") root = null;
   if (root) { root.box.x = 0; root.box.y = 0; root.box.h = Math.max(root.box.h, document.documentElement.scrollHeight); }
   return root;
 };

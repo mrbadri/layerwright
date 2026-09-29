@@ -140,6 +140,18 @@ export function toPlan(screens: { name: string; width: number; dom: DomNode }[],
       _box: d.box, children: [] as any[],
     };
     const auto = layout.direction !== "none";
+    // Fixed CSS sizes: if the rendered box is bigger than its content (padding + children + gaps), the size was set
+    // explicitly (width/height, min-*, flex-basis, justify-content with free space) and must stay FIXED, not hug.
+    if (auto && flow.length && !layout.wrap) {
+      const horiz = layout.direction === "horizontal";
+      const gapTotal = (layout.gap ?? 0) * (flow.length - 1);
+      const sum = (f: (k: DomNode) => number) => flow.reduce((a, k) => a + f(k), 0);
+      const max = (f: (k: DomNode) => number) => Math.max(...flow.map(f));
+      const contentW = pad[1] + pad[3] + (horiz ? sum((k) => k.box.w) + gapTotal : max((k) => k.box.w));
+      const contentH = pad[0] + pad[2] + (horiz ? max((k) => k.box.h) : sum((k) => k.box.h) + gapTotal);
+      out._fixedW = d.box.w - contentW > 1;
+      out._fixedH = d.box.h - contentH > 1;
+    }
     const children: any[] = [];
     // Repeated siblings with the same structure and a visual container read as cards.
     const sigs = new Map<string, number>();
@@ -162,7 +174,7 @@ export function toPlan(screens: { name: string; width: number; dom: DomNode }[],
     // like a real Figma button. Fixed browser widths would wrap the label on tiny font metric differences.
     const only = children.length === 1 ? children[0] : undefined;
     const onlyDom = order.length === 1 ? order[0] : undefined;
-    if (auto && only?.type === "text" && !only.position && onlyDom && (onlyDom.lines ?? 1) <= 1) { only.width = "hug"; out._hugText = true; }
+    if (auto && only?.type === "text" && !only.position && onlyDom && (onlyDom.lines ?? 1) <= 1) { only.width = "hug"; out._hugText = !out._fixedW; }
     if (!auto) { out.width = round(d.box.w); out.height = round(d.box.h); }
     return out;
   };
@@ -172,23 +184,25 @@ export function toPlan(screens: { name: string; width: number; dom: DomNode }[],
     const b = c._box as { x: number; y: number; w: number; h: number };
     delete c._box;
     const hugText = !!c._hugText;
-    delete c._hugText;
+    const fixedH = !!c._fixedH;
+    delete c._hugText; delete c._fixedW; delete c._fixedH;
     const w = round(Math.max(1, b.w)), h = round(Math.max(1, b.h));
+    // An Auto Layout frame hugs its content unless its CSS height was bigger than the content.
+    const autoH = (c.type === "frame" && c.layout?.direction && c.layout.direction !== "none") ? (fixedH ? h : "hug") : h;
     if (p.absolute || !p.auto) {
       c.position = { type: "absolute", x: round(b.x), y: round(b.y) };
-      if (hugText) { c.width = "hug"; c.height = "hug"; return; }
+      if (hugText) { c.width = "hug"; c.height = autoH; return; }
       c.width = c.type === "text" && (k.lines ?? 1) <= 1 && c.align !== "center" && c.align !== "right" ? "hug" : w;
-      if (c.type !== "text") c.height = c.layout?.direction && c.layout.direction !== "none" ? "hug" : h;
-      if (c.type === "frame" && c.layout.direction !== "none") c.height = "hug";
+      if (c.type !== "text") c.height = autoH;
       return;
     }
     const fullMain = p.horizontal ? false : Math.abs(b.w - p.inner.w) < 1;
     if (p.horizontal) {
       c.width = (k.style.flexGrow ?? 0) > 0 ? "fill" : hugText || (c.type === "text" && (k.lines ?? 1) <= 1) ? "hug" : w;
-      if (c.type !== "text") c.height = p.stretch && Math.abs(b.h - p.inner.h) < 1 ? "fill" : c.type === "frame" && c.layout.direction !== "none" ? "hug" : h;
+      if (c.type !== "text") c.height = p.stretch && Math.abs(b.h - p.inner.h) < 1 ? "fill" : autoH;
     } else {
       c.width = fullMain ? "fill" : hugText || (c.type === "text" && (k.lines ?? 1) <= 1) ? "hug" : w;
-      if (c.type !== "text") c.height = c.type === "frame" && c.layout.direction !== "none" ? "hug" : h;
+      if (c.type !== "text") c.height = autoH;
     }
   };
 
@@ -196,7 +210,7 @@ export function toPlan(screens: { name: string; width: number; dom: DomNode }[],
     version: 1, name: opts.name ?? "HTML import", screenGap: 120,
     screens: screens.map((sc, i) => {
       const f = container(sc.dom, `screens[${i}]`);
-      delete f._box; delete f._hugText;
+      delete f._box; delete f._hugText; delete f._fixedW; delete f._fixedH;
       return { ...f, type: "screen", name: sc.name, width: sc.width, height: f.layout.direction === "none" ? f.height : undefined, fill: f.fill ?? "#FFFFFF" };
     }),
   } as DesignPlan;
