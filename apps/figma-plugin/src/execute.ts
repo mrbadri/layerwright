@@ -18,16 +18,55 @@ export function withTimeout<T>(p: Promise<T>, ms = 10_000, what = "library impor
   });
 }
 
-/** A text style with its font readable. A library style reached by id may not carry its font until it's imported
- *  (its fontName is a placeholder), so import it by key then. */
-export async function textStyleOf(id?: string, key?: string, font?: FontName): Promise<{ style: TextStyle; font: FontName } | null> {
-  const fontOf = (s: BaseStyle | null) => (s && s.type === "TEXT" && typeof (s as TextStyle).fontName === "object" && ((s as TextStyle).fontName as FontName)?.family ? (s as TextStyle).fontName as FontName : undefined);
-  let s = id ? await figma.getStyleByIdAsync(id).catch(() => null) : null;
-  if (s && fontOf(s)) return { style: s as TextStyle, font: fontOf(s)! };
-  // Library style without its data: the font the scan saw on a layer using it lets us apply it by id.
-  if (s && s.type === "TEXT" && font) return { style: s as TextStyle, font };
-  if (key) { const imp = await withTimeout(figma.importStyleByKeyAsync(key)).catch(() => null); if (imp && fontOf(imp)) return { style: imp as TextStyle, font: fontOf(imp)! }; }
-  return null;
+export type TextStyleLookup = { style: TextStyle; font: FontName; reason?: undefined } | { style?: undefined; reason: string };
+const styleLookups = new Map<string, Promise<TextStyleLookup>>();
+/** Forget looked-up styles (at the start of each run: the file may have changed in between). */
+export const clearStyleLookups = () => styleLookups.clear();
+const why = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+/** A text style with its font readable, or the reason it can't be had. Each style is looked up once per run: a
+ *  library import that takes long takes long once, not once per text. */
+export function textStyleOf(id?: string, key?: string, font?: FontName): Promise<TextStyleLookup> {
+  const k = `${id}|${key}|${font?.family}|${font?.style}`;
+  if (!styleLookups.has(k)) styleLookups.set(k, lookupTextStyle(id, key, font));
+  return styleLookups.get(k)!;
+}
+
+const fontOfStyle = (s: BaseStyle | null) => (s && s.type === "TEXT" && typeof (s as TextStyle).fontName === "object" && ((s as TextStyle).fontName as FontName)?.family ? (s as TextStyle).fontName as FontName : undefined);
+
+/** The font of a layer that uses the style: a library style reached by id may not report its own. */
+async function consumerFont(s: BaseStyle): Promise<FontName | undefined> {
+  try {
+    if (typeof (s as any).getStyleConsumersAsync !== "function") return undefined;
+    for (const { node } of (await s.getStyleConsumersAsync()).slice(0, 20)) {
+      if (node.type !== "TEXT") continue;
+      const f = node.fontName !== figma.mixed ? node.fontName : node.characters.length ? node.getRangeFontName(0, 1) : undefined;
+      if (f && f !== figma.mixed && (f as FontName).family) return f as FontName;
+    }
+  } catch { /* no consumers readable */ }
+  return undefined;
+}
+
+// A library style reached by id may not carry its font until it's imported (its fontName is a placeholder): then the
+// font the scan saw on a layer, a layer using it now, or an import by key gives it. Every failed route is kept, so the
+// message says what actually went wrong instead of guessing.
+async function lookupTextStyle(id?: string, key?: string, font?: FontName): Promise<TextStyleLookup> {
+  const reasons: string[] = [];
+  const s = id ? await figma.getStyleByIdAsync(id).catch((e) => { reasons.push(`lookup by id failed: ${why(e)}`); return null; }) : null;
+  if (s && s.type === "TEXT") {
+    const f = fontOfStyle(s) ?? font ?? (await consumerFont(s));
+    if (f) return { style: s as TextStyle, font: f };
+    reasons.push("found in the file, but Figma gives no font for it and no layer uses it");
+  } else if (id && !reasons.length) reasons.push("not in this file under the id from the scan (the library may have been updated since: rescan)");
+  if (key) {
+    try {
+      const imp = await withTimeout(figma.importStyleByKeyAsync(key), 30_000, "text style import");
+      const f = fontOfStyle(imp) ?? (await consumerFont(imp));
+      if (imp.type === "TEXT" && f) return { style: imp as TextStyle, font: f };
+      reasons.push("imported from the library, but it has no font");
+    } catch (e) { reasons.push(`import from the library failed: ${why(e)}`); }
+  } else if (!s) reasons.push("no library key to import it with");
+  return { reason: reasons.join("; ") };
 }
 
 /** A variable: by id first (a library variable the file already uses is reachable that way), then import by key. */
@@ -279,18 +318,24 @@ async function buildText(n: ResolvedText, parent: BaseNode & ChildrenMixin, ctx:
   parent.appendChild(t);
   ctx.nodeIds[n.path] = t.id;
   await ctx.font(t.fontName as FontName);
-  if (n.textStyleId || n.textStyleKey) {
-    const found = await textStyleOf(n.textStyleId, n.textStyleKey, n.textStyleFont);
-    if (!found) throw new ExecError({ type: "STYLE_NOT_FOUND", path: n.path, message: `A text style can't be applied: it was deleted, or its library isn't enabled for this file (Assets → Libraries).` });
-    const style = found.style;
+  // A style that can't be applied doesn't cost the whole run: the text is built with its own font and the style's
+  // size, with one warning per style that says why, and verification lists the texts.
+  let found = n.textStyleId || n.textStyleKey ? await textStyleOf(n.textStyleId, n.textStyleKey, n.textStyleFont) : undefined;
+  if (found?.style) {
     await ctx.font(found.font);
-    await t.setTextStyleIdAsync(style.id);
+    // The font we loaded may not be the style's own (it came from a layer that overrides it): Figma says so here.
+    try { await t.setTextStyleIdAsync(found.style.id); } catch (e) { found = { reason: `Figma refused it: ${why(e)}` }; }
+  }
+  const styleName = n.textStyleName ?? n.textStyleId ?? n.textStyleKey;
+  if (found?.reason && !ctx.warnings.some((w) => w.includes(`text style "${styleName}" can't be applied`))) ctx.warnings.push(`${n.path}: text style "${styleName}" can't be applied (${found.reason}); its texts keep their own font.`);
+  if (found?.style) {
     // Explicit font fields override the style (the style stays linked, with overrides).
     if (n.fontFamily || n.fontWeight || n.italic !== undefined) t.fontName = await ctx.resolveFont(n.fontFamily ?? found.font.family, n.fontWeight ?? found.font.style, n.italic ?? /italic/i.test(found.font.style), n.path);
     if (n.fontSize) t.fontSize = n.fontSize;
   } else {
-    t.fontName = await ctx.resolveFont(n.fontFamily ?? "Inter", n.fontWeight ?? "Regular", !!n.italic, n.path);
-    if (n.fontSize) t.fontSize = n.fontSize;
+    t.fontName = await ctx.resolveFont(n.fontFamily ?? n.textStyleFont?.family ?? "Inter", n.fontWeight ?? n.textStyleFont?.style ?? "Regular", !!n.italic, n.path);
+    const size = n.fontSize ?? n.textStyleSize;
+    if (size) t.fontSize = size;
   }
   if (n.lineHeight) t.lineHeight = n.lineHeight.unit === "AUTO" ? { unit: "AUTO" } : { unit: n.lineHeight.unit, value: n.lineHeight.value };
   if (n.letterSpacing) t.letterSpacing = { unit: n.letterSpacing.unit, value: n.letterSpacing.value };
@@ -553,6 +598,7 @@ export function tag(nodes: SceneNode[], meta?: { session?: string; run?: string 
 }
 
 export async function executePlan(plan: ResolvedPlan, meta?: { session?: string; run?: string }): Promise<ExecutionReport> {
+  clearStyleLookups();
   const ctx = new Ctx();
   let parent: BaseNode & ChildrenMixin = figma.currentPage;
   if (plan.target.parentId) {
@@ -612,6 +658,7 @@ export async function executePlan(plan: ResolvedPlan, meta?: { session?: string;
 }
 
 export async function applyTransformations(list: Transformation[]): Promise<TransformReport> {
+  clearStyleLookups();
   const ctx = new Ctx();
   const report: TransformReport = { applied: [], failed: [], hiddenOriginals: [] };
   for (const [i, t] of list.entries()) {
@@ -664,10 +711,10 @@ export async function applyTransformations(list: Transformation[]): Promise<Tran
         case "apply_text_style": {
           if (node.type !== "TEXT") throw new Error("not a text node");
           const found = await textStyleOf(t.styleId, t.styleKey, t.font);
-          if (!found) throw new Error(`Text style "${t.styleName}" can't be applied: its library isn't enabled for this file (Assets → Libraries).`);
+          if (!found.style) throw new Error(`Text style "${t.styleName}" can't be applied: ${found.reason}.`);
           await ctx.fontsOf(node);
           await ctx.font(found.font);
-          await node.setTextStyleIdAsync(found.style.id);
+          await node.setTextStyleIdAsync(found.style.id).catch((e) => { throw new Error(`Text style "${t.styleName}" can't be applied: Figma refused it: ${why(e)}.`); });
           report.applied.push({ id: t.id, nodeId: t.nodeId });
           break;
         }

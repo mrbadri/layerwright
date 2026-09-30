@@ -6,7 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { compilePlan, validatePlan, analyzeDesign, type ResolvedPlan } from "@cde/core";
 import { fixtureDs, loginPlan } from "../../../packages/core/test/fixture.ts";
-import { N, T, loaded, resetFigma } from "./figma-mock.ts";
+import { N, T, loaded, resetFigma, styles } from "./figma-mock.ts";
 
 const { executePlan, applyTransformations } = await import("../src/execute.ts");
 
@@ -53,6 +53,51 @@ test("failed execution rolls back everything it created", async () => {
   (plan.roots[0] as any).children[4].componentId = "404:404"; // component deleted since scan
   await assert.rejects(executePlan(plan), (e: any) => e.detail.type === "COMPONENT_NOT_FOUND" && /rolled back/.test(e.detail.message));
   assert.equal(page.children.length, 0);
+});
+
+test("a text style that can't be applied keeps the text (own font, the style's size) with a warning, not a rollback", async () => {
+  const page = resetFigma();
+  const plan = compiledLogin();
+  const h = (plan.roots[0] as any).children[0];
+  h.textStyleId = "S:gone"; h.textStyleKey = undefined; h.textStyleFont = undefined; // deleted since the scan: Figma returns nothing
+  const report = await executePlan(plan);
+  assert.equal(page.children.length, 1);
+  const t = page.children[0].children[0];
+  assert.equal(t.characters, "Welcome back");
+  assert.equal(t.textStyleId, "");
+  assert.equal(t.fontSize, h.textStyleSize);
+  assert.ok(report.warnings.some((w) => /text style "Heading\/H1" can't be applied \(not in this file under the id/.test(w)), report.warnings.join("\n"));
+});
+
+test("a library style that reports no font gets it from a layer that uses it, and is applied", async () => {
+  const page = resetFigma();
+  // Like a library style reached by id: its fontName is a placeholder, but a layer in the file uses it.
+  const user = Object.assign(new T(), { fontName: { family: "Inter", style: "Bold" } });
+  styles.set("S:lib", { id: "S:lib", type: "TEXT", fontName: { family: "", style: "" }, realFont: { family: "Inter", style: "Bold" }, getStyleConsumersAsync: async () => [{ node: user, fields: ["textStyleId"] }] });
+  const plan = compiledLogin();
+  const h = (plan.roots[0] as any).children[0];
+  h.textStyleId = "S:lib"; h.textStyleKey = "klib"; h.textStyleFont = undefined;
+  const report = await executePlan(plan);
+  assert.deepEqual(report.warnings, []);
+  assert.equal(page.children[0].children[0].textStyleId, "S:lib");
+  styles.delete("S:lib");
+});
+
+test("a style that can't be had says why (not a guess about the library), and is looked up once per run", async () => {
+  const page = resetFigma();
+  let imports = 0;
+  (globalThis as any).figma.importStyleByKeyAsync = async () => { imports++; throw new Error("No published style with key kold"); };
+  const plan = compiledLogin();
+  const [h, body] = (plan.roots[0] as any).children;
+  for (const t of [h, body]) { t.textStyleId = "S:stale"; t.textStyleKey = "kold"; t.textStyleFont = undefined; t.textStyleName = "Heading/H1"; }
+  const report = await executePlan(plan);
+  assert.equal(page.children.length, 1);
+  assert.equal(imports, 1);
+  const w = report.warnings.filter((x) => /can't be applied/.test(x));
+  assert.equal(w.length, 1, report.warnings.join("\n"));
+  assert.match(w[0], /not in this file under the id from the scan/);
+  assert.match(w[0], /No published style with key kold/);
+  assert.doesNotMatch(w[0], /isn't enabled/);
 });
 
 test("transformations are non-destructive and bind tokens", async () => {

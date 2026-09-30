@@ -112,6 +112,7 @@
   function friendly(err) {
     const m = String(err.message || "");
     if (/font .*could not be loaded|Cannot unwrap symbol|unloaded font/i.test(m)) return "A font isn't installed on this computer, so its text can't be changed. Install the font (Claude can tell you the command), then quit and reopen Figma.";
+    if (/text style .*can't be applied/i.test(m)) return "A Design System text style couldn't be applied. The line below says why; rescanning the Design System often fixes it.";
     if (/library isn't enabled|isn't available to this file|library didn't answer|timed out.*library/i.test(m)) return "The Design System library isn't enabled for this file. Open the Assets panel → Libraries (book icon), enable it, then try again.";
     return FRIENDLY[err.type] || "Something went wrong.";
   }

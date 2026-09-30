@@ -70,7 +70,7 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
   (server as any).registerTool = (name: string, cfg: unknown, handler: (...a: any[]) => Promise<ToolResult>) => register(name, cfg, async (...a: any[]) => {
     const r = await handler(...a);
     if (r.isError) {
-      try { const d = JSON.parse((r.content[0] as { text: string }).text); for (const e of (d.errors ?? []).slice(0, 3)) memory.problem(name, e.type, e.message); } catch { /* not JSON */ }
+      try { const d = JSON.parse((r.content[0] as { text: string }).text); for (const e of (d.errors ?? []).slice(0, 3)) memory.problem(name, e.type, e.path ? `${e.path}: ${e.message}` : e.message); } catch { /* not JSON */ }
     }
     return r;
   });

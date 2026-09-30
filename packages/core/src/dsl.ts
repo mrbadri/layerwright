@@ -28,7 +28,16 @@ export const SizeValue = z.union([z.number().positive().max(20000), z.enum(["hug
 /** Line height / letter spacing: { unit: "px" | "percent", value } (line height also takes "auto"). */
 export const LineHeight = z.union([z.object({ unit: z.enum(["px", "percent"]), value: z.number().min(0).max(1000) }).strict(), z.object({ unit: z.literal("auto") }).strict()]);
 export const LetterSpacing = z.object({ unit: z.enum(["px", "percent"]), value: z.number().min(-100).max(100) }).strict();
-export const Weight = z.enum(["thin", "extralight", "light", "regular", "medium", "semibold", "bold", "extrabold", "black"]);
+const WEIGHT_NAMES = ["thin", "extralight", "light", "regular", "medium", "semibold", "bold", "extrabold", "black"] as const;
+/** A weight name, or a CSS weight (600, "600") taken as the nearest name; "Semi Bold" and "normal" are read too. */
+export const Weight = z.preprocess((v) => {
+  if (typeof v === "number" || (typeof v === "string" && /^\s*\d{3}\s*$/.test(v))) return WEIGHT_NAMES[Math.min(8, Math.max(0, Math.round(Number(v) / 100) - 1))];
+  if (typeof v !== "string") return v;
+  const k = v.toLowerCase().replace(/[\s_-]+/g, "");
+  return k === "normal" ? "regular" : k;
+}, z.enum(WEIGHT_NAMES));
+/** A text style: its name, or an exact { id } (as figma_inspect and figma_edit give it). */
+export const TextStyleRef = z.union([z.string().min(1), z.object({ id: z.string().min(1) }).strict()]);
 export const Shadow = z.object({
   type: z.enum(["drop", "inner"]).default("drop"),
   x: z.number().default(0), y: z.number().default(0), blur: z.number().min(0).default(0), spread: z.number().default(0),
@@ -152,13 +161,13 @@ export const DesignNodeSchema: z.ZodType<any> = z.lazy(() =>
     ) as any,
     /** Typography: an explicit `style` is applied first and explicit font fields override it. A `role` picks a DS text
      *  style only when no font fields are given. `style: null` never applies a style. */
-    z.object({ type: z.literal("text"), ...Base, content: z.string().max(5000), role: TextRole.optional(), style: z.string().nullable().optional(), color: ColorRef.optional(), fontSize: z.number().min(1).max(400).optional(),
+    z.object({ type: z.literal("text"), ...Base, content: z.string().max(5000), role: TextRole.optional(), style: TextStyleRef.nullable().optional(), color: ColorRef.optional(), fontSize: z.number().min(1).max(400).optional(),
       fontFamily: z.string().min(1).max(100).optional(), weight: Weight.optional(), italic: z.boolean().optional(),
       lineHeight: LineHeight.optional(), letterSpacing: LetterSpacing.optional(),
       align: z.enum(["left", "center", "right", "justified"]).optional(), direction: z.enum(["ltr", "rtl"]).optional(),
       /** Styled pieces of one text; their texts joined must equal `content`. */
       runs: z.array(TextRun).max(200).optional() }).strict(),
-    z.object({ type: z.literal("link"), ...Base, content: z.string().max(500), href: z.string().optional(), style: z.string().optional(), color: ColorRef.optional(), ...ComponentRef }).strict(),
+    z.object({ type: z.literal("link"), ...Base, content: z.string().max(500), href: z.string().optional(), style: TextStyleRef.optional(), color: ColorRef.optional(), ...ComponentRef }).strict(),
     ...(["component", "component-instance", "button", "input"] as const).map((t) =>
       z.object({ type: z.literal(t), ...Base, ...ComponentRef }).strict(),
     ) as any,
@@ -201,6 +210,13 @@ export const DesignPlanSchema = z
 
 export type DesignPlan = z.infer<typeof DesignPlanSchema>;
 
+/** "Invalid input" says nothing: for a field that takes one of several shapes, say what each shape wanted. */
+function explain(i: z.ZodIssue): string {
+  if (i.code !== "invalid_union") return i.message;
+  const why = [...new Set(i.unionErrors.map((e) => e.issues.map((x) => `${x.path.slice(i.path.length).join(".") || "value"}: ${x.message}`).join(", ")))];
+  return `No accepted form matches (${why.slice(0, 4).join(" | ")}).`;
+}
+
 export function validatePlan(input: unknown):
   | { success: true; plan: DesignPlan }
   | { success: false; errors: { type: "INVALID_PLAN"; path: string; message: string }[] } {
@@ -216,6 +232,6 @@ export function validatePlan(input: unknown):
   if (r.success) return { success: true, plan: r.data };
   return {
     success: false,
-    errors: r.error.issues.slice(0, 25).map((i) => ({ type: "INVALID_PLAN" as const, path: i.path.join("."), message: i.message })),
+    errors: r.error.issues.slice(0, 25).map((i) => ({ type: "INVALID_PLAN" as const, path: i.path.join("."), message: explain(i) })),
   };
 }

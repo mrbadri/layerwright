@@ -104,9 +104,9 @@ test("changes that didn't apply are explained once, with what to do", () => {
   const ui = boot();
   ui.sockets[0].open();
   ui.sockets[0].onmessage({ data: JSON.stringify({ id: "r1", method: "applyTransformations" }) });
-  const failed = Array.from({ length: 20 }, (_, i) => ({ id: `t${i}`, error: `Text style "Fa Text sm/Bold" can't be applied: its library isn't enabled for this file (Assets → Libraries).` }));
+  const failed = Array.from({ length: 20 }, (_, i) => ({ id: `t${i}`, error: `Text style "Fa Text sm/Bold" can't be applied: not in this file under the id from the scan (the library may have been updated since: rescan); import from the library failed: text style import timed out after 30s (is the library enabled for this file?).` }));
   ui.fromPlugin({ type: "response", res: { id: "r1", ok: true, result: { applied: new Array(251), failed, hiddenOriginals: [] } } });
   assert.equal(ui.els.error.style.display, "block");
-  assert.match(ui.els.errorText.textContent, /^20 changes couldn't be applied\. The Design System library isn't enabled for this file\. Open the Assets panel → Libraries/);
+  assert.match(ui.els.errorText.textContent, /^20 changes couldn't be applied\. A Design System text style couldn't be applied\. The line below says why/);
   assert.match(ui.els.activity.innerHTML, /Applied 251 changes, 20 failed/);
 });

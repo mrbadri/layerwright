@@ -266,6 +266,9 @@ export interface ResolvedText extends ResolvedBase {
   textStyleKey?: string;
   /** The style's font, when the scan learned it from a layer (a library style may not report it). */
   textStyleFont?: { family: string; style: string };
+  /** The style's name and size, so the text keeps its size when the style can't be applied. */
+  textStyleName?: string;
+  textStyleSize?: number;
   fontSize?: number;
   /** Requested family; the executor falls back to an available one with a warning. Default Inter. */
   fontFamily?: string;

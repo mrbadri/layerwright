@@ -278,8 +278,14 @@ const typeOf = (e: ResolvedNode) => (e.kind === "shape" ? e.shape.toUpperCase() 
 /** Structural comparison of an executed plan against the inspected Figma result. */
 export function verifyAgainstPlan(expected: ResolvedNode, actual: NodeSnapshot | undefined, opts: VerifyOptions = {}): Mismatch[] {
   const out: Mismatch[] = [];
-  const walk = (e: ResolvedNode, a: NodeSnapshot | undefined) => {
-    if (!a) { out.push({ path: e.path, issue: "missing node", expected: `${typeOf(e)} "${e.name}"` }); return; }
+  // Drift: the layer's size is far from the source's rendered box, on each axis. It is passed down (a layer that fills
+  // a drifted parent drifts with it) and up (a layer that hugs a drifted child grows with it), so a change that
+  // spreads through the tree (a wider stand-in font, a taller DS component) is reported once, where it starts, and
+  // not again on every container around it.
+  type Drift = { w: boolean; h: boolean };
+  const walk = (e: ResolvedNode, a: NodeSnapshot | undefined, parent: Drift = { w: false, h: false }): Drift => {
+    const none = { w: false, h: false };
+    if (!a) { out.push({ path: e.path, issue: "missing node", expected: `${typeOf(e)} "${e.name}"` }); return none; }
     const section = e.kind === "frame" && e.role === "section" && a.type === "SECTION";
     if (a.type !== typeOf(e) && !section) out.push({ path: e.path, nodeId: a.id, issue: "wrong node type", expected: typeOf(e), actual: a.type });
     if (a.name !== e.name) out.push({ path: e.path, nodeId: a.id, issue: "name differs", expected: e.name, actual: a.name });
@@ -313,24 +319,39 @@ export function verifyAgainstPlan(expected: ResolvedNode, actual: NodeSnapshot |
     }
     // Size: fixed sizes from the plan, and the rendered box of the source (HTML import). Text is left out: its
     // width depends on font metrics, and its container is checked instead.
-    if (e.kind !== "text" && a.w !== undefined && a.h !== undefined) {
-      if (e.width && e.sizingH !== "fill" && e.sizingH !== "hug" && far(a.w, e.width)) out.push({ path: e.path, nodeId: a.id, issue: "width differs from the plan", expected: e.width, actual: a.w });
-      if (e.height && e.sizingV !== "fill" && e.sizingV !== "hug" && far(a.h, e.height)) out.push({ path: e.path, nodeId: a.id, issue: "height differs from the plan", expected: e.height, actual: a.h });
-      const src = opts.sources?.[e.path];
-      // A DS instance may differ a little from the element it replaced; half again or more means a wrong match.
-      const off = e.kind === "instance" ? (x: number, y: number) => Math.abs(x - y) > Math.max(8, y * 0.5) : far;
-      // Instance heights are left out: DS inputs often include their label, so they're taller than the bare <input>.
-      if (src && (off(a.w, src.w) || (src.h !== undefined && e.kind !== "instance" && off(a.h, src.h)))) out.push({ path: e.path, nodeId: a.id, issue: e.kind === "instance" ? "instance size far from the element it replaced" : "size far from the source's rendered box", expected: `${src.w}×${src.h ?? "any"}`, actual: `${a.w}×${a.h}` });
-    }
+    const src = opts.sources?.[e.path];
+    const drift: Drift = { w: !!src && a.w !== undefined && far(a.w, src.w), h: !!src && src.h !== undefined && a.h !== undefined && far(a.h, src.h) };
+    const kids = a.children ?? [];
+    const inner: Drift = { w: false, h: false };
     if (e.kind === "frame") {
       if (!section && e.layout && e.layout.direction !== (a.layout?.mode ?? "NONE")) out.push({ path: e.path, nodeId: a.id, issue: "layout direction differs", expected: e.layout.direction, actual: a.layout?.mode });
       if (!section && e.layout?.gap?.value !== undefined && a.layout?.gap !== undefined && Math.abs(e.layout.gap.value - a.layout.gap) > 0.5) out.push({ path: e.path, nodeId: a.id, issue: "gap differs", expected: e.layout.gap.value, actual: a.layout.gap });
       if (e.layout?.gap?.variableId && !a.bound?.itemSpacing) out.push({ path: e.path, nodeId: a.id, issue: "gap not bound to token", expected: e.layout.gap.variableId });
-      const kids = a.children ?? [];
       if (a.truncated) out.push({ path: e.path, nodeId: a.id, issue: "snapshot truncated; deeper checks skipped" });
       if (kids.length !== e.children.length && !a.truncated) out.push({ path: e.path, nodeId: a.id, issue: "child count differs", expected: e.children.length, actual: kids.length });
-      e.children.forEach((c, i) => walk(c, kids[i]));
+      const down = { w: drift.w || parent.w, h: drift.h || parent.h };
+      e.children.forEach((c, i) => { const d = walk(c, kids[i], down); inner.w ||= d.w; inner.h ||= d.h; });
     }
+    if (e.kind !== "text" && a.w !== undefined && a.h !== undefined) {
+      if (e.width && e.sizingH !== "fill" && e.sizingH !== "hug" && far(a.w, e.width)) out.push({ path: e.path, nodeId: a.id, issue: "width differs from the plan", expected: e.width, actual: a.w });
+      if (e.height && e.sizingV !== "fill" && e.sizingV !== "hug" && far(a.h, e.height)) out.push({ path: e.path, nodeId: a.id, issue: "height differs from the plan", expected: e.height, actual: a.h });
+      if (src) {
+        // How the layer is really sized, when Figma says; the plan's intent otherwise. A frame that ended up FIXED
+        // doesn't follow its content, so its children can't explain its size.
+        const sizing = (axis: "H" | "V") => (axis === "H" ? a.layout?.sizingH : a.layout?.sizingV)?.toLowerCase() ?? (axis === "H" ? e.sizingH : e.sizingV);
+        const fills = (axis: "H" | "V") => sizing(axis) === "fill";
+        const hugs = (axis: "H" | "V") => sizing(axis) === "hug";
+        // Explained: it fills a parent that drifted, or hugs children that did.
+        const explained = (axis: "H" | "V") => axis === "H" ? (fills("H") && parent.w) || (hugs("H") && inner.w) : (fills("V") && parent.h) || (hugs("V") && inner.h);
+        // A DS instance may differ a little from the element it replaced; half again or more means a wrong match.
+        const off = e.kind === "instance" ? (x: number, y: number) => Math.abs(x - y) > Math.max(8, y * 0.5) : far;
+        // Instance heights are left out: DS inputs often include their label, so they're taller than the bare <input>.
+        const badW = off(a.w, src.w) && !explained("H");
+        const badH = src.h !== undefined && e.kind !== "instance" && off(a.h, src.h) && !explained("V");
+        if (badW || badH) out.push({ path: e.path, nodeId: a.id, issue: e.kind === "instance" ? "instance size far from the element it replaced" : "size far from the source's rendered box", expected: `${src.w}×${src.h ?? "any"}`, actual: `${a.w}×${a.h}` });
+      }
+    }
+    return { w: drift.w || inner.w, h: drift.h || inner.h };
   };
   walk(expected, actual);
   return out;

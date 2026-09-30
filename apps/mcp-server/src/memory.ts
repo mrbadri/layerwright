@@ -93,6 +93,7 @@ export class MemoryStore {
 /** A next step for a problem that keeps happening. */
 export function hintFor(p: Problem): string | undefined {
   const m = p.message;
+  if (/text style .*can't be applied/i.test(m)) return "Read the reason in the message. Rescan the Design System (refresh: true) after a library update; if the library import failed, check Assets → Libraries and that the style is published.";
   if (/library isn't available|isn't enabled|library didn't answer/i.test(m)) return "The Design System library isn't enabled for this file: Assets panel → Libraries → enable it, then run it again.";
   if (/font .*(not available|could not be loaded)|Cannot unwrap symbol/i.test(m)) return "A font is missing on this computer: `npx layerwright fonts <export folder> --install`, restart Figma, or pass fontMap.";
   if (p.type === "AMBIGUOUS_COMPONENT") return "Pick one candidate by { id }; the choice is remembered for this project.";
@@ -105,7 +106,8 @@ export function hintFor(p: Problem): string | undefined {
 
 /** Remove what could identify a design: quoted text, layer names, node ids, paths and URLs. */
 export function redact(s: string): string {
-  return s.replace(/"[^"]*"|«[^»]*»|“[^”]*”|'[^']*'/g, '"…"').replace(/\b\d+:\d+(;\d+:\d+)*\b/g, "<id>")
+  // A single quote is a quote only outside a word: "can't" and "isn't" are apostrophes, and keep the message readable.
+  return s.replace(/"[^"]*"|«[^»]*»|“[^”]*”|(?<![\p{L}\p{N}])'[^']*'(?![\p{L}\p{N}])/gu, '"…"').replace(/\b\d+:\d+(;\d+:\d+)*\b/g, "<id>")
     .replace(/(?:\/[\w.-]+){2,}/g, "<path>").replace(/https?:\/\/\S+/g, "<url>").replace(/[؀-ۿ]+(?:\s+[؀-ۿ]+)*/g, "…");
 }
 

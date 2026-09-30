@@ -40,6 +40,9 @@ test("a remembered choice resolves same-named components without asking again", 
 
 test("report: a redacted issue draft (no texts, names, ids, paths) with a prefilled GitHub link", () => {
   assert.equal(redact('Component "Accordion" 12:34 at /Users/me/x/y.html: متن نامرتبط'), 'Component "…" <id> at <path>: …');
+  // Apostrophes aren't quotes: the reason stays readable.
+  assert.equal(redact(`Text style "Body/M" can't be applied: its library isn't enabled for this file.`), `Text style "…" can't be applied: its library isn't enabled for this file.`);
+  assert.equal(redact("layer 'Hero title' is hidden"), 'layer "…" is hidden');
   const d = reportDraft({ version: 1, fontMap: {}, mappings: [], components: {}, notes: [], problems: [
     { at: "", tool: "figma_execute_plan", type: "VERIFICATION", message: '2 mismatch(es): size far from the source\'s rendered box' },
     { at: "", tool: "figma_execute_plan", type: "VERIFICATION", message: '1 mismatch(es): "Card" size' } ] }, { version: "0.2.0", node: "22", os: "darwin arm64" });

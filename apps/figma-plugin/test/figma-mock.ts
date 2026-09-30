@@ -105,7 +105,7 @@ export class T extends N {
   setRangeFontSize(start: number, end: number, size: number) { this.ranges.push({ start, end, size }); }
   setRangeFills(start: number, end: number, fills: any[]) { this.ranges.push({ start, end, fills }); }
   setRangeHyperlink(start: number, end: number, link: any) { this.ranges.push({ start, end, link }); }
-  async setTextStyleIdAsync(id: string) { const s = styles.get(id); if (!loaded.has(`${s.fontName.family}::${s.fontName.style}`)) throw new Error("unloaded style font"); this.textStyleId = id; this.fontName = s.fontName; }
+  async setTextStyleIdAsync(id: string) { const s = styles.get(id); const f = s.realFont ?? s.fontName; if (!loaded.has(`${f.family}::${f.style}`)) throw new Error("unloaded style font"); this.textStyleId = id; this.fontName = f; }
 }
 
 class C extends N {
@@ -124,7 +124,7 @@ class C extends N {
   }
 }
 
-const styles = new Map<string, any>([
+export const styles = new Map<string, any>([
   ["S:h1", { id: "S:h1", type: "TEXT", fontName: { family: "Inter", style: "Bold" } }],
   ["S:body", { id: "S:body", type: "TEXT", fontName: { family: "Inter", style: "Regular" } }],
   ["S:cap", { id: "S:cap", type: "TEXT", fontName: { family: "Inter", style: "Regular" } }],

@@ -44,7 +44,8 @@ export function groupFailures(failed: { id?: string; error: string; node?: strin
     const m = f.error;
     let cause: string, fix: string;
     const font = m.match(FONT);
-    if (LIBRARY.test(m)) { cause = "library not enabled for this file"; fix = "In Figma, open the Assets panel → Libraries (the book icon), enable the library these styles or components come from for this file, then run it again. (A copied file often loses its library link.)"; }
+    if (/text style .*can't be applied/i.test(m)) { cause = "text style can't be applied"; fix = "The error says why. Usually: rescan the Design System (figma_scan_design_system refresh: true), since a library update changes style ids; if the import from the library failed or timed out, check in Assets → Libraries that the library is enabled and the style is still published."; }
+    else if (LIBRARY.test(m)) { cause = "library not enabled for this file"; fix = "In Figma, open the Assets panel → Libraries (the book icon), enable the library these styles or components come from for this file, then run it again. (A copied file often loses its library link.)"; }
     else if (font) { cause = "font not installed"; fix = ""; }
     else if (/^Node \S+ not found|node with id .* does not exist/i.test(m)) { cause = "layer not found"; fix = "The layer id is out of date (deleted, undone, ungrouped or on another file): run figma_inspect or figma_get_design_context for the current ids, then try again."; }
     else if (/not found|no longer exists|was deleted/i.test(m)) { cause = "something it needs was deleted or renamed"; fix = "Rescan the Design System (figma_scan_design_system refresh: true) and analyse again."; }

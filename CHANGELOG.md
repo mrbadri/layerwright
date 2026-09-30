@@ -5,6 +5,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-09-30
+
+### Fixed
+- Verification after an HTML import reports a size change where it starts, not on every container that grew or shrank with it: a text that wrapped (a stand-in font) or a taller Design System component no longer turns into dozens of "size far from the source's rendered box" mismatches ([#1](https://github.com/shayan-m81/layerwright/issues/1)).
+- Library text styles failed with "its library isn't enabled for this file" even when it was: the plugin threw away Figma's real error and guessed. The lookup now tries every route (the style by id, the font from the scan, the font of a layer that uses the style, an import from the library with 30s instead of 10s), looks each style up once per run instead of once per text, and when it still fails says what actually happened (e.g. the id from the scan is gone after a library update, or the import's own error).
+- A text style that can't be applied no longer rolls back the whole build: its texts keep their own font and the style's size, with one warning per style giving the reason.
+- Plans take CSS weights (`weight: 600`, `"700"`, `"Semi Bold"`) and a text style by `{ id }`; a field that takes several forms says what each form wanted instead of "Invalid input".
+- `layerwright report` no longer treats apostrophes as quotes ("can't be applied: its library isn't enabled" was cut to `can"…"t enabled`), and recorded plan errors keep their path (e.g. `screens.0.children.3.weight`).
+
 ## [0.2.1] - 2026-09-30
 
 ### Changed
@@ -124,7 +133,8 @@ All notable changes to this project are documented here. The format follows
 ### Fixed
 - The plugin no longer opens a duplicate connection after the port is changed.
 
-[Unreleased]: https://github.com/shayan-m81/layerwright/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/shayan-m81/layerwright/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/shayan-m81/layerwright/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/shayan-m81/layerwright/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/shayan-m81/layerwright/compare/v0.1.4...v0.2.0
 [0.1.4]: https://github.com/shayan-m81/layerwright/compare/v0.1.3...v0.1.4

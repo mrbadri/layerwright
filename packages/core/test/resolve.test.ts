@@ -100,6 +100,41 @@ test("verification flags sizes far from the plan or the source, hidden layers an
   assert.deepEqual(verifyAgainstPlan(frame, snap, { sources: { "screens[0]": { w: 480, h: 490 } } }), []);
 });
 
+test("verification reports a size change where it starts, not on every container that grew around it", async () => {
+  const { verifyAgainstPlan } = await import("../src/index.ts");
+  // screen (fixed 400) > card (hugs) > row (hugs) > text that wrapped onto a second line (a stand-in font).
+  const text: any = { kind: "text", path: "s.children[0].children[0].children[0]", name: "T", content: "Hello", sizingH: "fill" };
+  const row: any = { kind: "frame", path: "s.children[0].children[0]", name: "Row", layout: { direction: "HORIZONTAL" }, sizingH: "fill", sizingV: "hug", children: [text] };
+  const card: any = { kind: "frame", path: "s.children[0]", name: "Card", layout: { direction: "VERTICAL" }, sizingH: "fill", sizingV: "hug", children: [row] };
+  const screen: any = { kind: "frame", path: "s", name: "S", width: 400, sizingH: "fixed", layout: { direction: "VERTICAL" }, children: [card] };
+  const snap = (textH: number, cardW = 400): any => ({ id: "1", type: "FRAME", name: "S", w: 400, h: 200 + textH, layout: { mode: "VERTICAL", sizingH: "FIXED", sizingV: "HUG" }, children: [
+    { id: "2", type: "FRAME", name: "Card", w: cardW, h: 100 + textH, layout: { mode: "VERTICAL", sizingH: "FILL", sizingV: "HUG" }, children: [
+      { id: "3", type: "FRAME", name: "Row", w: cardW, h: 40 + textH, layout: { mode: "HORIZONTAL", sizingH: "FILL", sizingV: "HUG" }, children: [
+        { id: "4", type: "TEXT", name: "T", w: cardW - 40, h: textH, text: { chars: "Hello" } }] }] }] });
+  const sources = { s: { w: 400, h: 220 }, "s.children[0]": { w: 400, h: 120 }, "s.children[0].children[0]": { w: 400, h: 60 }, "s.children[0].children[0].children[0]": { w: 360, h: 20 } };
+  assert.deepEqual(verifyAgainstPlan(screen, snap(20), { sources }), []);
+  // The text grew 20 → 40: every hugging container grew with it, and none of them is the problem.
+  assert.deepEqual(verifyAgainstPlan(screen, snap(40), { sources }), []);
+  // A container that is wrong by itself is still reported, once: its fill children follow it.
+  const bad = verifyAgainstPlan(screen, snap(20, 300), { sources });
+  assert.deepEqual(bad.map((m) => m.path), ["s.children[0]"]);
+  // A card Figma built FIXED doesn't grow with its text: its wrong height is its own and is reported.
+  const fixed = snap(40); fixed.children[0].layout.sizingV = "FIXED";
+  assert.deepEqual(verifyAgainstPlan(screen, fixed, { sources }).map((m) => m.path), ["s.children[0]"]);
+});
+
+test("the DSL takes CSS weights and a text style by id", async () => {
+  const { validatePlan } = await import("../src/index.ts");
+  const v = validatePlan({ name: "W", screens: [{ type: "screen", children: [
+    { type: "text", content: "a", weight: 600 }, { type: "text", content: "b", weight: "700" }, { type: "text", content: "c", weight: "Semi Bold" },
+    { type: "text", content: "d", weight: "normal", style: { id: "S:h1" } }] }] });
+  assert.ok(v.success, JSON.stringify(!v.success && v.errors));
+  assert.deepEqual(v.plan.screens[0].children.map((c: any) => c.weight), ["semibold", "bold", "semibold", "regular"]);
+  assert.equal(textOf({ type: "text", content: "H", style: { id: "S:h1" } }).textStyleId, "S:h1");
+  const bad = validatePlan({ name: "W", screens: [{ type: "screen", children: [{ type: "text", content: "a", style: { name: "H1" } }] }] });
+  assert.ok(!bad.success && /No accepted form matches/.test(bad.errors[0].message), JSON.stringify(bad));
+});
+
 test("the scan summary lists component sets that share a name", async () => {
   const { summarize } = await import("../src/index.ts");
   const d = summarize(dupDs()).duplicateNames!;

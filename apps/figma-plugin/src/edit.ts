@@ -3,7 +3,7 @@
 import type { AnnotationSpec, ResolvedInteraction } from "@cde/core";
 import { annotate } from "./annotate.ts";
 import { progress } from "./progress.ts";
-import { ExecError, checkDestination, findPage, fitSection, getComponent, loose, pageOf, styleOf, tag, textStyleOf, toReaction, variableOf } from "./execute.ts";
+import { ExecError, checkDestination, clearStyleLookups, findPage, fitSection, getComponent, loose, pageOf, styleOf, tag, textStyleOf, toReaction, variableOf } from "./execute.ts";
 
 export type NodeRef = string; // a node id, or "$n": the node produced by op n of this call
 
@@ -218,6 +218,7 @@ async function componentize(o: Extract<EditOp, { op: "componentize" }>, results:
 }
 
 export async function editNodes(p: { ops: EditOp[]; approved?: boolean; meta?: { session?: string; run?: string } }) {
+  clearStyleLookups();
   const results: EditResult[] = [];
   const touchedSections = new Set<SectionNode>();
   const noteSection = (n: BaseNode | null) => { if (n?.type === "SECTION") touchedSections.add(n as SectionNode); };
@@ -360,10 +361,10 @@ export async function editNodes(p: { ops: EditOp[]; approved?: boolean; meta?: {
           if (o.kind === "text") {
             if (n.type !== "TEXT") throw new Error(`A text style needs a text layer; ${n.name} is a ${n.type}.`);
             const found = await textStyleOf(o.styleId, o.styleKey, o.font);
-            if (!found) throw new Error(`Text style "${o.styleName ?? o.styleId}" can't be applied: its library isn't enabled for this file (Assets → Libraries).`);
+            if (!found.style) throw new Error(`Text style "${o.styleName ?? o.styleId}" can't be applied: ${found.reason}.`);
             for (const f of n.characters.length ? n.getRangeAllFontNames(0, n.characters.length) : n.fontName === figma.mixed ? [] : [n.fontName]) await figma.loadFontAsync(f);
             await figma.loadFontAsync(found.font);
-            await n.setTextStyleIdAsync(found.style.id);
+            await n.setTextStyleIdAsync(found.style.id).catch((e) => { throw new Error(`Text style "${o.styleName ?? o.styleId}" can't be applied: Figma refused it: ${e instanceof Error ? e.message : e}.`); });
           } else {
             const st = await styleOf(o.styleId, o.styleKey);
             const setter = { fill: "setFillStyleIdAsync", stroke: "setStrokeStyleIdAsync", effect: "setEffectStyleIdAsync" }[o.kind];

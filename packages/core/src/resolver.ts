@@ -529,8 +529,11 @@ export function compilePlan(ds: DesignSystem, plan: DesignPlan, opts: { preferre
       // when the node sets no font fields of its own (an HTML import sets them all, and must keep them).
       const explicitType = node.fontSize !== undefined || node.fontFamily !== undefined || node.weight !== undefined;
       const inferFromRole = t === "text" && node.role && !explicitType && node.style !== null;
-      const st = typeof node.style === "string" ? r.findTextStyle(node.style, undefined) : inferFromRole ? r.findTextStyle(undefined, role) : undefined;
-      if (typeof node.style === "string" && !st) errors.push({ type: "STYLE_NOT_FOUND", path: `${path}.style`, message: `No text style matches "${node.style}".`, suggestions: ds.typography.map((x) => x.name).slice(0, 10) });
+      const byId = node.style && typeof node.style === "object" ? ds.typography.find((x) => x.styleId === node.style.id) : undefined;
+      const st = byId ?? (typeof node.style === "string" ? r.findTextStyle(node.style, undefined) : inferFromRole ? r.findTextStyle(undefined, role) : undefined);
+      if (node.style && !st) errors.push({ type: "STYLE_NOT_FOUND", path: `${path}.style`, message: `No text style matches ${JSON.stringify(node.style)}.`, suggestions: ds.typography.map((x) => x.name).slice(0, 10) });
+      // The scan couldn't read this style's font (a library style Figma returns no data for): it may not apply.
+      if (st && !st.fontFamily && !styleSet.has(st.name)) warnings.push(`Text style "${st.name}": the scan couldn't read its font, so it's imported from the library when applied. If that fails, its texts keep their own font and size, and the warning says why.`);
       if (st) styleSet.add(st.name);
       else if (inferFromRole && ds.typography.length) warnings.push(`${path}: no text style for role "${role}"; using raw font size.`);
       const fb = ROLE_FALLBACK[role] ?? ROLE_FALLBACK.body;
@@ -544,6 +547,7 @@ export function compilePlan(ds: DesignSystem, plan: DesignPlan, opts: { preferre
         kind: "text", path, name: node.name ?? (t === "link" ? "Link" : node.content.slice(0, 40)), content: node.content,
         textStyleId: st?.styleId, textStyleKey: st ? ds.styles.find((s) => s.id === st.styleId && s.remote)?.key : undefined,
         textStyleFont: st?.fontFamily && st.fontStyle ? { family: st.fontFamily, style: st.fontStyle } : undefined,
+        textStyleName: st?.name, textStyleSize: st?.fontSize || undefined,
         fontSize: node.fontSize ?? (st ? undefined : fb.size), fontWeight: node.weight ? WEIGHT[node.weight as keyof typeof WEIGHT] : st ? undefined : fb.weight,
         fill: notePaint(r.resolvePaint(color, `${path}.color`, errors)),
         align, hyperlink: node.href,

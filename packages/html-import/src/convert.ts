@@ -187,7 +187,8 @@ export function toPlan(screens: { name: string; width: number; dom: DomNode }[],
       const p = `${path}.children[${children.length}]`;
       const c = node(k, p);
       if (!c) return;
-      if (c._box && c.type !== "text") sources[p] = { w: round(c._box.w), h: round(c._box.h) };
+      // Texts too: they aren't reported (font metrics), but a text that grew explains the containers around it.
+      if (c._box) sources[p] = { w: round(c._box.w), h: round(c._box.h) };
       if (k.kind === "element" && hasVisual(k) && k.children.length >= 2 && (sigs.get(signature(k)) ?? 0) >= 3 && c.type === "frame") {
         if (/^(div|li|article|section)$/.test(c.name)) c.name = "Card";
         hints.push({ path: p, role: "card", label: collectText(k).slice(0, 60) });
