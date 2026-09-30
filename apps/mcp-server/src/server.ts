@@ -401,12 +401,20 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
   }));
 
   server.registerTool("figma_foundations", {
-    description: "Create or update Design System foundations in the open file: a variable collection (COLOR and FLOAT variables, e.g. \"color/brand/deep-teal\": \"#176B66\", \"radius/media\": 20) and text styles. Idempotent by name. Rescan the DS afterwards.",
+    description: "Create or update Design System foundations in the open file: a variable collection (COLOR and FLOAT variables, e.g. \"color/brand/deep-teal\": \"#176B66\", \"radius/media\": 20), text styles, colour styles (a hex, a gradient, or bound to a colour variable so the style follows the token), effect styles (shadows, layer/background blur) and grid styles (columns, rows, square grid). Idempotent by name. Rescan the DS afterwards.",
     inputSchema: {
       collection: z.string().default("Tokens"),
-      colors: z.record(z.string()).optional(),
+      colors: z.record(z.string()).optional().describe("#RRGGBB or #RRGGBBAA"),
       numbers: z.record(z.number()).optional(),
       textStyles: z.array(z.object({ name: z.string(), family: z.string(), style: z.string(), size: z.number(), lineHeight: z.number().optional().describe("px"), letterSpacing: z.number().optional().describe("percent") })).optional(),
+      paintStyles: z.array(z.object({ name: z.string(), color: z.string().optional(), variable: z.string().optional().describe("Bind the style to this colour variable"),
+        gradient: z.object({ angle: z.number().optional(), stops: z.array(z.object({ color: z.string(), position: z.number().min(0).max(1) })).min(2) }).optional() })).optional(),
+      effectStyles: z.array(z.object({ name: z.string(), shadows: z.array(z.object({ type: z.enum(["drop", "inner"]).optional(), x: z.number().optional(), y: z.number().optional(), blur: z.number().optional(), spread: z.number().optional(), color: z.string() })).optional(),
+        blur: z.object({ type: z.enum(["layer", "background"]), radius: z.number().min(0) }).optional() })).optional(),
+      gridStyles: z.array(z.object({ name: z.string(),
+        columns: z.object({ count: z.number().int().min(1), gutter: z.number().optional(), margin: z.number().optional(), alignment: z.enum(["STRETCH", "CENTER", "MIN", "MAX"]).optional(), color: z.string().optional() }).optional(),
+        rows: z.object({ count: z.number().int().min(1), gutter: z.number().optional(), margin: z.number().optional(), alignment: z.enum(["STRETCH", "CENTER", "MIN", "MAX"]).optional(), color: z.string().optional() }).optional(),
+        grid: z.object({ size: z.number().min(1), color: z.string().optional() }).optional() })).optional(),
     },
   }, async (p) => guard(async () => ok(await bridge.request("foundations", p, 60_000))));
 
@@ -475,6 +483,10 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
       replace: z.boolean().optional().describe("Replace the node's interactions (default true) or add to them") }).strict(),
     z.object({ op: z.literal("swap"), node: Ref.describe("An instance"), component: z.union([z.string(), z.object({ id: z.string().optional(), key: z.string().optional() }).strict()]).describe("Target component or set: name, { id } or { key }"),
       variant: z.union([z.string(), z.record(z.string())]).optional().describe("Variant of the target set, e.g. { State: \"Open\" }") }).strict(),
+    z.object({ op: z.literal("bind"), node: Ref, field: z.enum(["fills", "strokes", "itemSpacing", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft", "padding", "cornerRadius", "width", "height", "opacity", "strokeWeight"]),
+      variable: z.union([z.string(), z.object({ id: z.string().optional(), key: z.string().optional() }).strict()]).describe("Variable name (e.g. color/bg/surface, spacing/md), { id } or { key }") }).strict(),
+    z.object({ op: z.literal("style"), node: Ref, kind: z.enum(["fill", "stroke", "text", "effect"]),
+      style: z.union([z.string(), z.object({ id: z.string() }).strict()]).describe("Style name (e.g. Fa Text sm/Bold) or { id }") }).strict(),
     z.object({ op: z.literal("annotate"), node: Ref, annotations: z.array(AnnotationDsl).min(1).max(10), replace: z.boolean().optional().describe("Replace the node's annotations (default: add)") }).strict(),
     z.object({ op: z.literal("flow"), name: z.string().min(1), start: Ref.optional().describe("Top-level frame where the flow starts"), description: z.string().optional(), remove: z.boolean().optional() }).strict(),
     z.object({ op: z.literal("componentize"), nodes: z.array(Ref).min(1).max(100), mode: z.enum(["single", "multiple", "variants"]).optional(),
@@ -485,10 +497,10 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
       autoLayout: z.boolean().optional().describe("Give absolutely positioned layers that stack cleanly Auto Layout first, so the component adapts to new text (default true; uneven layouts are left as they are)"),
       parent: Ref.optional(), x: z.number().optional(), y: z.number().optional() }).strict(),
   ]);
-  const MUTATES = new Set(["rename", "move", "set", "delete", "resizeToFit", "prototype", "flow", "swap", "annotate"]);
+  const MUTATES = new Set(["rename", "move", "set", "delete", "resizeToFit", "prototype", "flow", "swap", "annotate", "bind", "style"]);
 
   server.registerTool("figma_edit", {
-    description: "Change existing layers in one undo step: rename, move (to a parent, section or page), duplicate, set (visible, position, size, opacity, text, instance properties), delete, resizeToFit (sections grow to their content), prototype (click/hover/after-delay interactions: navigate, overlay, swap, scroll-to, back, close, url, and change-to between variants for interactive components, with transitions), flow (a prototype starting point), swap (an instance to another component or variant; overrides are kept), annotate (native Figma annotations for dev handoff: markdown, measured properties, a category), and componentize (turn existing frames into a component, several components, or one component set with variants; works on copies by default, and can expose text layers as TEXT properties). Ops run in order and can use \"$n\" for the node made by op n. Changing or deleting existing nodes needs approved=true; without it, delete only hides and renames the node (🗑).",
+    description: "Change existing layers in one undo step: rename, move (to a parent, section or page), duplicate, set (visible, position, size, opacity, text, instance properties), delete, resizeToFit (sections grow to their content), prototype (click/hover/after-delay interactions: navigate, overlay, swap, scroll-to, back, close, url, and change-to between variants for interactive components, with transitions), flow (a prototype starting point), swap (an instance to another component or variant; overrides are kept), bind (a variable to fills, strokes, gap, padding, radius, size, opacity), style (a fill, stroke, text or effect style), annotate (native Figma annotations for dev handoff: markdown, measured properties, a category), and componentize (turn existing frames into a component, several components, or one component set with variants; works on copies by default, and can expose text layers as TEXT properties). Ops run in order and can use \"$n\" for the node made by op n. Changing or deleting existing nodes needs approved=true; without it, delete only hides and renames the node (🗑).",
     inputSchema: { ops: z.array(EditOp).min(1).max(200), approved: z.boolean().optional().describe("Required for ops that change existing nodes; for delete it means really remove") },
   }, async ({ ops, approved }) => guard(async () => {
     const needs = ops.filter((o) => MUTATES.has(o.op) && o.op !== "delete" || (o.op === "componentize" && o.duplicate === false));
@@ -504,6 +516,29 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
         const m = resolver.findComponent({ component: o.component, variant: o.variant }, `ops[${k}]`);
         if ("error" in m) { errors.push(m.error); return o; }
         return { op: "swap", node: o.node, componentId: m.def.id, componentKey: m.def.remote ? m.def.key : undefined, remote: m.def.remote, componentName: m.set ? `${m.set.name} / ${Object.values(m.def.variants ?? {}).join(", ")}` : m.def.name };
+      }
+      if (o.op === "bind") {
+        const d = loadDs();
+        const colour = o.field === "fills" || o.field === "strokes";
+        if (typeof o.variable === "object" && o.variable.key && !o.variable.id) return { op: "bind", node: o.node, field: o.field, variableId: "", variableKey: o.variable.key };
+        if (!d || !resolver) { errors.push({ type: "DESIGN_SYSTEM_NOT_SCANNED", path: `ops[${k}]`, message: "bind needs a Design System scan (figma_scan_design_system)." }); return o; }
+        const ref = o.variable;
+        const v = typeof ref === "object" ? d.variables.find((x) => x.id === ref.id) : resolver.findVariable(ref, colour ? "COLOR" : "FLOAT");
+        if (!v) { errors.push({ type: "TOKEN_NOT_FOUND", path: `ops[${k}]`, message: `No ${colour ? "colour" : "number"} variable matches ${JSON.stringify(o.variable)}.`, suggestions: d.variables.filter((x) => x.type === (colour ? "COLOR" : "FLOAT")).map((x) => x.name).slice(0, 10) }); return o; }
+        return { op: "bind", node: o.node, field: o.field, variableId: v.id, variableKey: v.remote ? v.key : undefined, variableName: v.name };
+      }
+      if (o.op === "style") {
+        const d = loadDs();
+        if (!d) { errors.push({ type: "DESIGN_SYSTEM_NOT_SCANNED", path: `ops[${k}]`, message: "style needs a Design System scan (figma_scan_design_system)." }); return o; }
+        const type = o.kind === "text" ? "TEXT" : o.kind === "effect" ? "EFFECT" : "PAINT";
+        const want = typeof o.style === "string" ? o.style.toLowerCase() : undefined;
+        // Prefer a copy whose font is known (text styles from a library may not report it).
+        const pool = d.styles.filter((x) => x.type === type && (want ? x.name.toLowerCase() === want : x.id === (o.style as { id: string }).id));
+        const typo = (id: string) => d.typography.find((t) => t.styleId === id);
+        const st = pool.sort((a, b) => Number(!!typo(b.id)?.fontFamily) - Number(!!typo(a.id)?.fontFamily))[0];
+        if (!st) { errors.push({ type: "STYLE_NOT_FOUND", path: `ops[${k}]`, message: `No ${o.kind} style ${JSON.stringify(o.style)}.`, suggestions: d.styles.filter((x) => x.type === type).map((x) => x.name).slice(0, 10) }); return o; }
+        const t = typo(st.id);
+        return { op: "style", node: o.node, kind: o.kind, styleId: st.id, styleKey: st.remote ? st.key : undefined, styleName: st.name, font: t?.fontFamily && t.fontStyle ? { family: t.fontFamily, style: t.fontStyle } : undefined };
       }
       return o;
     });

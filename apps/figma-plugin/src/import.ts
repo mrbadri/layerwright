@@ -310,8 +310,14 @@ export async function importTree(p: { page?: string; section?: string; gap?: num
   return { page: page.name, sectionId: section?.id, screens: created.map((c) => ({ id: c.id, name: c.name, width: c.width, height: c.height })), warnings: fonts.warnings };
 }
 
+type ShadowIn = { type?: "drop" | "inner"; x?: number; y?: number; blur?: number; spread?: number; color: string };
+const alpha = (hex: string) => (hex.length >= 9 ? parseInt(hex.slice(7, 9), 16) / 255 : 1);
+
 export async function foundations(p: { collection?: string; colors?: Record<string, string>; numbers?: Record<string, number>;
-  textStyles?: { name: string; family: string; style: string; size: number; lineHeight?: number; letterSpacing?: number }[] }) {
+  textStyles?: { name: string; family: string; style: string; size: number; lineHeight?: number; letterSpacing?: number }[];
+  paintStyles?: { name: string; color?: string; variable?: string; gradient?: { angle?: number; stops: { color: string; position: number }[] } }[];
+  effectStyles?: { name: string; shadows?: ShadowIn[]; blur?: { type: "layer" | "background"; radius: number } }[];
+  gridStyles?: { name: string; columns?: { count: number; gutter?: number; margin?: number; alignment?: "STRETCH" | "CENTER" | "MIN" | "MAX"; color?: string }; rows?: { count: number; gutter?: number; margin?: number; alignment?: "STRETCH" | "CENTER" | "MIN" | "MAX"; color?: string }; grid?: { size: number; color?: string } }[] }) {
   const cols = await figma.variables.getLocalVariableCollectionsAsync();
   const name = p.collection ?? "Tokens";
   const col = cols.find((c) => c.name === name) ?? figma.variables.createVariableCollection(name);
@@ -325,7 +331,7 @@ export async function foundations(p: { collection?: string; colors?: Record<stri
     return v;
   };
   let colors = 0, numbers = 0, styles = 0;
-  for (const [k, hex] of Object.entries(p.colors ?? {})) { upsert(k, "COLOR", { ...rgb(hex), a: 1 }); colors++; }
+  for (const [k, hex] of Object.entries(p.colors ?? {})) { upsert(k, "COLOR", { ...rgb(hex), a: alpha(hex) }); colors++; }
   for (const [k, n] of Object.entries(p.numbers ?? {})) { upsert(k, "FLOAT", n); numbers++; }
   const local = await figma.getLocalTextStylesAsync();
   const warnings: string[] = [];
@@ -338,6 +344,50 @@ export async function foundations(p: { collection?: string; colors?: Record<stri
     if (t.letterSpacing) st.letterSpacing = { unit: "PERCENT", value: t.letterSpacing };
     styles++;
   }
+  // Colour, effect and grid styles: upserted by name, like variables and text styles.
+  const findVar = async (name: string) => {
+    const all = [...existing, ...(await figma.variables.getLocalVariablesAsync())];
+    return all.find((v) => v.name === name && v.resolvedType === "COLOR");
+  };
+  let paint = 0, effect = 0, grid = 0;
+  const localPaint = await figma.getLocalPaintStylesAsync();
+  for (const ps of p.paintStyles ?? []) {
+    const st = localPaint.find((l) => l.name === ps.name) ?? figma.createPaintStyle();
+    st.name = ps.name;
+    if (ps.gradient) st.paints = [gradientPaint({ angle: ps.gradient.angle ?? 180, stops: ps.gradient.stops.map((x) => ({ hex: x.color.slice(0, 7), a: alpha(x.color), pos: x.position })) })];
+    else if (ps.variable) {
+      const v = await findVar(ps.variable);
+      if (!v) { warnings.push(`Colour style "${ps.name}": no colour variable "${ps.variable}"; skipped.`); continue; }
+      st.paints = [figma.variables.setBoundVariableForPaint({ type: "SOLID", color: { r: 0, g: 0, b: 0 } }, "color", v)];
+    } else if (ps.color) st.paints = [{ type: "SOLID", color: rgb(ps.color), opacity: alpha(ps.color) }];
+    else { warnings.push(`Colour style "${ps.name}" needs color, variable or gradient; skipped.`); continue; }
+    paint++;
+  }
+  const localEffect = await figma.getLocalEffectStylesAsync();
+  for (const es of p.effectStyles ?? []) {
+    const st = localEffect.find((l) => l.name === es.name) ?? figma.createEffectStyle();
+    st.name = es.name;
+    const effects: Effect[] = (es.shadows ?? []).map((sh) => ({ type: sh.type === "inner" ? "INNER_SHADOW" : "DROP_SHADOW", color: { ...rgb(sh.color), a: alpha(sh.color) }, offset: { x: sh.x ?? 0, y: sh.y ?? 0 },
+      radius: sh.blur ?? 0, spread: sh.spread ?? 0, visible: true, blendMode: "NORMAL", ...(sh.type === "inner" ? {} : { showShadowBehindNode: false }) }) as Effect);
+    if (es.blur) effects.push({ type: es.blur.type === "background" ? "BACKGROUND_BLUR" : "LAYER_BLUR", radius: es.blur.radius, visible: true } as Effect);
+    st.effects = effects;
+    effect++;
+  }
+  const localGrid = await figma.getLocalGridStylesAsync();
+  for (const gs of p.gridStyles ?? []) {
+    const st = localGrid.find((l) => l.name === gs.name) ?? figma.createGridStyle();
+    st.name = gs.name;
+    const c = (hex?: string) => ({ ...(hex ? rgb(hex) : { r: 1, g: 0, b: 0 }), a: hex ? alpha(hex) : 0.1 });
+    const lanes: LayoutGrid[] = [];
+    for (const [pattern, g] of [["COLUMNS", gs.columns], ["ROWS", gs.rows]] as const) {
+      if (!g) continue;
+      const align = g.alignment ?? "STRETCH";
+      lanes.push({ pattern, count: g.count, gutterSize: g.gutter ?? 20, alignment: align, ...(align === "CENTER" ? { sectionSize: 64 } : { offset: g.margin ?? 0 }), visible: true, color: c(g.color) } as LayoutGrid);
+    }
+    if (gs.grid) lanes.push({ pattern: "GRID", sectionSize: gs.grid.size, visible: true, color: c(gs.grid.color) });
+    st.layoutGrids = lanes;
+    grid++;
+  }
   figma.commitUndo();
-  return { collection: col.name, colors, numbers, textStyles: styles, warnings };
+  return { collection: col.name, colors, numbers, textStyles: styles, paintStyles: paint, effectStyles: effect, gridStyles: grid, warnings };
 }

@@ -59,6 +59,7 @@ Don't ask what you can find out: the file, page, selection and DS come from `fig
 
 1. List the screens and states (default, loading, error, empty, success) and how the user moves between them.
 2. `figma_get_design_context({ task })` → only the relevant components (variants, props), tokens, text styles.
+   No Design System in the file yet? Create the foundations first: `figma_foundations({ colors, numbers, textStyles, paintStyles, effectStyles, gridStyles })` (idempotent by name; a colour style can be bound to a colour variable), then rescan.
 3. Write **one** plan for the whole flow (DSL below), with `target.page`. Put screens in a top-level `section`.
 4. For a prototype, give nodes `interactions` and the plan `prototype.flows` (DSL below).
 5. `figma_preview_plan` → fix errors from their `suggestions` → show the summary → `figma_execute_plan`.
@@ -79,6 +80,7 @@ Up to 3 rounds, stop as soon as nothing important is left:
   - `rename`, `move` (parent, section or page), `duplicate`, `set` (visible, x/y, size, opacity, `text`, instance `properties`), `resizeToFit`, `delete`.
   - `componentize`: `{ nodes, mode: "variants", name, variants: [{ State: "Expanded" }, …], exposeText: ["Title", "Body"] }`. Works on copies placed beside the originals (`duplicate: false` converts in place) and gives cleanly stacked layers Auto Layout so the component adapts to new text. Rename text layers first so the exposed properties get good names.
   - `prototype` (`{ node, interactions }`) and `flow` (`{ name, start }`) wire existing frames, e.g. a variant `change-to` another variant for an interactive component.
+  - `bind` (`{ node, field, variable }`: fills, strokes, gap, padding, radius, size, opacity) and `style` (`{ node, kind: fill | stroke | text | effect, style }`) for exact token and style work the audit didn't propose.
   - `swap` (`{ node, component, variant? }`) moves an instance to another component or variant; Figma keeps its text and other overrides.
   - `annotate` (`{ node, annotations: [{ label, properties?, category? }] }`) writes native Figma annotations for developers: markdown notes, live measurements (padding, fills, …), a category such as "Development".
 - **Move to a new component set** (a new Accordion, another library): `figma_migrate({ from, to, target, propertyMap?, valueMap? })` first reports what would change (instances per target variant, and the unmatched ones: map renamed properties or values and check again), then with `approved: true` swaps them all in one undo step.

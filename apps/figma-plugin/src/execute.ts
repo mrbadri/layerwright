@@ -29,6 +29,14 @@ export async function textStyleOf(id?: string, key?: string, font?: FontName): P
   return null;
 }
 
+/** A variable: by id first (a library variable the file already uses is reachable that way), then import by key. */
+export async function variableOf(id?: string, key?: string): Promise<Variable> {
+  let v = id && !id.startsWith("lib:") ? await figma.variables.getVariableByIdAsync(id).catch(() => null) : null;
+  if (!v && key) v = await withTimeout(figma.variables.importVariableByKeyAsync(key)).catch(() => null);
+  if (!v) throw new ExecError({ type: "TOKEN_NOT_FOUND", message: `Variable ${key ?? id} not found in this file (was the Design System rescanned, and is its library enabled?).` });
+  return v;
+}
+
 /** A style: by id first (library styles the file already uses are reachable that way, instantly), then by key. */
 export async function styleOf(id?: string, key?: string): Promise<BaseStyle> {
   if (id) { const s = await figma.getStyleByIdAsync(id).catch(() => null); if (s) return s; }
@@ -108,10 +116,7 @@ class Ctx {
   async variable(id?: string, key?: string): Promise<Variable> {
     const k = key ?? id!;
     if (this.vars.has(k)) return this.vars.get(k)!;
-    // By id first (a library variable the file already uses is reachable that way), then import by key.
-    let v = id && !id.startsWith("lib:") ? await figma.variables.getVariableByIdAsync(id).catch(() => null) : null;
-    if (!v && key) v = await withTimeout(figma.variables.importVariableByKeyAsync(key)).catch(() => null);
-    if (!v) throw new ExecError({ type: "TOKEN_NOT_FOUND", message: `Variable ${k} not found in this file (was the Design System rescanned?).` });
+    const v = await variableOf(id, key);
     this.vars.set(k, v);
     return v;
   }

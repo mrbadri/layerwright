@@ -3,7 +3,7 @@
 import type { AnnotationSpec, ResolvedInteraction } from "@cde/core";
 import { annotate } from "./annotate.ts";
 import { progress } from "./progress.ts";
-import { ExecError, checkDestination, findPage, fitSection, getComponent, loose, pageOf, tag, toReaction } from "./execute.ts";
+import { ExecError, checkDestination, findPage, fitSection, getComponent, loose, pageOf, styleOf, tag, textStyleOf, toReaction, variableOf } from "./execute.ts";
 
 export type NodeRef = string; // a node id, or "$n": the node produced by op n of this call
 
@@ -18,9 +18,15 @@ export type EditOp =
   /** Swap an instance to another component or variant; Figma keeps its overrides. (Resolved by the server.) */
   | { op: "swap"; node: NodeRef; componentId: string; componentKey?: string; remote?: boolean; componentName?: string }
   | { op: "annotate"; node: NodeRef; annotations: AnnotationSpec[]; replace?: boolean }
+  /** Bind a variable to a field (resolved by the server). */
+  | { op: "bind"; node: NodeRef; field: BindField; variableId: string; variableKey?: string; variableName?: string }
+  /** Apply a fill / stroke / text / effect style (resolved by the server). */
+  | { op: "style"; node: NodeRef; kind: "fill" | "stroke" | "text" | "effect"; styleId: string; styleKey?: string; styleName?: string; font?: FontName }
   | { op: "flow"; name: string; start?: NodeRef; description?: string; remove?: boolean }
   | { op: "componentize"; nodes: NodeRef[]; mode?: "single" | "multiple" | "variants"; name?: string; variants?: Record<string, string>[];
       duplicate?: boolean; exposeText?: boolean | string[]; autoLayout?: boolean; parent?: NodeRef; x?: number; y?: number };
+
+export type BindField = "fills" | "strokes" | "itemSpacing" | "paddingTop" | "paddingRight" | "paddingBottom" | "paddingLeft" | "padding" | "cornerRadius" | "width" | "height" | "opacity" | "strokeWeight";
 
 export interface EditResult { op: number; kind: EditOp["op"]; nodeId?: string; nodeIds?: string[]; note?: string }
 
@@ -316,6 +322,41 @@ export async function editNodes(p: { ops: EditOp[]; approved?: boolean; meta?: {
           const n = await resolve(o.node, results);
           await annotate(n, o.annotations, o.replace);
           r = { op: i, kind: o.op, nodeId: n.id, note: `${o.annotations.length} annotation(s)` };
+          break;
+        }
+        case "bind": {
+          const n = await resolve(o.node, results);
+          const v = await variableOf(o.variableId, o.variableKey);
+          if (o.field === "fills" || o.field === "strokes") {
+            if (!(o.field in n)) throw new Error(`${n.name} has no ${o.field}.`);
+            const paints = [...((n as GeometryMixin)[o.field] as Paint[])];
+            const first = paints[0]?.type === "SOLID" ? (paints[0] as SolidPaint) : ({ type: "SOLID", color: { r: 0, g: 0, b: 0 } } as SolidPaint);
+            paints[0] = figma.variables.setBoundVariableForPaint(first, "color", v);
+            (n as GeometryMixin)[o.field] = paints;
+          } else {
+            const fields = o.field === "padding" ? ["paddingTop", "paddingRight", "paddingBottom", "paddingLeft"] : o.field === "cornerRadius" ? ["topLeftRadius", "topRightRadius", "bottomLeftRadius", "bottomRightRadius"] : [o.field];
+            if (fields.some((f) => !(f in n))) throw new Error(`${n.name} (${n.type}) has no ${o.field}.`);
+            for (const f of fields) (n as SceneNode & { setBoundVariable(f: string, v: Variable): void }).setBoundVariable(f, v);
+          }
+          r = { op: i, kind: o.op, nodeId: n.id, note: `${o.field} → ${o.variableName ?? v.name}` };
+          break;
+        }
+        case "style": {
+          const n = await resolve(o.node, results);
+          if (o.kind === "text") {
+            if (n.type !== "TEXT") throw new Error(`A text style needs a text layer; ${n.name} is a ${n.type}.`);
+            const found = await textStyleOf(o.styleId, o.styleKey, o.font);
+            if (!found) throw new Error(`Text style "${o.styleName ?? o.styleId}" can't be applied: its library isn't enabled for this file (Assets → Libraries).`);
+            for (const f of n.characters.length ? n.getRangeAllFontNames(0, n.characters.length) : n.fontName === figma.mixed ? [] : [n.fontName]) await figma.loadFontAsync(f);
+            await figma.loadFontAsync(found.font);
+            await n.setTextStyleIdAsync(found.style.id);
+          } else {
+            const st = await styleOf(o.styleId, o.styleKey);
+            const setter = { fill: "setFillStyleIdAsync", stroke: "setStrokeStyleIdAsync", effect: "setEffectStyleIdAsync" }[o.kind];
+            if (!(setter in n)) throw new Error(`${n.name} (${n.type}) can't take a ${o.kind} style.`);
+            await (n as unknown as Record<string, (id: string) => Promise<void>>)[setter](st.id);
+          }
+          r = { op: i, kind: o.op, nodeId: n.id, note: `${o.kind} style → ${o.styleName ?? o.styleId}` };
           break;
         }
         case "flow": {

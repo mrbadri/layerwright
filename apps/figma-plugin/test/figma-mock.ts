@@ -51,8 +51,11 @@ export class N {
     // Like Figma: layout sizing only exists on auto-layout frames and children of auto-layout frames.
     if (this.layoutMode === "NONE" && (!this.parent || this.parent.layoutMode === "NONE")) throw new Error("in set_layoutSizingHorizontal: node must be an auto-layout frame or a child of an auto-layout frame");
   }
-  async setEffectStyleIdAsync() {}
-  async setFillStyleIdAsync() {}
+  fillStyleId = ""; strokeStyleId = ""; effectStyleId = "";
+  topLeftRadius = 0; topRightRadius = 0; bottomLeftRadius = 0; bottomRightRadius = 0;
+  async setEffectStyleIdAsync(id: string) { this.effectStyleId = id; }
+  async setFillStyleIdAsync(id: string) { this.fillStyleId = id; }
+  async setStrokeStyleIdAsync(id: string) { this.strokeStyleId = id; }
   locked = false; primaryAxisSizingMode = "AUTO"; counterAxisSizingMode = "AUTO"; layoutWrap = "NO_WRAP"; counterAxisSpacing = 0; dashPattern: number[] = [];
   private data = new Map<string, string>();
   setPluginData(k: string, v: string) { this.data.set(k, v); }
@@ -139,6 +142,8 @@ export function resetFigma() {
   new C("2:2", "State=Default", { "Label#20:0": { type: "TEXT", defaultValue: "Label" }, "Placeholder#20:1": { type: "TEXT", defaultValue: "" } }, ["Label", "Placeholder"]);
   new C("3:1", "Link", {}, ["Text"]);
   const vars = new Map(fixtureDs().variables.map((v) => [v.id, { id: v.id, name: v.name }]));
+  const cols: any[] = [], made: any[] = [];
+  const local = { text: [] as any[], paint: [] as any[], effect: [] as any[], grid: [] as any[] };
   (globalThis as any).figma = {
     mixed: MIXED,
     currentPage: Object.assign(page, { selection: [] }),
@@ -199,9 +204,20 @@ export function resetFigma() {
       };
     })(),
     variables: {
-      getVariableByIdAsync: async (id: string) => vars.get(id) ?? null,
+      getVariableByIdAsync: async (id: string) => vars.get(id) ?? made.find((v) => v.id === id) ?? null,
       setBoundVariableForPaint: (p: any, _f: string, v: any) => ({ ...p, boundVariables: { color: { type: "VARIABLE_ALIAS", id: v.id } } }),
+      getLocalVariableCollectionsAsync: async () => cols,
+      getLocalVariablesAsync: async () => made,
+      createVariableCollection: (name: string) => { const c = { id: `col${cols.length + 1}`, name, modes: [{ modeId: "m1", name: "Mode 1" }] }; cols.push(c); return c; },
+      createVariable: (name: string, col: any, resolvedType: string) => { const v: any = { id: `var${made.length + 1}`, name, variableCollectionId: col.id, resolvedType, values: {}, setValueForMode(m: string, x: unknown) { this.values[m] = x; } }; made.push(v); return v; },
     },
+    // Local styles, created and looked up by name (like Figma).
+    getLocalTextStylesAsync: async () => local.text, getLocalPaintStylesAsync: async () => local.paint,
+    getLocalEffectStylesAsync: async () => local.effect, getLocalGridStylesAsync: async () => local.grid,
+    createTextStyle: () => { const x: any = { id: `S:t${local.text.length + 1}`, type: "TEXT" }; local.text.push(x); styles.set(x.id, x); return x; },
+    createPaintStyle: () => { const x: any = { id: `S:p${local.paint.length + 1}`, type: "PAINT", paints: [] }; local.paint.push(x); styles.set(x.id, x); return x; },
+    createEffectStyle: () => { const x: any = { id: `S:e${local.effect.length + 1}`, type: "EFFECT", effects: [] }; local.effect.push(x); styles.set(x.id, x); return x; },
+    createGridStyle: () => { const x: any = { id: `S:g${local.grid.length + 1}`, type: "GRID", layoutGrids: [] }; local.grid.push(x); styles.set(x.id, x); return x; },
   };
   return page;
 }

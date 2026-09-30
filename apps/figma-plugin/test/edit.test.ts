@@ -224,3 +224,44 @@ test("swap keeps the instance and its overrides; annotate adds notes with a cate
   await executePlan(compilePlan(emptyDesignSystem(), v.plan).plan!);
   assert.deepEqual(F().currentPage.children[0].annotations, [{ labelMarkdown: "Spacing: **spacing/md**", properties: [{ type: "itemSpacing" }] }]);
 });
+
+test("foundations: colour styles (hex with alpha, bound to a variable, gradient), effect and grid styles, upserted by name", async () => {
+  resetFigma();
+  const { foundations } = await import("../src/import.ts");
+  const r = await foundations({ collection: "Tokens", colors: { "color/overlay": "#00000080", "color/brand": "#7C3AED" },
+    paintStyles: [{ name: "Brand", variable: "color/brand" }, { name: "Scrim", color: "#0000004D" }, { name: "Hero", gradient: { angle: 90, stops: [{ color: "#7C3AED", position: 0 }, { color: "#176B66", position: 1 }] } }],
+    effectStyles: [{ name: "Card", shadows: [{ y: 4, blur: 12, color: "#0000001A" }] }, { name: "Frost", blur: { type: "background", radius: 20 } }],
+    gridStyles: [{ name: "Desktop 12", columns: { count: 12, gutter: 24, margin: 80 } }] });
+  assert.deepEqual([r.colors, r.paintStyles, r.effectStyles, r.gridStyles, r.warnings], [2, 3, 2, 1, []]);
+  const made = await F().variables.getLocalVariablesAsync();
+  assert.equal(made.find((v: any) => v.name === "color/overlay").values.m1.a.toFixed(2), "0.50", "alpha is kept");
+  const paint = await F().getLocalPaintStylesAsync();
+  assert.equal(paint[0].paints[0].boundVariables.color.id, made.find((v: any) => v.name === "color/brand").id);
+  assert.equal(paint[1].paints[0].opacity.toFixed(2), "0.30");
+  assert.equal(paint[2].paints[0].type, "GRADIENT_LINEAR");
+  const fx = await F().getLocalEffectStylesAsync();
+  assert.deepEqual([fx[0].effects[0].type, fx[1].effects[0].type], ["DROP_SHADOW", "BACKGROUND_BLUR"]);
+  const grid = (await F().getLocalGridStylesAsync())[0].layoutGrids[0];
+  assert.deepEqual([grid.pattern, grid.count, grid.gutterSize, grid.offset], ["COLUMNS", 12, 24, 80]);
+  await foundations({ paintStyles: [{ name: "Scrim", color: "#00000066" }] });
+  assert.equal((await F().getLocalPaintStylesAsync()).length, 3, "same name updates, doesn't duplicate");
+});
+
+test("bind a variable to fills, padding and radius; apply fill and text styles", async () => {
+  const page = resetFigma();
+  loaded.add("Inter::Regular"); loaded.add("Inter::Bold");
+  const f = F().createFrame(); f.layoutMode = "VERTICAL"; page.appendChild(f);
+  const t = F().createText(); t.characters = "Hi"; f.appendChild(t);
+  const r = await editNodes({ approved: true, ops: [
+    { op: "bind", node: f.id, field: "fills", variableId: "v5" },
+    { op: "bind", node: f.id, field: "padding", variableId: "v2" },
+    { op: "bind", node: f.id, field: "cornerRadius", variableId: "v4" },
+    { op: "style", node: t.id, kind: "text", styleId: "S:h1" },
+  ] });
+  assert.equal(r.failed, undefined);
+  assert.equal(f.fills[0].boundVariables.color.id, "v5");
+  assert.deepEqual(["paddingTop", "paddingLeft", "topLeftRadius"].map((k) => f.boundVariables[k]?.id), ["v2", "v2", "v4"]);
+  assert.equal(t.textStyleId, "S:h1");
+  const bad = await editNodes({ approved: true, ops: [{ op: "style", node: f.id, kind: "text", styleId: "S:h1" }] });
+  assert.match(bad.failed!.error, /needs a text layer/);
+});
