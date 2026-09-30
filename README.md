@@ -71,12 +71,15 @@ Requirements: Node.js 20+, Figma desktop, Claude Code (or Cursor: `npx layerwrig
 # 1. In your project folder
 npx layerwright init
 ```
-
+```bash
 2. In **Figma desktop**, go to **Plugins → Development → Import plugin from manifest…** and pick the path `init` printed (`~/.layerwright/figma-plugin/manifest.json`). Open your file and run **Layerwright**. Keep its small window open.
+```
+```bash
 3. Restart **Claude Code** in the project and ask:
    - *"Import ./design.html into Figma"*: a Claude Design HTML export becomes editable frames.
    - *"Create a sign-up flow in Figma using our Design System"*: new screens built from your components.
    - Select a frame in Figma, then *"Implement the selected Figma frame in code using our components"*: Figma → code with your mapped React components and theme tokens, checked afterwards.
+```
 
 Another MCP client (Claude Desktop, VS Code, Windsurf)? Add the same `layerwright` server to its MCP config and start from its prompts: `figma_design` (the whole guide), `html_to_figma`, `build_in_figma`, `change_figma` or `figma_to_code`. They are built from the same skill, so every client follows the same workflow.
 
