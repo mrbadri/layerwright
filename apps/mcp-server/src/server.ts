@@ -15,6 +15,7 @@ import { PKG_VERSION } from "./meta.ts";
 import { cachedUpdate, checkForUpdate, type UpdateInfo } from "./update.ts";
 import { MemoryStore } from "./memory.ts";
 import { fontFix, groupFailures } from "./problems.ts";
+import { INSTRUCTIONS, registerPrompts } from "./prompts.ts";
 import { duplicateNames } from "@cde/core";
 
 type ToolResult = { content: ({ type: "text"; text: string } | { type: "image"; data: string; mimeType: string })[]; isError?: boolean };
@@ -62,7 +63,8 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
     return ds && f && ds.fileName !== f ? [`Cached Design System is from "${ds.fileName}" but Figma has "${f}" open. Rescan if this file has its own components.`] : undefined;
   };
 
-  const server = new McpServer({ name: "layerwright", version: PKG_VERSION });
+  const server = new McpServer({ name: "layerwright", version: PKG_VERSION }, { instructions: INSTRUCTIONS });
+  registerPrompts(server);
   // Every failed tool call is remembered for this project (see memory.ts), so recurring problems surface with a hint.
   const register = server.registerTool.bind(server) as (...a: any[]) => unknown;
   (server as any).registerTool = (name: string, cfg: unknown, handler: (...a: any[]) => Promise<ToolResult>) => register(name, cfg, async (...a: any[]) => {

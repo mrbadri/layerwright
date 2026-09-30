@@ -72,6 +72,8 @@ npx layerwright init
    - *"Create a sign-up flow in Figma using our Design System"*: new screens built from your components.
    - Select a frame in Figma, then *"Implement the selected Figma frame in code using our components"*: Figma → code with your mapped React components and theme tokens, checked afterwards.
 
+Another MCP client (Claude Desktop, VS Code, Windsurf)? Add the same `layerwright` server to its MCP config and start from its prompts: `figma_design` (the whole guide), `html_to_figma`, `build_in_figma`, `change_figma` or `figma_to_code`. They are built from the same skill, so every client follows the same workflow.
+
 Want these rules always in Claude's context? Paste [this prompt](https://github.com/shayan-m81/layerwright/blob/main/docs/claude-prompt.md) into your project's `CLAUDE.md`.
 
 Something not working? Run `npx layerwright doctor`.
