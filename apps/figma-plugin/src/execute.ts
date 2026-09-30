@@ -3,6 +3,7 @@
 import type { ExecutionReport, Num, Paint as PlanPaint, ResolvedFrame, ResolvedGradient, ResolvedInstance, ResolvedInteraction, ResolvedNode, ResolvedPlan, ResolvedRect, ResolvedShadow, ResolvedSvg, ResolvedText, StructuredError, Transformation, TransformReport } from "@cde/core";
 
 import { progress } from "./progress.ts";
+import { annotate } from "./annotate.ts";
 
 export class ExecError extends Error {
   constructor(public detail: StructuredError) { super(detail.message); }
@@ -309,7 +310,7 @@ async function buildText(n: ResolvedText, parent: BaseNode & ChildrenMixin, ctx:
   return t;
 }
 
-async function getComponent(id: string, key: string | undefined, remote: boolean, path: string): Promise<ComponentNode> {
+export async function getComponent(id: string, key: string | undefined, remote: boolean, path: string): Promise<ComponentNode> {
   let c: BaseNode | null = null;
   let importError: unknown;
   // Library import fails when the source library isn't enabled/published (e.g. in a copied file);
@@ -463,7 +464,7 @@ export function checkDestination(i: ResolvedInteraction, from: SceneNode, dest: 
   return true;
 }
 
-/** Wire prototype interactions and flows once every node of the plan exists. */
+/** Wire prototype interactions, flows and annotations once every node of the plan exists. */
 async function applyPrototype(plan: ResolvedPlan, ctx: Ctx) {
   const idOf = (to: ResolvedInteraction["to"]) => (!to ? null : "path" in to ? ctx.nodeIds[to.path] ?? null : to.nodeId);
   const all: ResolvedNode[] = [];
@@ -473,6 +474,8 @@ async function applyPrototype(plan: ResolvedPlan, ctx: Ctx) {
     const nodeId = ctx.nodeIds[n.path];
     const node = nodeId ? ((await figma.getNodeByIdAsync(nodeId)) as SceneNode | null) : null;
     if (!node) continue;
+    // Dev handoff notes (annotations) are part of the same pass: every node of the plan exists now.
+    if (n.annotations?.length) { try { await annotate(node, n.annotations); } catch (e) { ctx.warnings.push(`${n.path}: annotation not added (${(e as Error).message}).`); } }
     if (n.kind === "frame" && node.type === "FRAME") {
       if (n.scroll) node.overflowDirection = n.scroll;
       if (n.fixedChildren !== undefined) node.numberOfFixedChildren = n.fixedChildren;

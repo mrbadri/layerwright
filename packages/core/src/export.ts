@@ -30,6 +30,7 @@ export function snapshotToPlan(root: NodeSnapshot, ds?: DesignSystem, opts: { na
     const position = parent && !inFlow && parent.type !== "SECTION" && n.x !== undefined ? { type: "absolute", x: (n.x ?? 0) - origin.x, y: (n.y ?? 0) - origin.y } : undefined;
     const common: any = { name: n.name, ...(position ? { position } : {}), ...(n.opacity !== undefined ? { opacity: n.opacity } : {}) };
     if (n.reactions?.length) common.interactions = n.reactions.map((r) => interactionOf(r, path, warnings)).filter(Boolean);
+    if (n.annotations?.length) common.annotations = n.annotations;
 
     if (n.type === "TEXT" && n.text) {
       const t: any = { type: "text", ...common, content: n.text.chars.replace(/…$/, "") };

@@ -174,6 +174,7 @@ export interface NodeSnapshot {
   strokeWeight?: number;
   opacity?: number;
   clip?: boolean;
+  annotations?: AnnotationSpec[];
   /** Prototype interactions, summarized: trigger, action and destination. */
   reactions?: { trigger?: string; delay?: number; action?: string; to?: string; toName?: string; url?: string; transition?: { type: string; direction?: string; duration: number; easing?: string } }[];
   instance?: { componentId?: string; component?: string; componentSet?: string; componentSetId?: string; variants?: Record<string, string>; props?: Record<string, unknown>; overrides?: Record<string, string[]> };
@@ -199,10 +200,14 @@ export interface ResolvedInteraction {
   preserveScroll?: boolean;
 }
 
+/** A native Figma annotation (dev handoff note): markdown text, measured properties, a category by label. */
+export interface AnnotationSpec { label: string; properties?: string[]; category?: string }
+
 export interface ResolvedBase {
   path: string;
   name: string;
   interactions?: ResolvedInteraction[];
+  annotations?: AnnotationSpec[];
   width?: number;
   height?: number;
   sizingH?: Sizing;

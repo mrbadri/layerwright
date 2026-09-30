@@ -4,7 +4,7 @@ import { z } from "zod";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import {
-  accessibilityFindings, analyzeDesign, compilePlan, designMetrics, emptyDesignSystem, enrichDesignSystem, Interaction, resolveInteraction, retrieve, snapshotToPlan, summarize, validatePlan, verifyAgainstPlan,
+  AnnotationDsl, Resolver, accessibilityFindings, analyzeDesign, compilePlan, designMetrics, emptyDesignSystem, enrichDesignSystem, Interaction, resolveInteraction, retrieve, snapshotToPlan, summarize, validatePlan, verifyAgainstPlan,
   type AnalysisResult, type DesignSystem, type ExecutionReport, type NodeSnapshot, type ResolvedPlan, type StructuredError, type TransformReport, type PlanSummary,
 } from "@cde/core";
 import { BridgeError, type FigmaTransport } from "./bridge.ts";
@@ -473,6 +473,9 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
     z.object({ op: z.literal("resizeToFit"), node: Ref.describe("A section, an Auto Layout frame (set to hug) or a frame"), padding: z.number().min(0).optional() }).strict(),
     z.object({ op: z.literal("prototype"), node: Ref, interactions: z.array(Interaction).min(1).max(20).describe('e.g. [{ trigger: "click", action: "navigate", to: "12:34", transition: { type: "smart-animate", duration: 300 } }]; "to" is a node id or "$n"'),
       replace: z.boolean().optional().describe("Replace the node's interactions (default true) or add to them") }).strict(),
+    z.object({ op: z.literal("swap"), node: Ref.describe("An instance"), component: z.union([z.string(), z.object({ id: z.string().optional(), key: z.string().optional() }).strict()]).describe("Target component or set: name, { id } or { key }"),
+      variant: z.union([z.string(), z.record(z.string())]).optional().describe("Variant of the target set, e.g. { State: \"Open\" }") }).strict(),
+    z.object({ op: z.literal("annotate"), node: Ref, annotations: z.array(AnnotationDsl).min(1).max(10), replace: z.boolean().optional().describe("Replace the node's annotations (default: add)") }).strict(),
     z.object({ op: z.literal("flow"), name: z.string().min(1), start: Ref.optional().describe("Top-level frame where the flow starts"), description: z.string().optional(), remove: z.boolean().optional() }).strict(),
     z.object({ op: z.literal("componentize"), nodes: z.array(Ref).min(1).max(100), mode: z.enum(["single", "multiple", "variants"]).optional(),
       name: z.string().optional().describe("Component (single) or component set (variants) name"),
@@ -482,17 +485,28 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
       autoLayout: z.boolean().optional().describe("Give absolutely positioned layers that stack cleanly Auto Layout first, so the component adapts to new text (default true; uneven layouts are left as they are)"),
       parent: Ref.optional(), x: z.number().optional(), y: z.number().optional() }).strict(),
   ]);
-  const MUTATES = new Set(["rename", "move", "set", "delete", "resizeToFit", "prototype", "flow"]);
+  const MUTATES = new Set(["rename", "move", "set", "delete", "resizeToFit", "prototype", "flow", "swap", "annotate"]);
 
   server.registerTool("figma_edit", {
-    description: "Change existing layers in one undo step: rename, move (to a parent, section or page), duplicate, set (visible, position, size, opacity, text, instance properties), delete, resizeToFit (sections grow to their content), prototype (click/hover/after-delay interactions: navigate, overlay, swap, scroll-to, back, close, url, and change-to between variants for interactive components, with transitions), flow (a prototype starting point), and componentize (turn existing frames into a component, several components, or one component set with variants; works on copies by default, and can expose text layers as TEXT properties). Ops run in order and can use \"$n\" for the node made by op n. Changing or deleting existing nodes needs approved=true; without it, delete only hides and renames the node (🗑).",
+    description: "Change existing layers in one undo step: rename, move (to a parent, section or page), duplicate, set (visible, position, size, opacity, text, instance properties), delete, resizeToFit (sections grow to their content), prototype (click/hover/after-delay interactions: navigate, overlay, swap, scroll-to, back, close, url, and change-to between variants for interactive components, with transitions), flow (a prototype starting point), swap (an instance to another component or variant; overrides are kept), annotate (native Figma annotations for dev handoff: markdown, measured properties, a category), and componentize (turn existing frames into a component, several components, or one component set with variants; works on copies by default, and can expose text layers as TEXT properties). Ops run in order and can use \"$n\" for the node made by op n. Changing or deleting existing nodes needs approved=true; without it, delete only hides and renames the node (🗑).",
     inputSchema: { ops: z.array(EditOp).min(1).max(200), approved: z.boolean().optional().describe("Required for ops that change existing nodes; for delete it means really remove") },
   }, async ({ ops, approved }) => guard(async () => {
     const needs = ops.filter((o) => MUTATES.has(o.op) && o.op !== "delete" || (o.op === "componentize" && o.duplicate === false));
     if (needs.length && !approved) return fail([{ type: "NOT_APPROVED", message: `${needs.length} op(s) change existing nodes (${[...new Set(needs.map((o) => o.op))].join(", ")}). Show the user what will change, then call again with approved: true.` }]);
     // Prototype ops: DSL interactions → plugin-ready ones ("$n" stays a reference to an earlier op's node).
     const errors: StructuredError[] = [];
-    const sent = ops.map((o, k) => o.op !== "prototype" ? o : { ...o, interactions: o.interactions.map((it) => resolveInteraction(it, `ops[${k}]`, (r) => (/^\$\d+$/.test(r) ? r : undefined), errors, () => ["a Figma node id", '"$n"'])).filter(Boolean) });
+    const resolver = (() => { const d = loadDs(); if (!d) return undefined; const r = new Resolver(d); r.preferred = preferred(); return r; })();
+    const sent = ops.map((o, k) => {
+      if (o.op === "prototype") return { ...o, interactions: o.interactions.map((it) => resolveInteraction(it, `ops[${k}]`, (r) => (/^\$\d+$/.test(r) ? r : undefined), errors, () => ["a Figma node id", '"$n"'])).filter(Boolean) };
+      if (o.op === "swap") {
+        // The same resolution as plans: ids, keys, duplicate names, remembered choices.
+        if (!resolver) { errors.push({ type: "DESIGN_SYSTEM_NOT_SCANNED", path: `ops[${k}]`, message: "swap needs a Design System scan (figma_scan_design_system)." }); return o; }
+        const m = resolver.findComponent({ component: o.component, variant: o.variant }, `ops[${k}]`);
+        if ("error" in m) { errors.push(m.error); return o; }
+        return { op: "swap", node: o.node, componentId: m.def.id, componentKey: m.def.remote ? m.def.key : undefined, remote: m.def.remote, componentName: m.set ? `${m.set.name} / ${Object.values(m.def.variants ?? {}).join(", ")}` : m.def.name };
+      }
+      return o;
+    });
     if (errors.length) return fail(errors);
     const res = await bridge.request<{ applied: unknown[]; failed?: { op: number; error: string } }>("editNodes", { ops: sent, approved, meta: meta() }, 180_000);
     if (res.failed) {
@@ -500,6 +514,49 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
       return fail([{ type: "FIGMA_API_ERROR", message: `op ${res.failed.op} (${ops[res.failed.op].op}): ${res.failed.error}`, fix: p?.fix }], { ...res });
     }
     return ok({ success: true, ...res, next: "Check the result with figma_export_image." });
+  }));
+
+  server.registerTool("figma_migrate", {
+    description: "Move every instance of one component (set) to another, e.g. from an old Accordion set to the new one, or from one library to another: each instance is swapped to the matching variant (same property values; map renamed properties or values), keeping its overrides. Without approved it only reports what would change (instances per target variant, and the ones with no match). With approved it applies everything in one undo step.",
+    inputSchema: {
+      from: z.union([z.string(), z.object({ id: z.string().optional(), key: z.string().optional() }).strict()]).describe("Old component or set: name, { id } or { key }"),
+      to: z.union([z.string(), z.object({ id: z.string().optional(), key: z.string().optional() }).strict()]).describe("New component or set"),
+      target: z.string().optional().describe("Where to look: a node id (a frame, section) or 'page' (default: the selection)"),
+      propertyMap: z.record(z.string()).optional().describe('Renamed variant properties, old → new, e.g. { "Type": "Hierarchy" }'),
+      valueMap: z.record(z.record(z.string())).optional().describe('Renamed values per (new) property, e.g. { "Hierarchy": { "Primary": "Contained" } }'),
+      approved: z.boolean().optional(),
+    },
+  }, async ({ from, to, target, propertyMap, valueMap, approved }) => guard(async () => {
+    const d = needDs();
+    const r = new Resolver(d); r.preferred = preferred();
+    const src = r.findComponent({ component: from }, "from"), dst = r.findComponent({ component: to }, "to");
+    if ("error" in src) return fail([src.error]);
+    if ("error" in dst) return fail([dst.error]);
+    const fromId = src.set?.id ?? src.def.id, toName = dst.set?.name ?? dst.def.name;
+    const snap = await bridge.request<{ nodes: NodeSnapshot[] }>("inspect", { target: target ?? "selection", depth: 25, maxNodes: 20000, expandInstances: true }, 180_000);
+    if (!snap.nodes.length) return fail([{ type: "NODE_NOT_FOUND", message: "Nothing to search: pass target (a node id or 'page') or select a frame." }]);
+    const found: NodeSnapshot[] = [];
+    const walk = (n: NodeSnapshot) => { if (n.type === "INSTANCE" && (n.instance?.componentSetId ?? n.instance?.componentId) === fromId) found.push(n); (n.children ?? []).forEach(walk); };
+    snap.nodes.forEach(walk);
+    const ops: any[] = [], unmatched: { node: string; nodeId: string; variant?: Record<string, string>; reason: string }[] = [];
+    const byTarget: Record<string, number> = {};
+    for (const n of found) {
+      // Old variant values under the new property names, with renamed values.
+      const want: Record<string, string> = {};
+      for (const [k, v] of Object.entries(n.instance?.variants ?? {})) { const nk = propertyMap?.[k] ?? k; want[nk] = valueMap?.[nk]?.[v] ?? v; }
+      const known = new Set((dst.set?.properties ?? []).filter((p) => p.type === "VARIANT").map((p) => p.name.toLowerCase()));
+      const variant = Object.fromEntries(Object.entries(want).filter(([k]) => known.has(k.toLowerCase())));
+      const m = dst.set ? r.findComponent({ component: { id: dst.set.id }, variant: Object.keys(variant).length ? variant : undefined }, n.id) : dst;
+      if ("error" in m) { unmatched.push({ node: n.name, nodeId: n.id, variant: n.instance?.variants, reason: m.error.message }); continue; }
+      const label = `${toName} / ${Object.values(m.def.variants ?? {}).join(", ")}`;
+      byTarget[label] = (byTarget[label] ?? 0) + 1;
+      ops.push({ op: "swap", node: n.id, componentId: m.def.id, componentKey: m.def.remote ? m.def.key : undefined, remote: m.def.remote, componentName: label });
+    }
+    const summary = { from: src.set?.name ?? src.def.name, to: toName, instances: found.length, swaps: ops.length, byTarget, unmatched: unmatched.slice(0, 20), unmatchedCount: unmatched.length };
+    if (!approved || !ops.length) return ok({ dryRun: true, ...summary, next: ops.length ? "Show the user the counts (and anything unmatched: use propertyMap/valueMap), then call again with approved: true." : "Nothing to migrate here." });
+    const res = await bridge.request<{ applied: unknown[]; failed?: { op: number; error: string } }>("editNodes", { ops, approved: true, meta: meta() }, 600_000);
+    return res.failed ? fail([{ type: "FIGMA_API_ERROR", message: `Stopped at instance ${res.failed.op + 1} of ${ops.length}: ${res.failed.error}`, fix: groupFailures([{ error: res.failed.error }])[0]?.fix }], { ...summary, applied: res.applied.length })
+      : ok({ success: true, ...summary, applied: res.applied.length, note: "One undo reverts the whole migration." });
   }));
 
   server.registerTool("layerwright_memory", {

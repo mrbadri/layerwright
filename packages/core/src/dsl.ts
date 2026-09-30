@@ -63,7 +63,18 @@ export const Interaction = z.object({
   if (i.action === "url" && !i.url) ctx.addIssue({ code: "custom", message: '"url" needs "url"' });
 });
 
+/** Properties Figma can measure on an annotation. */
+export const ANNOTATION_PROPERTIES = ["width", "height", "maxWidth", "minWidth", "maxHeight", "minHeight", "fills", "strokes", "effects", "strokeWeight", "cornerRadius",
+  "textStyleId", "textAlignHorizontal", "fontFamily", "fontStyle", "fontSize", "fontWeight", "lineHeight", "letterSpacing", "itemSpacing", "padding", "layoutMode", "alignItems", "opacity", "mainComponent"] as const;
+/** A dev handoff note shown in Figma's annotation layer. */
+export const AnnotationDsl = z.object({
+  label: z.string().min(1).max(2000).describe("Markdown text"),
+  properties: z.array(z.enum(ANNOTATION_PROPERTIES)).max(12).optional().describe("Values Figma shows live, e.g. padding, fills"),
+  category: z.string().min(1).max(40).optional().describe("Category label (created if missing), e.g. Development, Interaction"),
+}).strict();
+
 const Base = {
+  annotations: z.array(AnnotationDsl).max(10).optional(),
   /** A plan-local id, so interactions and flows can point at this node. */
   id: z.string().min(1).max(100).optional(),
   interactions: z.array(Interaction).max(20).optional(),

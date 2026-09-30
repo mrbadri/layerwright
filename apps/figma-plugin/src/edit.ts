@@ -1,8 +1,9 @@
 // Edits on existing nodes: rename, move, duplicate, set, delete, resize to fit, and turning layers into
 // components / component sets. One call = one undo step. Fixed Plugin API calls only.
-import type { ResolvedInteraction } from "@cde/core";
+import type { AnnotationSpec, ResolvedInteraction } from "@cde/core";
+import { annotate } from "./annotate.ts";
 import { progress } from "./progress.ts";
-import { ExecError, checkDestination, findPage, fitSection, loose, pageOf, tag, toReaction } from "./execute.ts";
+import { ExecError, checkDestination, findPage, fitSection, getComponent, loose, pageOf, tag, toReaction } from "./execute.ts";
 
 export type NodeRef = string; // a node id, or "$n": the node produced by op n of this call
 
@@ -14,6 +15,9 @@ export type EditOp =
   | { op: "delete"; node: NodeRef }
   | { op: "resizeToFit"; node: NodeRef; padding?: number }
   | { op: "prototype"; node: NodeRef; interactions: ResolvedInteraction[]; replace?: boolean }
+  /** Swap an instance to another component or variant; Figma keeps its overrides. (Resolved by the server.) */
+  | { op: "swap"; node: NodeRef; componentId: string; componentKey?: string; remote?: boolean; componentName?: string }
+  | { op: "annotate"; node: NodeRef; annotations: AnnotationSpec[]; replace?: boolean }
   | { op: "flow"; name: string; start?: NodeRef; description?: string; remove?: boolean }
   | { op: "componentize"; nodes: NodeRef[]; mode?: "single" | "multiple" | "variants"; name?: string; variants?: Record<string, string>[];
       duplicate?: boolean; exposeText?: boolean | string[]; autoLayout?: boolean; parent?: NodeRef; x?: number; y?: number };
@@ -297,6 +301,21 @@ export async function editNodes(p: { ops: EditOp[]; approved?: boolean; meta?: {
           const keep = o.replace === false ? [...(n as SceneNode & ReactionMixin).reactions] : [];
           await (n as SceneNode & ReactionMixin).setReactionsAsync([...keep, ...reactions]);
           r = { op: i, kind: o.op, nodeId: n.id, note: `${reactions.length} interaction(s)${warnings.length ? `; ${warnings.join(" ")}` : ""}` };
+          break;
+        }
+        case "swap": {
+          const n = await resolve(o.node, results);
+          if (n.type !== "INSTANCE") throw new Error(`${n.name} is a ${n.type.toLowerCase()}, not an instance; only instances can be swapped.`);
+          const from = (await n.getMainComponentAsync())?.name;
+          const comp = await getComponent(o.componentId, o.componentKey, !!o.remote, n.name);
+          n.swapComponent(comp);
+          r = { op: i, kind: o.op, nodeId: n.id, note: `${from ?? "?"} → ${o.componentName ?? comp.name} (overrides kept)` };
+          break;
+        }
+        case "annotate": {
+          const n = await resolve(o.node, results);
+          await annotate(n, o.annotations, o.replace);
+          r = { op: i, kind: o.op, nodeId: n.id, note: `${o.annotations.length} annotation(s)` };
           break;
         }
         case "flow": {

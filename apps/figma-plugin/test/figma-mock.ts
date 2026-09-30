@@ -74,7 +74,7 @@ export class N {
     const key = `${name}#${++seq}:0`; this.componentPropertyDefinitions[key] = { type, defaultValue }; return key;
   }
   componentPropertyReferences: any = null;
-  reactions: any[] = []; overflowDirection = "NONE"; numberOfFixedChildren = 0;
+  reactions: any[] = []; overflowDirection = "NONE"; numberOfFixedChildren = 0; annotations: any[] = [];
   private _flows: any[] = [];
   get flowStartingPoints() { return this._flows; }
   set flowStartingPoints(v: any[]) { if (new Set(v.map((f) => f.nodeId)).size !== v.length) throw new Error("in set_flowStartingPoints: Found duplicate input nodeIds"); this._flows = v; }
@@ -112,7 +112,9 @@ class C extends N {
     i.mainComponent = this;
     i.componentProperties = Object.fromEntries(Object.entries(this.defs).map(([k, d]) => [k, { type: d.type, value: d.defaultValue }]));
     i.setProperties = (p: Record<string, unknown>) => { for (const k of Object.keys(p)) { if (!(k in i.componentProperties)) throw new Error(`unknown property ${k}`); const lbl = i.children.find((c: any) => c.name === k.split("#")[0]); if (lbl && !loaded.has("Inter::Regular")) throw new Error("font"); i.componentProperties[k].value = p[k]; } };
-    i.getMainComponentAsync = async () => this;
+    i.getMainComponentAsync = async () => i.mainComponent;
+    // Like Figma: swapping keeps the instance and its overridden text.
+    i.swapComponent = (c: any) => { if (c.type !== "COMPONENT") throw new Error("not a component"); i.mainComponent = c; };
     for (const t of this.texts) { const tn = new T(); tn.name = t; i.appendChild(tn); }
     return i;
   }
@@ -188,6 +190,14 @@ export function resetFigma() {
       return f;
     },
     importComponentByKeyAsync: async () => { throw new Error("no library"); },
+    annotations: (() => {
+      const cats: any[] = [];
+      return {
+        getAnnotationCategoriesAsync: async () => [...cats],
+        addAnnotationCategoryAsync: async (c: any) => { const x = { id: `cat${cats.length + 1}`, ...c }; cats.push(x); return x; },
+        getAnnotationCategoryByIdAsync: async (id: string) => cats.find((c) => c.id === id) ?? null,
+      };
+    })(),
     variables: {
       getVariableByIdAsync: async (id: string) => vars.get(id) ?? null,
       setBoundVariableForPaint: (p: any, _f: string, v: any) => ({ ...p, boundVariables: { color: { type: "VARIABLE_ALIAS", id: v.id } } }),

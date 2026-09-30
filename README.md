@@ -107,12 +107,13 @@ Read more in [docs/architecture.md](https://github.com/shayan-m81/layerwright/bl
 | `import_html_to_plan` | HTML file or folder → editable Design Plan (Auto Layout, DS components, your own mappings). Returns a `planId` |
 | `figma_execute_plan` | Builds a plan in Figma: one undo step, rollback on failure, automatic verification |
 | `figma_preview_plan` | Validates and resolves a hand-written plan and returns a summary |
-| `figma_edit` | Rename, move, duplicate, set, delete, resize to fit, componentize (variants, text properties), prototype links and flows |
+| `figma_edit` | Rename, move, duplicate, set, delete, resize to fit, componentize (variants, text properties), swap instances, annotations, prototype links and flows |
 | `figma_export_image` | A node as an image; compared with the source HTML or another node, with a diff heatmap |
 | `figma_status` / `figma_scan_design_system` / `figma_get_design_context` | Connection and page, Design System scan (components, variants, variables, styles, duplicate names), task-scoped context |
 | `figma_inspect` / `figma_verify` / `figma_select` | Snapshots (tree, summary, text, instances, or the subtree as a plan), plan-vs-canvas checks, select and zoom (switches page) |
 | `figma_analyze_design` / `figma_apply_transformations` | Audit a frame against the DS, or `mode: "sync"` after an import; apply the groups you approve |
 | `figma_import_html` / `figma_pages` / `figma_foundations` | Pixel-faithful import, page setup, variables and text styles |
+| `figma_migrate` | Move every instance of one component set to another, variant by variant, keeping overrides (dry run first) |
 | `figma_cleanup` | List (and with approval remove) what Layerwright made in this session |
 | `layerwright_memory` | What the project remembers (fonts, mappings, component choices, notes, recurring problems); add notes or forget entries |
 | `code_scan_components` / `code_mapping` / `code_verify_usage` | Design to code: component mapping and usage checks |

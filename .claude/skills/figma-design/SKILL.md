@@ -79,6 +79,9 @@ Up to 3 rounds, stop as soon as nothing important is left:
   - `rename`, `move` (parent, section or page), `duplicate`, `set` (visible, x/y, size, opacity, `text`, instance `properties`), `resizeToFit`, `delete`.
   - `componentize`: `{ nodes, mode: "variants", name, variants: [{ State: "Expanded" }, …], exposeText: ["Title", "Body"] }`. Works on copies placed beside the originals (`duplicate: false` converts in place) and gives cleanly stacked layers Auto Layout so the component adapts to new text. Rename text layers first so the exposed properties get good names.
   - `prototype` (`{ node, interactions }`) and `flow` (`{ name, start }`) wire existing frames, e.g. a variant `change-to` another variant for an interactive component.
+  - `swap` (`{ node, component, variant? }`) moves an instance to another component or variant; Figma keeps its text and other overrides.
+  - `annotate` (`{ node, annotations: [{ label, properties?, category? }] }`) writes native Figma annotations for developers: markdown notes, live measurements (padding, fills, …), a category such as "Development".
+- **Move to a new component set** (a new Accordion, another library): `figma_migrate({ from, to, target, propertyMap?, valueMap? })` first reports what would change (instances per target variant, and the unmatched ones: map renamed properties or values and check again), then with `approved: true` swaps them all in one undo step.
   - Changing existing nodes needs `approved: true` after the user agreed. Without it, `delete` only hides the node and prefixes 🗑.
 - **Fill many slots:** a plan with `inserts: [{ parentId, index?, nodes }]` (one run, needs approval).
 - **Refactor or clone:** `figma_inspect({ format: "plan" })` gives the subtree as a plan (instances by set id, text styles, tokens, interactions). Edit it, preview, execute; compare old and new with `figma_export_image({ nodeId, compareWith: { nodeId } })`.

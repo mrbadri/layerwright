@@ -151,3 +151,17 @@ test("sync: an imported button and pill become the DS variants that look like th
   // The default (audit) mode stays strict: a stand-in font gets no style.
   assert.ok(!analyzeDesign(ds, snap).transformations.some((t: any) => t.op === "apply_text_style"));
 });
+
+test("copies of one published set (same key) are one choice; a different key is still ambiguous", async () => {
+  const { enrichDesignSystem } = await import("../src/index.ts");
+  const base = fixtureDs();
+  const set = (id: string, key: string, usage: number) => ({ id, key, name: "Badge", remote: true, usage, variantIds: [`${id}.0`], properties: [{ key: "Color", name: "Color", type: "VARIANT" as const, options: ["Blue"] }] });
+  const comp = (id: string) => ({ id: `${id}.0`, key: `k${id}`, name: "Color=Blue", remote: true, componentSetId: id, variants: { Color: "Blue" } });
+  const same = enrichDesignSystem({ ...base, componentSets: [...base.componentSets, set("1:10", "K", 3), set("1:20", "K", 9), set("1:30", "K", 1)], components: [...base.components, comp("1:10"), comp("1:20"), comp("1:30")] });
+  const m = new Resolver(same).findComponent({ component: "Badge", variant: { Color: "Blue" } });
+  assert.ok(!("error" in m) && m.set!.id === "1:20", "the most used copy");
+  const other = enrichDesignSystem({ ...base, componentSets: [...base.componentSets, set("1:10", "K", 3), set("1:40", "OTHER", 3)], components: [...base.components, comp("1:10"), comp("1:40")] });
+  const a = new Resolver(other).findComponent({ component: "Badge", variant: { Color: "Blue" } });
+  assert.ok("error" in a && a.error.type === "AMBIGUOUS_COMPONENT");
+  assert.equal((a.error.candidates as unknown[]).length, 2);
+});

@@ -196,3 +196,31 @@ test("move with an index past the end (and no new parent) is clamped instead of 
   assert.equal(r.failed, undefined);
   assert.equal(b.children.at(-1).id, items[0].id);
 });
+
+test("swap keeps the instance and its overrides; annotate adds notes with a category; plan annotations are applied", async () => {
+  const page = resetFigma();
+  loaded.add("Inter::Regular");
+  const comp = await F().getNodeByIdAsync("1:2"); // Type=Primary
+  const inst = comp.createInstance(); page.appendChild(inst);
+  inst.children[0].characters = "Continue";
+  const r = await editNodes({ ops: [
+    { op: "swap", node: inst.id, componentId: "1:3", componentName: "Button / Secondary" },
+    { op: "annotate", node: inst.id, annotations: [{ label: "Uses **Button/Secondary**", properties: ["padding", "fills"], category: "Development" }] },
+    { op: "annotate", node: inst.id, annotations: [{ label: "Second note", category: "Development" }] },
+  ], approved: true });
+  assert.equal(r.failed, undefined);
+  assert.equal(inst.mainComponent.id, "1:3");
+  assert.equal(inst.children[0].characters, "Continue", "override kept");
+  assert.equal(inst.annotations.length, 2);
+  assert.deepEqual(inst.annotations[0], { labelMarkdown: "Uses **Button/Secondary**", properties: [{ type: "padding" }, { type: "fills" }], categoryId: "cat1" });
+  assert.equal(inst.annotations[1].categoryId, "cat1", "the category is reused, not duplicated");
+  const frame = F().createFrame(); page.appendChild(frame);
+  const bad = await editNodes({ ops: [{ op: "swap", node: frame.id, componentId: "1:3" }], approved: true });
+  assert.match(bad.failed!.error, /not an instance/);
+
+  resetFigma();
+  const v = validatePlan({ name: "n", screens: [{ type: "frame", name: "Card", annotations: [{ label: "Spacing: **spacing/md**", properties: ["itemSpacing"] }] }] });
+  assert.ok(v.success, JSON.stringify(!v.success && v.errors));
+  await executePlan(compilePlan(emptyDesignSystem(), v.plan).plan!);
+  assert.deepEqual(F().currentPage.children[0].annotations, [{ labelMarkdown: "Spacing: **spacing/md**", properties: [{ type: "itemSpacing" }] }]);
+});

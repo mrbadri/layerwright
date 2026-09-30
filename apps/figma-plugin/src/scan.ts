@@ -1,5 +1,6 @@
 // Design System scanner + compact inspector. Runs in the Figma plugin sandbox.
 import { progress } from "./progress.ts";
+import { readAnnotations } from "./annotate.ts";
 import type { ComponentDefinition, ComponentSetDefinition, NodeSnapshot, PropertyDefinition, StyleDefinition, TypographyDefinition, VariableCollectionDefinition, VariableDefinition } from "@cde/core";
 
 const h2 = (n: number) => Math.round(Math.max(0, Math.min(1, n)) * 255).toString(16).padStart(2, "0");
@@ -277,6 +278,8 @@ export async function snapshot(node: BaseNode, opts: { depth?: number; maxNodes?
     if ("opacity" in sn && sn.opacity < 1) s.opacity = Math.round(sn.opacity * 100) / 100;
     if ("clipsContent" in sn && (sn as FrameNode).clipsContent && n.type !== "INSTANCE") s.clip = true;
     if ("fillStyleId" in sn && typeof sn.fillStyleId === "string" && sn.fillStyleId) s.fillStyle = sn.fillStyleId;
+    const notes = await readAnnotations(n).catch(() => undefined);
+    if (notes) s.annotations = notes;
     if ("reactions" in sn && (sn as ReactionMixin).reactions.length) {
       const out: NonNullable<NodeSnapshot["reactions"]> = [];
       for (const r of (sn as ReactionMixin).reactions) {

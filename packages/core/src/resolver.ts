@@ -114,7 +114,16 @@ export class Resolver {
     if (!want || tied.length === 1 || top < 80) return this.within(tied[0].c, req.variant, role, path);
     // Several components with the same name: keep the ones that can satisfy the request.
     const results = tied.map((x) => ({ x, r: this.within(x.c, req.variant, role, path) }));
-    const fits = results.filter((y) => !("error" in y.r));
+    const usageOf = (y: (typeof results)[number]) => (y.x.c.v as ComponentSetDefinition).usage ?? 0;
+    // Copies of one published component share its key (a file can hold several nodes of the same library set):
+    // one per key, the most used, since picking between copies isn't a real choice.
+    const byKey = new Map<string, (typeof results)[number]>();
+    for (const y of results.filter((z) => !("error" in z.r))) {
+      const k = y.x.c.v.key || y.x.c.v.id;
+      const cur = byKey.get(k);
+      if (!cur || usageOf(y) > usageOf(cur)) byKey.set(k, y);
+    }
+    const fits = [...byKey.values()];
     if (fits.length === 1) return fits[0].r;
     // The user already chose one of these in this project.
     const chosen = req.component ? this.preferred[req.component] : undefined;
@@ -122,8 +131,8 @@ export class Resolver {
     if (pref) return pref.r;
     // Copies of one library set (published versions, several libraries): the one this file uses clearly most wins.
     if (fits.length > 1 && fits.every((y) => y.x.c.v.remote)) {
-      const used = [...fits].sort((a, b) => ((b.x.c.v as ComponentSetDefinition).usage ?? 0) - ((a.x.c.v as ComponentSetDefinition).usage ?? 0));
-      const [u0, u1] = used.map((y) => (y.x.c.v as ComponentSetDefinition).usage ?? 0);
+      const used = [...fits].sort((a, b) => usageOf(b) - usageOf(a));
+      const [u0, u1] = used.map(usageOf);
       if (u0 > 0 && u0 >= 2 * u1) return used[0].r;
     }
     const candidates = tied.map((x) => this.describe(x.c.v));
@@ -424,6 +433,7 @@ export function compilePlan(ds: DesignSystem, plan: DesignPlan, opts: { preferre
   const build = (node: any, path: string, parentDir: "HORIZONTAL" | "VERTICAL" | "NONE" | null, rtl = false): ResolvedNode | undefined => {
     const res = buildInner(node, path, parentDir, rtl);
     if (res && node.interactions?.length) res.interactions = interactions(node, path);
+    if (res && node.annotations?.length) res.annotations = node.annotations;
     if (res) Object.assign(res, Object.fromEntries(Object.entries(common(node)).filter(([, v]) => v !== undefined)));
     // An absolutely positioned child doesn't stretch with the flow.
     if (res && node.position && res.sizingH === "fill" && node.width === undefined) res.sizingH = undefined;
