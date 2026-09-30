@@ -24,3 +24,11 @@ test("per-layer failures become a few causes, each with what to do", () => {
   assert.match(p[1].fix, /Your export ships Gilroy: run `npx layerwright fonts ".*" --install --only Gilroy`/);
   assert.match(p[1].fix, /Install SomeOther \(TTF\/OTF\)/);
 });
+
+test("a stale layer id asks for fresh ids, not a Design System rescan", () => {
+  const [a] = groupFailures([{ error: "Node 8016:218678 not found." }]);
+  assert.equal(a.cause, "layer not found");
+  assert.match(a.fix, /figma_inspect/);
+  const [b] = groupFailures([{ error: 'Component "Badge" not found in the Design System.' }]);
+  assert.match(b.fix, /Rescan the Design System/);
+});

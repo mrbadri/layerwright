@@ -1,6 +1,6 @@
 // Deterministic executor: ResolvedPlan -> real Figma nodes, and Transformation[] -> edits.
 // No model calls, no eval. Every operation is a fixed Plugin API call.
-import type { ExecutionReport, Num, Paint as PlanPaint, ResolvedFrame, ResolvedGradient, ResolvedInstance, ResolvedInteraction, ResolvedNode, ResolvedPlan, ResolvedRect, ResolvedShadow, ResolvedSvg, ResolvedText, StructuredError, Transformation, TransformReport } from "@cde/core";
+import type { ExecutionReport, Num, Paint as PlanPaint, ResolvedFrame, ResolvedGradient, ResolvedInstance, ResolvedInteraction, ResolvedNode, ResolvedPlan, ResolvedRect, ResolvedShadow, ResolvedShape, ResolvedSvg, ResolvedText, StructuredError, Transformation, TransformReport } from "@cde/core";
 
 import { progress } from "./progress.ts";
 import { blurEffects, gradientPaint } from "./paints.ts";
@@ -420,6 +420,25 @@ async function buildSvg(n: ResolvedSvg, parent: BaseNode & ChildrenMixin, ctx: C
   return node;
 }
 
+async function buildShape(n: ResolvedShape, parent: BaseNode & ChildrenMixin, ctx: Ctx): Promise<SceneNode> {
+  const s = n.shape === "ellipse" ? figma.createEllipse() : n.shape === "line" ? figma.createLine() : n.shape === "polygon" ? figma.createPolygon() : figma.createStar();
+  parent.appendChild(s);
+  ctx.nodeIds[n.path] = s.id;
+  s.name = n.name;
+  // A line has no height in Figma; its stroke is what shows.
+  if (s.type === "LINE") s.resize(n.width ?? 100, 0); else s.resize(n.width ?? 24, n.height ?? 24);
+  s.fills = [];
+  await ctx.fill(s, n.fill);
+  if (n.gradient) s.fills = [...(s.fills as Paint[]), gradientOf(n.gradient)];
+  if (n.stroke) { await ctx.fill(s, n.stroke, "stroke"); s.strokeWeight = n.strokeWeight ?? 1; }
+  if (n.pointCount && (s.type === "POLYGON" || s.type === "STAR")) s.pointCount = n.pointCount;
+  if (n.innerRadius !== undefined && s.type === "STAR") s.innerRadius = n.innerRadius;
+  const rad = (d: number) => (d * Math.PI) / 180;
+  if (n.arc && s.type === "ELLIPSE") s.arcData = { startingAngle: rad(n.arc.start), endingAngle: rad(n.arc.end), innerRadius: n.arc.innerRadius };
+  applySizing(s, { ...n, width: undefined, height: undefined }, ctx);
+  return s;
+}
+
 function buildNode(n: ResolvedNode, parent: BaseNode & ChildrenMixin, ctx: Ctx): Promise<SceneNode> {
   const run = async (): Promise<SceneNode> => {
     switch (n.kind) {
@@ -428,6 +447,7 @@ function buildNode(n: ResolvedNode, parent: BaseNode & ChildrenMixin, ctx: Ctx):
       case "instance": return buildInstance(n, parent, ctx);
       case "rect": return buildRect(n, parent, ctx);
       case "svg": return buildSvg(n, parent, ctx);
+      case "shape": return buildShape(n, parent, ctx);
     }
   };
   return run().catch((e) => {

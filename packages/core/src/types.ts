@@ -174,6 +174,8 @@ export interface NodeSnapshot {
   strokeWeight?: number;
   opacity?: number;
   clip?: boolean;
+  /** Polygon/star points, star inner radius, and an ellipse's arc (degrees) when it isn't a full circle. */
+  shape?: { pointCount?: number; innerRadius?: number; arc?: { start: number; end: number; innerRadius: number } };
   annotations?: AnnotationSpec[];
   /** Prototype interactions, summarized: trigger, action and destination. */
   reactions?: { trigger?: string; delay?: number; action?: string; to?: string; toName?: string; url?: string; transition?: { type: string; direction?: string; duration: number; easing?: string } }[];
@@ -304,7 +306,20 @@ export interface ResolvedSvg extends ResolvedBase {
   fill?: Paint;
 }
 
-export type ResolvedNode = ResolvedFrame | ResolvedText | ResolvedInstance | ResolvedRect | ResolvedSvg;
+export interface ResolvedShape extends ResolvedBase {
+  kind: "shape";
+  shape: "ellipse" | "line" | "polygon" | "star";
+  fill?: Paint;
+  stroke?: Paint;
+  strokeWeight?: number;
+  gradient?: ResolvedGradient;
+  pointCount?: number;
+  innerRadius?: number;
+  /** Degrees; the executor converts to radians. */
+  arc?: { start: number; end: number; innerRadius: number };
+}
+
+export type ResolvedNode = ResolvedFrame | ResolvedText | ResolvedInstance | ResolvedRect | ResolvedSvg | ResolvedShape;
 
 export interface ResolvedPlan {
   planId: string;

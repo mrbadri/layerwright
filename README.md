@@ -107,7 +107,7 @@ Read more in [docs/architecture.md](https://github.com/shayan-m81/layerwright/bl
 | `import_html_to_plan` | HTML file or folder → editable Design Plan (Auto Layout, DS components, your own mappings). Returns a `planId` |
 | `figma_execute_plan` | Builds a plan in Figma: one undo step, rollback on failure, automatic verification |
 | `figma_preview_plan` | Validates and resolves a hand-written plan and returns a summary |
-| `figma_edit` | Rename, move, duplicate, set, delete, resize to fit, componentize (variants, text properties), swap instances, annotations, prototype links and flows |
+| `figma_edit` | Rename, move, duplicate, set, delete, resize to fit, group / ungroup, boolean shapes, componentize (variants, text properties), swap instances, bind variables, apply styles, annotations, prototype links and flows |
 | `figma_export_image` | A node as an image; compared with the source HTML or another node, with a diff heatmap |
 | `figma_status` / `figma_scan_design_system` / `figma_get_design_context` | Connection and page, Design System scan (components, variants, variables, styles, duplicate names), task-scoped context |
 | `figma_inspect` / `figma_verify` / `figma_select` | Snapshots (tree, summary, text, instances, or the subtree as a plan), plan-vs-canvas checks, select and zoom (switches page) |

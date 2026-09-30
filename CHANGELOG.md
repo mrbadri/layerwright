@@ -13,6 +13,7 @@ All notable changes to this project are documented here. The format follows
 - `figma_edit` `swap` (an instance to another component or variant, keeping its overrides) and `annotate` (native Figma annotations: markdown, live measured properties, a category created if needed). Plans take `annotations` on any node, `figma_inspect` shows them, and the plan export keeps them.
 - `figma_foundations` also creates colour styles (hex, gradient, or bound to a colour variable), effect styles (shadows, layer and background blur) and grid styles (columns, rows, square grid); colour variables keep their alpha. `figma_edit` has `bind` (a variable to fills, strokes, gap, padding, radius, size, opacity) and `style` (a fill, stroke, text or effect style).
 - Gradients can be linear, radial, angular (CSS conic) or diamond, in plans, colour styles and HTML imports; frames take `blur` (layer blur) and `backgroundBlur`, and imports keep CSS `filter: blur()` and `backdrop-filter: blur()`.
+- Shapes: plans take `shape` nodes (ellipse with an optional arc for rings and progress, line, polygon, star), and the plan export turns Figma ellipses, lines, polygons and stars back into them. `figma_edit` has `group`, `ungroup` and `boolean` (union, subtract, intersect, exclude, flatten; the result keeps the base layer's paint).
 - `figma_migrate`: moves every instance of one component set to another (old → new set, one library → another), matching variants and mapping renamed properties or values; a dry run first, then one undo step.
 - Copies of one published library component (the same key under several node ids) count as one component, so they no longer make a name ambiguous.
 - Cursor: `layerwright init --cursor` (automatic when the project has a `.cursor` folder) registers the server in `.cursor/mcp.json` and installs the skill as a Cursor rule; `doctor` checks it.
@@ -43,6 +44,7 @@ All notable changes to this project are documented here. The format follows
 - `figma_inspect({ expandInstances: true })`: the layers inside instances (text, hidden layers) and which ones are overridden.
 
 ### Fixed
+- A stale layer id in `figma_edit` (deleted, undone, ungrouped) now says to fetch current ids with `figma_inspect`, instead of suggesting a Design System rescan.
 - Problems say what to do: changes that didn't apply come back grouped by cause with the fix (e.g. "20 × library not enabled for this file → Assets panel → Libraries…", "font not installed: Gilroy → your export ships it: `npx layerwright fonts … --install --only Gilroy`"), once instead of once per layer, in Claude and in the plugin window. The scan says when library styles can't be applied and why.
 - HTML import, found on a real Claude Design export:
   - Colours written as `oklch()`, `lab()`, `hsl()`, `color-mix()` and the like (Claude Design's default) were dropped; any CSS colour is now converted to sRGB.

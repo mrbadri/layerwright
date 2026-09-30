@@ -440,6 +440,8 @@ export function compilePlan(ds: DesignSystem, plan: DesignPlan, opts: { preferre
     return res;
   };
 
+  const gradientOf = (g: any, path: string) => g && { type: g.type, angle: g.angle, stops: g.stops.map((s: any, i: number) => ({ hex: hexOf(s.color, `${path}.gradient.stops[${i}].color`) ?? "#000000", position: s.position })) };
+
   const buildInner = (node: any, path: string, parentDir: "HORIZONTAL" | "VERTICAL" | "NONE" | null, rtlIn: boolean): ResolvedNode | undefined => {
     const t = node.type as string;
     const rtl = node.direction ? node.direction === "rtl" : rtlIn;
@@ -485,7 +487,7 @@ export function compilePlan(ds: DesignSystem, plan: DesignPlan, opts: { preferre
         strokeWeights: node.strokeWeights,
         shadows: node.shadows?.map((s: any, i: number) => ({ type: s.type === "inner" ? "INNER_SHADOW" : "DROP_SHADOW", x: s.x, y: s.y, blur: s.blur, spread: s.spread, hex: hexOf(s.color, `${path}.shadows[${i}].color`) ?? "#00000040" })),
         blur: node.blur, backgroundBlur: node.backgroundBlur,
-        gradient: node.gradient && { type: node.gradient.type, angle: node.gradient.angle, stops: node.gradient.stops.map((s: any, i: number) => ({ hex: hexOf(s.color, `${path}.gradient.stops[${i}].color`) ?? "#000000", position: s.position })) },
+        gradient: gradientOf(node.gradient, path),
         clip: node.clip,
         scroll: node.scroll ? node.scroll.toUpperCase() : undefined, fixedChildren: node.fixedChildren,
         width: w.size ?? (t === "screen" ? 390 : undefined),
@@ -564,6 +566,19 @@ export function compilePlan(ds: DesignSystem, plan: DesignPlan, opts: { preferre
       summary.primitives++;
       if (!/^\s*<svg[\s>]/i.test(node.svg)) { errors.push({ type: "INVALID_PLAN", path: `${path}.svg`, message: "svg must be inline <svg> markup." }); return undefined; }
       return { kind: "svg", path, name: node.name ?? "Icon", svg: node.svg, fill: notePaint(r.resolvePaint(node.color, `${path}.color`, errors)), width: w.size ?? 24, height: h.size ?? 24, sizingH: w.mode ?? "fixed", sizingV: h.mode ?? "fixed" };
+    }
+
+    if (t === "shape") {
+      summary.primitives++;
+      const line = node.shape === "line";
+      // A line is its stroke; other shapes are filled (a grey placeholder when nothing is given).
+      const stroke = notePaint(r.resolvePaint(node.stroke ?? (line ? node.fill ?? r.findVariable("border", "COLOR")?.name ?? "#E5E7EB" : undefined), `${path}.stroke`, errors));
+      const fill = line ? undefined : notePaint(r.resolvePaint(node.fill ?? (node.gradient || node.stroke ? undefined : "#E5E7EB"), `${path}.fill`, errors));
+      return { kind: "shape", shape: node.shape, path, name: node.name ?? node.shape[0].toUpperCase() + node.shape.slice(1),
+        width: w.size ?? (line ? (w.mode || stretch ? undefined : 100) : 24), height: line ? undefined : h.size ?? 24,
+        sizingH: w.mode ?? (line ? stretch : undefined) ?? "fixed", sizingV: line ? undefined : h.mode ?? "fixed",
+        fill, stroke, strokeWeight: node.strokeWeight ?? (line ? 1 : undefined), gradient: gradientOf(node.gradient, path),
+        pointCount: node.pointCount, innerRadius: node.innerRadius, arc: node.arc };
     }
 
     if (t === "image") {

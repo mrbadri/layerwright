@@ -124,3 +124,20 @@ test("a root with position absolute inside target.parentId keeps its x/y instead
   const badge = host.children.find((n: any) => n.name === "Badge");
   assert.deepEqual([badge.x, badge.y], [80, 180]);
 });
+
+test("shapes: ellipse arc (a ring), a line that fills its column, polygon and star points; the verifier knows their types", async () => {
+  const { root, report } = await run({ type: "screen", children: [
+    { type: "shape", shape: "ellipse", name: "Progress", width: 48, height: 48, fill: "#176B66", arc: { start: -90, end: 180, innerRadius: 0.8 } },
+    { type: "shape", shape: "line", name: "Rule", stroke: "#E5E7EB", strokeWeight: 2 },
+    { type: "shape", shape: "polygon", pointCount: 6, width: 32, height: 32, gradient: { type: "radial", stops: [{ color: "#FFFFFF", position: 0 }, { color: "#000000", position: 1 }] } },
+    { type: "shape", shape: "star", pointCount: 7, innerRadius: 0.5 },
+  ] });
+  const [ring, line, hex, star] = root.children;
+  assert.deepEqual([ring.type, ring.width, ring.arcData.innerRadius], ["ELLIPSE", 48, 0.8]);
+  assert.ok(Math.abs(ring.arcData.startingAngle + Math.PI / 2) < 1e-9 && Math.abs(ring.arcData.endingAngle - Math.PI) < 1e-9);
+  assert.deepEqual([line.type, line.height, line.layoutSizingHorizontal, line.strokeWeight, line.fills.length], ["LINE", 0, "FILL", 2, 0]);
+  assert.equal(line.strokes[0].color.r > 0.8, true, "the plan's stroke replaces Figma's default black");
+  assert.deepEqual([hex.type, hex.pointCount, hex.fills.at(-1).type], ["POLYGON", 6, "GRADIENT_RADIAL"]);
+  assert.deepEqual([star.type, star.pointCount, star.innerRadius, star.width], ["STAR", 7, 0.5, 24]);
+  assert.deepEqual(report.warnings, []);
+});

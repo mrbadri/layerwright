@@ -265,3 +265,30 @@ test("bind a variable to fills, padding and radius; apply fill and text styles",
   const bad = await editNodes({ approved: true, ops: [{ op: "style", node: f.id, kind: "text", styleId: "S:h1" }] });
   assert.match(bad.failed!.error, /needs a text layer/);
 });
+
+test("group, boolean (subtract) and ungroup keep layer order; boolean refuses a frame; ops chain with $n", async () => {
+  const page = resetFigma();
+  const host = F().createFrame(); host.name = "Host"; page.appendChild(host);
+  const bg = F().createRectangle(); bg.name = "BG"; host.appendChild(bg);
+  const a = F().createEllipse(); a.name = "A"; a.fills = [{ type: "SOLID", color: { r: 0, g: 0, b: 1 } }]; host.appendChild(a);
+  const b = F().createRectangle(); b.name = "B"; host.appendChild(b);
+  const res = await editNodes({ approved: true, ops: [
+    { op: "boolean", nodes: [b.id, a.id], operation: "subtract", name: "Cut" },
+    { op: "group", nodes: [bg.id, "$0"], name: "Icon" },
+    { op: "ungroup", node: "$1" },
+  ] });
+  assert.equal(res.failed, undefined, JSON.stringify(res.failed));
+  assert.deepEqual(host.children.map((c: any) => c.name), ["BG", "Cut"]);
+  const cut = host.children[1];
+  assert.deepEqual([cut.type, cut.booleanOperation, cut.children.map((c: any) => c.name)], ["BOOLEAN_OPERATION", "SUBTRACT", ["A", "B"]]);
+  assert.deepEqual(cut.fills[0].color, { r: 0, g: 0, b: 1 }, "the base layer's fill, not Figma's default grey");
+  assert.deepEqual(res.applied[2].nodeIds, [bg.id, cut.id]);
+  const back = await editNodes({ approved: true, ops: [{ op: "ungroup", node: cut.id }] });
+  assert.deepEqual(back.applied[0].nodeIds, [a.id, b.id], "ungrouping a boolean gives the shapes back");
+  const frame = F().createFrame(); host.appendChild(frame);
+  const bad = await editNodes({ approved: true, ops: [{ op: "boolean", nodes: [frame.id, bg.id], operation: "union" }] });
+  assert.match(bad.failed!.error, /FRAME can't be used/);
+  const other = F().createFrame(); page.appendChild(other);
+  const apart = await editNodes({ approved: true, ops: [{ op: "group", nodes: [bg.id, other.id] }] });
+  assert.match(apart.failed!.error, /same parent/);
+});

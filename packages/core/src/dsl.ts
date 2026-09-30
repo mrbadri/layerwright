@@ -142,7 +142,8 @@ export type DesignNode =
   | { type: "screen" | "frame" | "section" | "stack" | "row" | "card" | "modal" | "navigation" | "list"; children?: DesignNode[]; [k: string]: unknown }
   | { type: "text" | "link"; content: string; [k: string]: unknown }
   | { type: "component" | "component-instance" | "button" | "input" | "icon"; [k: string]: unknown }
-  | { type: "divider" | "image"; [k: string]: unknown };
+  | { type: "divider" | "image"; [k: string]: unknown }
+  | { type: "shape"; shape: "ellipse" | "line" | "polygon" | "star"; [k: string]: unknown };
 
 export const DesignNodeSchema: z.ZodType<any> = z.lazy(() =>
   z.discriminatedUnion("type", ([
@@ -164,6 +165,15 @@ export const DesignNodeSchema: z.ZodType<any> = z.lazy(() =>
     /** An icon: a DS component (component/role), or inline SVG markup (svg). */
     z.object({ type: z.literal("icon"), ...Base, ...ComponentRef, svg: z.string().min(1).max(200_000).optional(), color: ColorRef.optional() }).strict(),
     z.object({ type: z.literal("divider"), ...Base, color: ColorRef.optional(), ...ComponentRef }).strict(),
+    /** A basic shape: an ellipse (an arc makes rings, progress and pie slices), a horizontal line, a polygon or a star. */
+    z.object({ type: z.literal("shape"), ...Base, shape: z.enum(["ellipse", "line", "polygon", "star"]),
+      fill: ColorRef.optional(), stroke: ColorRef.optional(), strokeWeight: z.number().min(0).max(100).optional(), gradient: Gradient.optional(),
+      /** Polygon sides / star points (default 3 / 5). */
+      pointCount: z.number().int().min(3).max(60).optional(),
+      /** Star: inner radius as a share of the outer one (default 0.38). */
+      innerRadius: z.number().min(0).max(1).optional(),
+      /** Ellipse: draw from `start` to `end` degrees (0 = right, clockwise); innerRadius 0–1 cuts a hole (a ring). */
+      arc: z.object({ start: z.number().min(-360).max(360), end: z.number().min(-360).max(360), innerRadius: z.number().min(0).max(1).default(0) }).strict().optional() }).strict(),
     z.object({ type: z.literal("image"), ...Base, alt: z.string().optional(), fill: ColorRef.optional(), radius: NumberOrToken.optional(),
       /** data: URL or https URL (fetched by the MCP server, never by the plugin). */
       src: z.string().min(1).max(15_000_000).optional(), fit: z.enum(["fill", "fit", "crop"]).default("fill") }).strict(),

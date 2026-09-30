@@ -80,7 +80,20 @@ export function snapshotToPlan(root: NodeSnapshot, ds?: DesignSystem, opts: { na
       return out;
     }
 
-    if (["FRAME", "COMPONENT", "GROUP", "SECTION", "RECTANGLE", "ELLIPSE"].includes(n.type)) {
+    if (["ELLIPSE", "LINE", "POLYGON", "STAR"].includes(n.type)) {
+      const line = n.type === "LINE";
+      const out: any = { type: "shape", ...common, shape: n.type.toLowerCase(), width: size(n, "H") === "fill" && inFlow ? "fill" : n.w, ...(line ? {} : { height: n.h }) };
+      if (!line) out.fill = color(n);
+      if (n.fills?.some((x) => !x.startsWith("#"))) warnings.push(`${path}: "${n.name}" has a ${n.fills.find((x) => !x.startsWith("#"))} fill; only solid colours are exported.`);
+      const s = color(n, "strokes");
+      if (s) { out.stroke = s; if (n.strokeWeight) out.strokeWeight = n.strokeWeight; }
+      if (n.shape?.pointCount) out.pointCount = n.shape.pointCount;
+      if (n.shape?.innerRadius !== undefined) out.innerRadius = n.shape.innerRadius;
+      if (n.shape?.arc) out.arc = n.shape.arc;
+      return strip(out);
+    }
+
+    if (["FRAME", "COMPONENT", "GROUP", "SECTION", "RECTANGLE"].includes(n.type)) {
       const out: any = { type: n.type === "SECTION" ? "section" : "frame", ...common };
       if (n.type === "COMPONENT") warnings.push(`${path}: component "${n.name}" exported as a frame (use its instances to reuse it).`);
       const auto = n.layout && n.layout.mode !== "NONE" && n.layout.mode !== "GRID";
@@ -99,8 +112,7 @@ export function snapshotToPlan(root: NodeSnapshot, ds?: DesignSystem, opts: { na
       // A section's outline and corner radius are Figma's section chrome, not design.
       const s = n.type === "SECTION" ? undefined : color(n, "strokes");
       if (s) { out.stroke = s; if (n.strokeWeight) out.strokeWeight = n.strokeWeight; }
-      if (n.type === "ELLIPSE" && n.w) out.radius = n.w / 2;
-      else if (n.radius && n.type !== "SECTION") out.radius = n.bound?.topLeftRadius ?? n.radius;
+      if (n.radius && n.type !== "SECTION") out.radius = n.bound?.topLeftRadius ?? n.radius;
       if (n.clip) out.clip = true;
       if (n.truncated) warnings.push(`${path}: "${n.name}" has ${n.truncated} more children beyond the inspected depth.`);
       out.children = (n.children ?? []).map((c, i) => node(c, n, `${path}.children[${i}]`)).filter(Boolean);

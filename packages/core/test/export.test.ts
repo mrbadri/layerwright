@@ -39,3 +39,21 @@ test("an inspected subtree exports to a valid plan: layout, tokens, text styles,
   assert.equal((root.children[2] as any).componentId, "1:3", "the same variant");
   assert.deepEqual((root.children[2] as any).properties, { "Label#10:0": "Continue" });
 });
+
+test("ellipses, lines, polygons and stars export as shapes (arc, points, strokes) and compile back to the same kinds", () => {
+  const s: NodeSnapshot = { id: "20:1", type: "FRAME", name: "Shapes", w: 200, h: 100, layout: { mode: "VERTICAL", sizingH: "FIXED", sizingV: "HUG" }, children: [
+    { id: "20:2", type: "ELLIPSE", name: "Ring", w: 40, h: 40, fills: ["#176b66"], shape: { arc: { start: -90, end: 180, innerRadius: 0.8 } } },
+    { id: "20:3", type: "LINE", name: "Rule", w: 200, h: 0, strokes: ["#e5e7eb"], strokeWeight: 2, layout: { mode: "NONE", sizingH: "FILL", sizingV: "FIXED" } },
+    { id: "20:4", type: "STAR", name: "Star", w: 24, h: 24, fills: ["#f59e0b"], shape: { pointCount: 5, innerRadius: 0.382 } },
+  ] };
+  const { plan } = snapshotToPlan(s);
+  const [ring, rule, star] = (plan.screens[0] as any).children;
+  assert.deepEqual([ring.type, ring.shape, ring.arc, ring.fill], ["shape", "ellipse", { start: -90, end: 180, innerRadius: 0.8 }, "#176B66"]);
+  assert.deepEqual([rule.shape, rule.width, rule.stroke, rule.strokeWeight, rule.height], ["line", "fill", "#E5E7EB", 2, undefined]);
+  assert.deepEqual([star.shape, star.pointCount, star.innerRadius], ["star", 5, 0.382]);
+  const v = validatePlan(plan);
+  assert.ok(v.success, JSON.stringify(!v.success && v.errors));
+  const c = compilePlan(fixtureDs(), v.plan);
+  assert.deepEqual(c.errors, []);
+  assert.deepEqual((c.plan!.roots[0] as ResolvedFrame).children.map((x: any) => x.shape), ["ellipse", "line", "star"]);
+});

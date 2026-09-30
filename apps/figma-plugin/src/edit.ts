@@ -1,5 +1,5 @@
-// Edits on existing nodes: rename, move, duplicate, set, delete, resize to fit, and turning layers into
-// components / component sets. One call = one undo step. Fixed Plugin API calls only.
+// Edits on existing nodes: rename, move, duplicate, set, delete, resize to fit, group / ungroup / boolean, and
+// turning layers into components / component sets. One call = one undo step. Fixed Plugin API calls only.
 import type { AnnotationSpec, ResolvedInteraction } from "@cde/core";
 import { annotate } from "./annotate.ts";
 import { progress } from "./progress.ts";
@@ -22,6 +22,10 @@ export type EditOp =
   | { op: "bind"; node: NodeRef; field: BindField; variableId: string; variableKey?: string; variableName?: string }
   /** Apply a fill / stroke / text / effect style (resolved by the server). */
   | { op: "style"; node: NodeRef; kind: "fill" | "stroke" | "text" | "effect"; styleId: string; styleKey?: string; styleName?: string; font?: FontName }
+  | { op: "group"; nodes: NodeRef[]; name?: string }
+  | { op: "ungroup"; node: NodeRef }
+  /** Combine shapes or vectors into one boolean shape, or flatten them into one vector. */
+  | { op: "boolean"; nodes: NodeRef[]; operation: "union" | "subtract" | "intersect" | "exclude" | "flatten"; name?: string }
   | { op: "flow"; name: string; start?: NodeRef; description?: string; remove?: boolean }
   | { op: "componentize"; nodes: NodeRef[]; mode?: "single" | "multiple" | "variants"; name?: string; variants?: Record<string, string>[];
       duplicate?: boolean; exposeText?: boolean | string[]; autoLayout?: boolean; parent?: NodeRef; x?: number; y?: number };
@@ -51,6 +55,16 @@ async function container(ref: NodeRef | undefined, page: string | undefined, res
     return p as unknown as BaseNode & ChildrenMixin;
   }
   return page ? await findPage(page) : undefined;
+}
+
+/** Layers that share one parent, in layer order, and where the first one sits (group and boolean ops need that). */
+async function siblings(refs: NodeRef[], results: EditResult[], op: string) {
+  const ns: SceneNode[] = [];
+  for (const r of refs) ns.push(await resolve(r, results));
+  const host = ns[0].parent as (BaseNode & ChildrenMixin) | null;
+  if (!host || ns.some((n) => n.parent !== host)) throw new Error(`${op} needs layers with the same parent; move them into one frame first.`);
+  ns.sort((a, b) => host.children.indexOf(a) - host.children.indexOf(b));
+  return { ns, host, index: host.children.indexOf(ns[0]) };
 }
 
 /** Load every font used in these nodes so text can be written. */
@@ -357,6 +371,38 @@ export async function editNodes(p: { ops: EditOp[]; approved?: boolean; meta?: {
             await (n as unknown as Record<string, (id: string) => Promise<void>>)[setter](st.id);
           }
           r = { op: i, kind: o.op, nodeId: n.id, note: `${o.kind} style → ${o.styleName ?? o.styleId}` };
+          break;
+        }
+        case "group": {
+          const { ns, host, index } = await siblings(o.nodes, results, "group");
+          const g = figma.group(ns, host, index);
+          if (o.name) g.name = o.name;
+          noteSection(host);
+          r = { op: i, kind: o.op, nodeId: g.id, note: `${ns.length} layer(s) grouped` };
+          break;
+        }
+        case "ungroup": {
+          const n = await resolve(o.node, results);
+          if (n.type !== "GROUP" && n.type !== "FRAME" && n.type !== "BOOLEAN_OPERATION") throw new Error(`${n.name} is a ${n.type}; only groups, frames and boolean shapes can be ungrouped.`);
+          noteSection(n.parent);
+          // Figma removes the group; read what the note needs first.
+          const name = n.name;
+          const kids = figma.ungroup(n as GroupNode);
+          r = { op: i, kind: o.op, nodeIds: kids.map((k) => k.id), note: `${kids.length} layer(s) moved out of "${name}"` };
+          break;
+        }
+        case "boolean": {
+          const { ns, host, index } = await siblings(o.nodes, results, "boolean");
+          if (o.operation !== "flatten" && ns.length < 2) throw new Error(`${o.operation} needs at least two layers.`);
+          const base = ns[0] as GeometryMixin;
+          const fills = base.fills, strokes = base.strokes, weight = base.strokeWeight;
+          const b = o.operation === "flatten" ? figma.flatten(ns, host, index) : figma[o.operation](ns, host, index);
+          // The plugin API gives a new boolean Figma's default grey; like the editor, it takes the base layer's look.
+          if (fills !== figma.mixed) b.fills = fills;
+          if (strokes.length) { b.strokes = strokes; if (weight !== figma.mixed) b.strokeWeight = weight; }
+          if (o.name) b.name = o.name;
+          noteSection(host);
+          r = { op: i, kind: o.op, nodeId: b.id, note: `${o.operation} of ${ns.length} layer(s)` };
           break;
         }
         case "flow": {

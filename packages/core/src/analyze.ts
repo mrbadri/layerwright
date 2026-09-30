@@ -272,15 +272,16 @@ const far = (a: number, b: number) => Math.abs(a - b) > Math.max(4, Math.abs(b) 
 /** All text layers inside a snapshot (for checking an instance's text overrides). */
 const textsIn = (n: NodeSnapshot): NodeSnapshot[] => (n.type === "TEXT" ? [n] : (n.children ?? []).flatMap(textsIn));
 
-const KIND_TYPE: Record<ResolvedNode["kind"], string> = { frame: "FRAME", text: "TEXT", instance: "INSTANCE", rect: "RECTANGLE", svg: "FRAME" };
+const KIND_TYPE: Record<Exclude<ResolvedNode["kind"], "shape">, string> = { frame: "FRAME", text: "TEXT", instance: "INSTANCE", rect: "RECTANGLE", svg: "FRAME" };
+const typeOf = (e: ResolvedNode) => (e.kind === "shape" ? e.shape.toUpperCase() : KIND_TYPE[e.kind]);
 
 /** Structural comparison of an executed plan against the inspected Figma result. */
 export function verifyAgainstPlan(expected: ResolvedNode, actual: NodeSnapshot | undefined, opts: VerifyOptions = {}): Mismatch[] {
   const out: Mismatch[] = [];
   const walk = (e: ResolvedNode, a: NodeSnapshot | undefined) => {
-    if (!a) { out.push({ path: e.path, issue: "missing node", expected: `${KIND_TYPE[e.kind]} "${e.name}"` }); return; }
+    if (!a) { out.push({ path: e.path, issue: "missing node", expected: `${typeOf(e)} "${e.name}"` }); return; }
     const section = e.kind === "frame" && e.role === "section" && a.type === "SECTION";
-    if (a.type !== KIND_TYPE[e.kind] && !section) out.push({ path: e.path, nodeId: a.id, issue: "wrong node type", expected: KIND_TYPE[e.kind], actual: a.type });
+    if (a.type !== typeOf(e) && !section) out.push({ path: e.path, nodeId: a.id, issue: "wrong node type", expected: typeOf(e), actual: a.type });
     if (a.name !== e.name) out.push({ path: e.path, nodeId: a.id, issue: "name differs", expected: e.name, actual: a.name });
     if (e.kind === "instance" && a.instance?.componentId && a.instance.componentId !== e.componentId) out.push({ path: e.path, nodeId: a.id, issue: "wrong component/variant", expected: e.componentName, actual: a.instance.component });
     if (e.kind === "text" && a.text && a.text.chars !== e.content) out.push({ path: e.path, nodeId: a.id, issue: "text content differs", expected: e.content, actual: a.text.chars });

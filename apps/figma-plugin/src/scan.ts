@@ -253,6 +253,8 @@ function paints(p: readonly Paint[] | typeof figma.mixed | undefined): string[] 
   return out.length ? out : undefined;
 }
 
+const isAutoParent = (n: SceneNode) => !!n.parent && "layoutMode" in n.parent && n.parent.layoutMode !== "NONE";
+
 export async function snapshot(node: BaseNode, opts: { depth?: number; maxNodes?: number; expandInstances?: boolean } = {}): Promise<NodeSnapshot> {
   let budget = opts.maxNodes ?? 400;
   const varNames = new Map<string, string>();
@@ -275,6 +277,13 @@ export async function snapshot(node: BaseNode, opts: { depth?: number; maxNodes?
     if ("strokes" in sn) s.strokes = paints(sn.strokes);
     if ("cornerRadius" in sn && typeof sn.cornerRadius === "number" && sn.cornerRadius > 0) s.radius = sn.cornerRadius;
     if ("strokeWeight" in sn && typeof sn.strokeWeight === "number" && s.strokes) s.strokeWeight = sn.strokeWeight;
+    // Shapes have no Auto Layout of their own, but they can fill their parent's (a divider line across a column).
+    if ((n.type === "LINE" || n.type === "ELLIPSE" || n.type === "POLYGON" || n.type === "STAR") && isAutoParent(n)) s.layout = { mode: "NONE", sizingH: n.layoutSizingHorizontal, sizingV: n.layoutSizingVertical };
+    if (n.type === "POLYGON" || n.type === "STAR") s.shape = { pointCount: n.pointCount, ...(n.type === "STAR" ? { innerRadius: Math.round(n.innerRadius * 1000) / 1000 } : {}) };
+    if (n.type === "ELLIPSE") {
+      const a = n.arcData, deg = (r: number) => Math.round((r * 180) / Math.PI * 10) / 10;
+      if (a && (Math.abs(a.endingAngle - a.startingAngle - 2 * Math.PI) > 1e-3 || a.innerRadius > 0)) s.shape = { arc: { start: deg(a.startingAngle), end: deg(a.endingAngle), innerRadius: Math.round(a.innerRadius * 1000) / 1000 } };
+    }
     if ("opacity" in sn && sn.opacity < 1) s.opacity = Math.round(sn.opacity * 100) / 100;
     if ("clipsContent" in sn && (sn as FrameNode).clipsContent && n.type !== "INSTANCE") s.clip = true;
     if ("fillStyleId" in sn && typeof sn.fillStyleId === "string" && sn.fillStyleId) s.fillStyle = sn.fillStyleId;

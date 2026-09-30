@@ -46,6 +46,7 @@ export function groupFailures(failed: { id?: string; error: string; node?: strin
     const font = m.match(FONT);
     if (LIBRARY.test(m)) { cause = "library not enabled for this file"; fix = "In Figma, open the Assets panel → Libraries (the book icon), enable the library these styles or components come from for this file, then run it again. (A copied file often loses its library link.)"; }
     else if (font) { cause = "font not installed"; fix = ""; }
+    else if (/^Node \S+ not found|node with id .* does not exist/i.test(m)) { cause = "layer not found"; fix = "The layer id is out of date (deleted, undone, ungrouped or on another file): run figma_inspect or figma_get_design_context for the current ids, then try again."; }
     else if (/not found|no longer exists|was deleted/i.test(m)) { cause = "something it needs was deleted or renamed"; fix = "Rescan the Design System (figma_scan_design_system refresh: true) and analyse again."; }
     else if (/not approved/i.test(m)) { cause = "waiting for approval"; fix = "Ask the user, then call again with approved: true."; }
     else { cause = "Figma refused the change"; fix = "Look at the example below; if it keeps happening, run `npx layerwright report`."; }

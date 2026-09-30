@@ -171,6 +171,20 @@ export function resetFigma() {
     createFrame: () => { const f = new N("FRAME"); f.fills = [{ type: "SOLID", color: { r: 1, g: 1, b: 1 } }]; return f; },
     createText: () => new T(),
     createRectangle: () => new N("RECTANGLE"),
+    createEllipse: () => Object.assign(new N("ELLIPSE"), { arcData: { startingAngle: 0, endingAngle: 2 * Math.PI, innerRadius: 0 } }),
+    createPolygon: () => Object.assign(new N("POLYGON"), { pointCount: 3 }),
+    createStar: () => Object.assign(new N("STAR"), { pointCount: 5, innerRadius: 0.382 }),
+    // Like Figma: a line is created with a black stroke and its height must stay 0.
+    createLine: () => { const l = new N("LINE"); l.height = 0; l.strokes = [{ type: "SOLID", color: { r: 0, g: 0, b: 0 } }]; const resize = l.resize.bind(l); l.resize = (w: number, h: number) => { if (h !== 0) throw new Error("Line height must be 0"); resize(w, h); }; return l; },
+    // Like Figma: grouping moves the layers into a new node at the index; booleans need shapes or vectors.
+    group: (ns: any[], parent: any, index?: number) => { if (!ns.length) throw new Error("group needs nodes"); const g = new N("GROUP"); parent.insertChild(index ?? parent.children.length, g); for (const n of ns) g.appendChild(n); return g; },
+    ungroup: (g: any) => { const p = g.parent, at = p.children.indexOf(g), kids = [...g.children]; kids.forEach((k, j) => p.insertChild(at + j, k)); g.remove(); Object.defineProperty(g, "name", { get() { throw new Error(`in get_name: The node with id "${g.id}" does not exist`); } }); return kids; },
+    ...Object.fromEntries(["union", "subtract", "intersect", "exclude", "flatten"].map((op) => [op, (ns: any[], parent: any, index?: number) => {
+      const bad = ns.find((n) => !["RECTANGLE", "ELLIPSE", "POLYGON", "STAR", "LINE", "VECTOR", "BOOLEAN_OPERATION", "TEXT"].includes(n.type));
+      if (bad) throw new Error(`in ${op}: ${bad.type} can't be used in a boolean operation`);
+      const b = new N(op === "flatten" ? "VECTOR" : "BOOLEAN_OPERATION"); b.fills = [{ type: "SOLID", color: { r: 0.85, g: 0.85, b: 0.85 } }]; if (op !== "flatten") (b as any).booleanOperation = op.toUpperCase();
+      parent.insertChild(index ?? parent.children.length, b); for (const n of ns) b.appendChild(n); return b;
+    }])),
     getNodeByIdAsync: async (id: string) => nodes.get(id) ?? null,
     getStyleByIdAsync: async (id: string) => styles.get(id) ?? null,
     loadFontAsync: async (f: any) => {
