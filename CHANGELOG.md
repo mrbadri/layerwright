@@ -5,6 +5,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-09-30
+
+### Changed
+- README and npm description present Figma → code as a main capability: reading a frame, mapping Figma components to your React components (`.layerwright/mapping.json`), implementing with them and checking the result (`code_scan_components`, `code_mapping`, `code_verify_usage`).
+
 ## [0.2.0] - 2026-09-30
 
 ### Added
@@ -119,7 +124,8 @@ All notable changes to this project are documented here. The format follows
 ### Fixed
 - The plugin no longer opens a duplicate connection after the port is changed.
 
-[Unreleased]: https://github.com/shayan-m81/layerwright/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/shayan-m81/layerwright/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/shayan-m81/layerwright/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/shayan-m81/layerwright/compare/v0.1.4...v0.2.0
 [0.1.4]: https://github.com/shayan-m81/layerwright/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/shayan-m81/layerwright/compare/v0.1.2...v0.1.3

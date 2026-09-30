@@ -1,12 +1,13 @@
 # Layerwright
 
-**Turn Claude Design and Claude Code designs into native, editable Figma files.**
+**Turn Claude Design and Claude Code designs into native, editable Figma files, and Figma designs into code that uses your own components.**
 
 Layerwright is an open-source MCP server and Figma plugin that works with Claude Code. It imports
 HTML (for example a Claude Design "standalone HTML" export) into Figma as real frames with Auto
 Layout, text, images and vector icons, and it lets Claude build new screens from your own Design
 System: real component instances, variables and text styles. It is not a screenshot and it is not a
-flat SVG.
+flat SVG. It also works the other way: select a Figma frame and Claude implements it in your codebase
+with your existing components and tokens, then checks that it did.
 
 [![CI](https://github.com/shayan-m81/layerwright/actions/workflows/ci.yml/badge.svg)](https://github.com/shayan-m81/layerwright/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/layerwright.svg)](https://www.npmjs.com/package/layerwright)
@@ -24,6 +25,7 @@ Layerwright closes that gap locally:
 
 - **Claude Design to Figma:** export standalone HTML, run one command, and you get editable Figma frames.
 - **Claude Code to Figma:** ask Claude for a screen or a flow, and it is built from your Design System's components.
+- **Figma to code:** select a frame, and Claude implements it with the React components you already have (not a new copy of each button), mapped once and shared with your team.
 - **No API keys, no cloud, no account.** Everything runs on your machine. The plugin only talks to `localhost`.
 
 ## Features
@@ -35,6 +37,11 @@ Layerwright closes that gap locally:
   - Images and inline SVG icons are imported as real images and vectors.
   - Desktop (1440) and mobile (390) screens are rendered side by side.
   - RTL is supported (Persian, Arabic, Hebrew). Rows keep their visual order and text stays right-aligned.
+- **Figma to code** (`figma_inspect` → `code_scan_components` → `code_mapping` → `code_verify_usage`)
+  - Reads the frame as a plan: layout, spacing and colour tokens, text styles, and every component instance with its variant and properties.
+  - Scans your React / Next.js codebase for exported components (and Tailwind or shadcn/ui) and suggests which code component each Figma component is.
+  - The mappings you confirm are saved in `.layerwright/mapping.json`; commit it and the whole team reuses them.
+  - Claude implements the frame with the mapped components and your theme tokens; `code_verify_usage` then flags design components that weren't used, raw `<button>` / `<input>` duplicates, and arbitrary Tailwind values.
 - **Design System sync.** After an import, `figma_analyze_design({ mode: "sync" })` swaps buttons and pills for your DS components (the variant that looks closest), gives text your text styles by size and weight, and binds colours to your variables and styles. You approve it; originals are kept hidden.
 - **Design System automation.** After a Design System scan, buttons, inputs and links become your real Figma components when they clearly match, and you can map any element yourself (`mappings: [{ selector, component }]`).
 - **AI design to Figma from a prompt.** Claude writes a typed Design Plan (a JSON DSL). The plan is validated and resolved against your components, variables and text styles, then built deterministically. Claude never writes Figma plugin code.
@@ -50,7 +57,6 @@ Layerwright closes that gap locally:
   - Existing nodes change only after you approve; deleting without approval only hides and labels a layer.
   - Everything Layerwright creates is tagged, so `figma_cleanup` can list and remove a session's leftovers.
 - **Audit and fix existing frames.** Hard-coded colours become variables, raw text gets text styles, and custom buttons become component instances, in groups you can pick. Originals are hidden, never deleted.
-- **Design to code.** Map Figma components to your React components and check that the implementation uses them.
 - **Pixel-faithful mode** (`figma_import_html`) for review boards and art-heavy pages: exact layers, variant sets built from states, and instance swaps.
 - **Learns per project.** Font substitutions, mappings and component choices are reused next time, your corrections are kept as notes, and recurring problems come with a hint (`.layerwright/memory.json`, shareable). `npx layerwright report` drafts a redacted issue from them for you to send.
 - **Tells you about updates** in the plugin window, in Claude and in `doctor`.
@@ -118,7 +124,7 @@ Read more in [docs/architecture.md](https://github.com/shayan-m81/layerwright/bl
 | `figma_migrate` | Move every instance of one component set to another, variant by variant, keeping overrides (dry run first) |
 | `figma_cleanup` | List (and with approval remove) what Layerwright made in this session |
 | `layerwright_memory` | What the project remembers (fonts, mappings, component choices, notes, recurring problems); add notes or forget entries |
-| `code_scan_components` / `code_mapping` / `code_verify_usage` | Design to code: component mapping and usage checks |
+| `code_scan_components` / `code_mapping` / `code_verify_usage` | Figma to code: find your code components, map them to Figma components, check the implementation uses them |
 
 ## FAQ
 
