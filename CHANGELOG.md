@@ -46,6 +46,7 @@ All notable changes to this project are documented here. The format follows
 - `figma_inspect({ expandInstances: true })`: the layers inside instances (text, hidden layers) and which ones are overridden.
 
 ### Fixed
+- HTML import: a gradient that fades to `transparent` (glows, scrims) keeps its clear stop, in the neighbour's colour as CSS draws it, instead of losing the whole gradient; only a hard-edged transparent→colour radial is still read as a corner fillet.
 - A stale layer id in `figma_edit` (deleted, undone, ungrouped) now says to fetch current ids with `figma_inspect`, instead of suggesting a Design System rescan.
 - Problems say what to do: changes that didn't apply come back grouped by cause with the fix (e.g. "20 × library not enabled for this file → Assets panel → Libraries…", "font not installed: Gilroy → your export ships it: `npx layerwright fonts … --install --only Gilroy`"), once instead of once per layer, in Claude and in the plugin window. The scan says when library styles can't be applied and why.
 - HTML import, found on a real Claude Design export:

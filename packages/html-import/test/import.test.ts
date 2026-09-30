@@ -242,6 +242,8 @@ maybe("radial and conic gradients, layer blur and backdrop blur come across (pla
   assert.deepEqual([box(".b").gradient.type, box(".b").gradient.angle], ["angular", 90]);
   assert.equal(box(".c").blur, 4);
   assert.equal(box(".d").backgroundBlur, 12);
+  // A glow that fades to transparent keeps both stops; the clear one takes the colour, not black.
+  assert.deepEqual(box(".glow").gradient.stops.map((s: any) => s.color), ["#7C3AED99", "#7C3AED00"]);
   const { resetFigma } = await import("../../../apps/figma-plugin/test/figma-mock.ts");
   const { executePlan } = await import("../../../apps/figma-plugin/src/execute.ts");
   const c = compilePlan({ ...fixtureDs(), typography: [] }, plan);
@@ -254,4 +256,10 @@ maybe("radial and conic gradients, layer blur and backdrop blur come across (pla
   assert.equal(named(".b").fills.at(-1).type, "GRADIENT_ANGULAR");
   assert.equal(named(".c").effects[0].type, "LAYER_BLUR");
   assert.equal(named(".d").effects[0].type, "BACKGROUND_BLUR");
+  assert.deepEqual(named(".glow").fills.at(-1).gradientStops.map((s: any) => s.color.a), [0.6, 0]);
+  // The pixel-faithful importer: the glow is a gradient; only a hard-edged transparent→colour radial is a corner fillet.
+  const { importHtml } = await import("../src/index.ts");
+  const [shot] = await importHtml({ file: fixture("effects.html"), viewport: 600 });
+  const kids = (shot.tree as any).children;
+  assert.deepEqual(kids.map((k: any) => k.type === "svg" ? k.name : k.gradient?.type ?? k.blur ?? k.backdropBlur), ["radial", "angular", 4, 12, "radial", "notch-fillet"]);
 });

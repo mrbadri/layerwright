@@ -57,14 +57,14 @@ const SERIALIZE_DOM = ({ selector, marks }: { selector: string; marks: string[] 
     return converted.get(c);
   };
   const COLOR_FN = /(?:rgba?|oklch|oklab|lab|lch|hsla?|hwb|color)\([^()]*(?:\([^()]*\)[^()]*)*\)/;
-  const rgba = (v0: string) => {
+  const rgba = (v0: string, clear = false) => {
     let v = v0;
     if (!/^\s*rgba?\(/.test(v)) { const fn = v.match(COLOR_FN); if (!fn) return undefined; v = toRgbString(fn[0]) ?? ""; }
     const m = v.match(/rgba?\(([^)]+)\)/);
     if (!m) return undefined;
     const [r, g, b, a = "1"] = m[1].split(/[ ,/]+/).filter(Boolean);
     const al = parseFloat(a);
-    if (!(al > 0)) return undefined;
+    if (!(al > 0) && !(clear && al === 0)) return undefined;
     const h = (n: string) => Math.max(0, Math.min(255, Math.round(+n))).toString(16).padStart(2, "0");
     return { hex: `#${h(r)}${h(g)}${h(b)}`.toUpperCase(), a: Math.round(al * 1000) / 1000 };
   };
@@ -85,12 +85,19 @@ const SERIALIZE_DOM = ({ selector, marks }: { selector: string; marks: string[] 
       const from = parts.shift()!.match(/from\s+(-?[\d.]+)deg/);
       angle = from ? parseFloat(from[1]) : 0;
     }
-    const stops = parts.map((p, i) => {
-      const cm = p.match(COLOR_FN); const color = cm ? rgba(cm[0]) : undefined;
+    const raw = parts.map((p, i) => {
+      const cm = p.match(COLOR_FN); const color = cm ? rgba(cm[0], true) : undefined;
       const pos = p.replace(cm?.[0] ?? "", "").match(/([\d.]+)%/);
       return color && { color, position: pos ? +pos[1] / 100 : i / Math.max(1, parts.length - 1) };
-    }).filter(Boolean) as { color: any; position: number }[];
-    return stops.length >= 2 ? { type: kind, angle, stops } : undefined;
+    }).filter(Boolean) as { color: Rgba; position: number }[];
+    // CSS fades to "transparent" premultiplied: a clear stop takes its neighbours' colours (two stops when both sides
+    // have one), or Figma would fade through grey.
+    const stops = raw.flatMap((st, i) => {
+      if (st.color.a) return [st];
+      const prev = raw.slice(0, i).reverse().find((x) => x.color.a), next = raw.slice(i + 1).find((x) => x.color.a);
+      return [prev, next].filter(Boolean).map((n) => ({ ...st, color: { hex: n!.color.hex, a: 0 } }));
+    });
+    return stops.length >= 2 && stops.some((x) => x.color.a) ? { type: kind, angle, stops } : undefined;
   };
   const blurOf = (f: string) => { const m = f && f !== "none" ? f.match(/blur\(([\d.]+)px\)/) : null; return m ? parseFloat(m[1]) || undefined : undefined; };
   const shadows = (v: string) => {

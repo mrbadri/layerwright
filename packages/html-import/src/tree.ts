@@ -27,7 +27,7 @@ const SERIALIZE = ({ targets, swaps }: { targets: ImportTarget[] | null; swaps: 
   const colorCanvas = document.createElement("canvas").getContext("2d", { willReadFrequently: true })!;
   const converted = new Map<string, string | null>();
   const COLOR_FN = /(?:rgba?|oklch|oklab|lab|lch|hsla?|hwb|color)\([^()]*(?:\([^()]*\)[^()]*)*\)/;
-  const color = (v0: string): { hex: string; a: number } | null => {
+  const color = (v0: string, clear = false): { hex: string; a: number } | null => {
     let v = v0;
     if (!/^\s*rgba?\(/.test(v)) {
       const fn = v.match(COLOR_FN);
@@ -43,7 +43,7 @@ const SERIALIZE = ({ targets, swaps }: { targets: ImportTarget[] | null; swaps: 
     if (!m) return null;
     const [r, g, b, a = "1"] = m[1].split(/[ ,/]+/).filter(Boolean);
     const al = parseFloat(a);
-    if (al === 0) return null;
+    if (al === 0 && !clear) return null;
     const h = (n: string) => Math.round(+n).toString(16).padStart(2, "0");
     return { hex: `#${h(r)}${h(g)}${h(b)}`.toUpperCase(), a: al };
   };
@@ -63,12 +63,19 @@ const SERIALIZE = ({ targets, swaps }: { targets: ImportTarget[] | null; swaps: 
       const from = parts.shift()!.match(/from\s+(-?[\d.]+)deg/);
       angle = from ? parseFloat(from[1]) : 0;
     }
-    const stops = parts.map((p, i) => {
-      const cm = p.match(COLOR_FN); const c = cm ? color(cm[0]) : null;
+    const raw = parts.map((p, i) => {
+      const cm = p.match(COLOR_FN); const c = cm ? color(cm[0], true) : null;
       const pos = p.replace(cm?.[0] ?? "", "").match(/([\d.]+)%/);
       return c && { hex: c.hex, a: c.a, pos: pos ? +pos[1] / 100 : i / Math.max(1, parts.length - 1) };
-    }).filter(Boolean);
-    return stops.length >= 2 ? { type: kind, angle, stops } : null;
+    }).filter(Boolean) as { hex: string; a: number; pos: number }[];
+    // CSS fades to "transparent" premultiplied: a clear stop takes its neighbours' colours (two stops when both sides
+    // have one), or Figma would fade through grey.
+    const stops = raw.flatMap((st, i) => {
+      if (st.a) return [st];
+      const prev = raw.slice(0, i).reverse().find((x) => x.a), next = raw.slice(i + 1).find((x) => x.a);
+      return [prev, next].filter(Boolean).map((n) => ({ ...st, hex: n!.hex }));
+    });
+    return stops.length >= 2 && stops.some((x) => x.a) ? { type: kind, angle, stops } : null;
   };
   const blurOf = (f: string) => { const b = f && f !== "none" ? f.match(/blur\(([\d.]+)px\)/) : null; return b ? parseFloat(b[1]) || undefined : undefined; };
   const shadows = (v: string) => {
@@ -176,7 +183,10 @@ const SERIALIZE = ({ targets, swaps }: { targets: ImportTarget[] | null; swaps: 
     if (!isRoot && (r.width === 0 || r.height === 0) && cs.overflow !== "visible") return [];
     const bg = color(cs.backgroundColor);
     const grad = gradient(cs.backgroundImage);
-    const notch = /radial-gradient/.test(cs.backgroundImage) ? color((cs.backgroundImage.match(/rgba?\([^)]+\)\s+[\d.]+px\)$/) || [""])[0].replace(/\s+[\d.]+px\)$/, "")) : null;
+    // A concave corner drawn as a hard-edged radial (transparent up to R px, then a colour from R px) becomes a fillet
+    // shape. Soft radial gradients (glows, spotlights) are real gradients.
+    const hard = cs.backgroundImage.match(/^radial-gradient\([^,]*,\s*(?:transparent|rgba\(0, 0, 0, 0\))\s+([\d.]+)px,\s*(rgba?\([^)]+\))\s+([\d.]+)px\)$/);
+    const notch = hard && hard[1] === hard[3] ? color(hard[2]) : null;
     const sh = shadows(cs.boxShadow);
     const bw = ["Top", "Right", "Bottom", "Left"].map((s) => (cs as any)[`border${s}Style`] !== "none" ? px((cs as any)[`border${s}Width`]) : 0);
     const bc = color(cs.borderTopColor) || color(cs.borderRightColor) || color(cs.borderBottomColor) || color(cs.borderLeftColor);
