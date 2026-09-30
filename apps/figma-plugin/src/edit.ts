@@ -1,6 +1,7 @@
 // Edits on existing nodes: rename, move, duplicate, set, delete, resize to fit, and turning layers into
 // components / component sets. One call = one undo step. Fixed Plugin API calls only.
 import type { ResolvedInteraction } from "@cde/core";
+import { progress } from "./progress.ts";
 import { ExecError, checkDestination, findPage, fitSection, loose, pageOf, tag, toReaction } from "./execute.ts";
 
 export type NodeRef = string; // a node id, or "$n": the node produced by op n of this call
@@ -198,6 +199,7 @@ export async function editNodes(p: { ops: EditOp[]; approved?: boolean; meta?: {
   const noteSection = (n: BaseNode | null) => { if (n?.type === "SECTION") touchedSections.add(n as SectionNode); };
   let failed: { op: number; error: string } | undefined;
   for (const [i, o] of p.ops.entries()) {
+    if (p.ops.length > 3) progress(`Editing layers (${o.op})`, i, p.ops.length);
     try {
       let r: EditResult;
       switch (o.op) {

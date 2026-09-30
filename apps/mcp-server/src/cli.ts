@@ -10,6 +10,7 @@ import { BIN } from "./meta.ts";
 const HELP = () => `Usage:
   ${BIN}                        start the MCP server (Claude Code runs this for you)
   ${BIN} init [--port 7331]     set up this project: plugin, .mcp.json, skill (run in your project folder)
+      --cursor                 also set up Cursor (.cursor/mcp.json and a rule; automatic when .cursor exists)
   ${BIN} doctor [--port 7331]   check Node, the server, the Figma plugin connection and the file
   ${BIN} import <file|folder>   convert HTML to a Design Plan and print its summary
       --viewport 1440,390      viewport widths (default 1440,390)
@@ -171,7 +172,7 @@ export async function main(argv = process.argv.slice(2)) {
   if (cmd === "import") process.exitCode = await importCommand(rest);
   else if (cmd === "fonts") process.exitCode = await fontsCommand(rest);
   else if (cmd === "report") process.exitCode = await reportCommand();
-  else if (cmd === "init") process.exitCode = await (await import("./setup.ts")).init({ port, skipInstall: rest.includes("--skip-install") });
+  else if (cmd === "init") process.exitCode = await (await import("./setup.ts")).init({ port, skipInstall: rest.includes("--skip-install"), cursor: rest.includes("--cursor") ? true : undefined });
   else if (cmd === "doctor") process.exitCode = await (await import("./setup.ts")).doctor({ port });
   else if (cmd === "--version" || cmd === "-v") process.stdout.write((await import("./meta.ts")).PKG_VERSION + "\n");
   else if (cmd === "help" || cmd === "--help" || cmd === "-h") process.stdout.write(HELP() + "\n");

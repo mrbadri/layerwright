@@ -58,7 +58,7 @@ Layerwright closes that gap locally:
 
 ## Quickstart (3 steps)
 
-Requirements: Node.js 20+, Figma desktop, Claude Code.
+Requirements: Node.js 20+, Figma desktop, Claude Code (or Cursor: `npx layerwright init --cursor`).
 
 ```bash
 # 1. In your project folder

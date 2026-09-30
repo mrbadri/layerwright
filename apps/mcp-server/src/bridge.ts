@@ -22,7 +22,11 @@ export class WsBridge implements FigmaTransport {
   private wss?: WebSocketServer;
   private hello?: BridgeHello;
   private seq = 0;
-  private pending = new Map<string, { resolve: (v: any) => void; reject: (e: any) => void; timer: NodeJS.Timeout }>();
+  private pending = new Map<string, { resolve: (v: any) => void; reject: (e: any) => void; timer: NodeJS.Timeout; method: string; timeoutMs: number; started: number }>();
+  /** Longest any request may run while the plugin keeps reporting progress. */
+  static MAX_MS = 30 * 60 * 1000;
+  /** The latest progress from the plugin (what it's doing right now). */
+  lastProgress?: { label: string; done?: number; total?: number; at: number };
   startError?: string;
 
   version = "0";
@@ -67,6 +71,16 @@ export class WsBridge implements FigmaTransport {
     let msg: any;
     try { msg = JSON.parse(raw); } catch { return; }
     if (msg?.type === "hello") { this.hello = msg; try { this.onHello?.(); } catch { /* listener */ } return; }
+    if (msg?.type === "progress") {
+      // Figma is still working: give every pending request its full timeout again (up to MAX_MS in total).
+      this.lastProgress = { label: String(msg.label ?? ""), done: msg.done, total: msg.total, at: Date.now() };
+      for (const [id, p] of this.pending) {
+        clearTimeout(p.timer);
+        const left = Math.min(p.timeoutMs, WsBridge.MAX_MS - (Date.now() - p.started));
+        p.timer = setTimeout(() => this.expire(id), Math.max(0, left));
+      }
+      return;
+    }
     const res = msg as BridgeResponse;
     const p = this.pending.get(res.id);
     if (!p) return;
@@ -93,9 +107,18 @@ export class WsBridge implements FigmaTransport {
     }
     const id = `r${++this.seq}`;
     return new Promise<T>((resolve, reject) => {
-      const timer = setTimeout(() => { this.pending.delete(id); reject(new BridgeError({ type: "TIMEOUT", message: `Figma did not answer "${method}" within ${timeoutMs / 1000}s. The operation may still be running; inspect before retrying.` })); }, timeoutMs);
-      this.pending.set(id, { resolve, reject, timer });
+      const timer = setTimeout(() => this.expire(id), timeoutMs);
+      this.pending.set(id, { resolve, reject, timer, method, timeoutMs, started: Date.now() });
       this.socket!.send(JSON.stringify({ id, method, params }));
     });
+  }
+
+  private expire(id: string) {
+    const p = this.pending.get(id);
+    if (!p) return;
+    this.pending.delete(id);
+    const took = Math.round((Date.now() - p.started) / 1000);
+    const last = this.lastProgress && Date.now() - this.lastProgress.at < 5 * 60_000 ? ` Its last progress was "${this.lastProgress.label}".` : "";
+    p.reject(new BridgeError({ type: "TIMEOUT", message: `Figma did not answer "${p.method}" after ${took}s without progress.${last} The operation may still be running; inspect before retrying.` }));
   }
 }

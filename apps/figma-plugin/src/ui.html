@@ -198,6 +198,8 @@
     if (msg.type === "selection") { if (hello) hello.selection = msg.count; render(); }
     if (msg.type === "port") setPort(msg.port, false);
     if (msg.type === "progress") {
+      // The server extends its deadline while progress arrives: long work isn't a timeout.
+      if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: "progress", label: msg.label, done: msg.done, total: msg.total }));
       $("progress").style.display = msg.total ? "block" : "none";
       if (msg.total) $("bar").style.width = Math.round(((msg.done || 0) / msg.total) * 100) + "%";
       if (running.size) $("detail").textContent = msg.label + (msg.total ? " · " + Math.round(((msg.done || 0) / msg.total) * 100) + "%" : "");

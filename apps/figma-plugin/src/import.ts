@@ -1,6 +1,7 @@
 // Builds node trees serialized from rendered HTML (see apps/mcp-server/src/html-import.ts), and manages pages.
 import type { ImportNode, ImportPaint, ImportSwapRef } from "@cde/core";
 import { ExecError, tag, withTimeout } from "./execute.ts";
+import { progress } from "./progress.ts";
 
 const rgb = (hex: string) => ({ r: parseInt(hex.slice(1, 3), 16) / 255, g: parseInt(hex.slice(3, 5), 16) / 255, b: parseInt(hex.slice(5, 7), 16) / 255 });
 const solid = (p: ImportPaint): SolidPaint => ({ type: "SOLID", color: rgb(p.hex), opacity: p.a });
@@ -263,7 +264,8 @@ export async function importTree(p: { page?: string; section?: string; gap?: num
     const y0 = section ? pad : top;
     // Components: "Set/Prop=Value" roots become variants of one component set, laid out in a row.
     const groups = new Map<string, SceneNode[]>();
-    for (const s of p.screens) {
+    for (const [i, s] of p.screens.entries()) {
+      progress(`Importing "${s.name}"`, i, p.screens.length);
       let node = build(s.tree, container, fonts);
       const slash = s.name.lastIndexOf("/");
       if (p.components) {

@@ -79,3 +79,17 @@ test("init refuses a port the Figma plugin could never connect to", async () => 
   assert.equal(await init({ dir, port: 7444, skipInstall: true, skipBrowserCheck: true, out: (s) => lines.push(s) }), 1);
   assert.match(lines.join("\n"), /7331–7340/);
 });
+
+test("init --cursor: .cursor/mcp.json merged and the skill as a Cursor rule; doctor checks it", async () => {
+  const dir = tmp();
+  mkdirSync(join(dir, ".cursor"), { recursive: true });
+  writeFileSync(join(dir, ".cursor", "mcp.json"), JSON.stringify({ mcpServers: { other: { command: "x" } } }));
+  assert.equal(await init({ dir, port: 7336, skipInstall: true, skipBrowserCheck: true, out: () => {} }), 0);
+  const cfg = JSON.parse(readFileSync(join(dir, ".cursor", "mcp.json"), "utf8"));
+  assert.ok(cfg.mcpServers.other && cfg.mcpServers[BIN], "merged, other servers kept");
+  const rule = readFileSync(join(dir, ".cursor", "rules", "figma-design.mdc"), "utf8");
+  assert.match(rule, /^---\ndescription: Work as a Design Engineer in Figma[^\n]*\nalwaysApply: false\n---\n\n# Figma Design Engineer/);
+  const lines: string[] = [];
+  await doctor({ dir, port: 7399, skipBrowserCheck: true, out: (s) => lines.push(s) });
+  assert.ok(lines.some((l) => /✓ Cursor set up/.test(l)));
+});

@@ -2,6 +2,8 @@
 // No model calls, no eval. Every operation is a fixed Plugin API call.
 import type { ExecutionReport, Num, Paint as PlanPaint, ResolvedFrame, ResolvedGradient, ResolvedInstance, ResolvedInteraction, ResolvedNode, ResolvedPlan, ResolvedRect, ResolvedShadow, ResolvedSvg, ResolvedText, StructuredError, Transformation, TransformReport } from "@cde/core";
 
+import { progress } from "./progress.ts";
+
 export class ExecError extends Error {
   constructor(public detail: StructuredError) { super(detail.message); }
 }
@@ -539,7 +541,10 @@ export async function executePlan(plan: ResolvedPlan, meta?: { session?: string;
   const y = plan.target.y ?? (onPage ? Math.min(0, ...figma.currentPage.children.map((c) => c.y)) : 0);
   const created: SceneNode[] = [];
   try {
+    const totalRoots = plan.roots.length + (plan.inserts ?? []).reduce((a, x) => a + x.roots.length, 0);
+    let builtRoots = 0;
     for (const root of plan.roots) {
+      progress(`Building "${root.name}"`, builtRoots++, totalRoots);
       const node = await buildNode(root, parent, ctx);
       created.push(node);
       // A root with an explicit absolute position keeps it; the others are laid out side by side.
@@ -555,6 +560,7 @@ export async function executePlan(plan: ResolvedPlan, meta?: { session?: string;
       const host = p as BaseNode & ChildrenMixin;
       let at = ins.index;
       for (const r of ins.roots) {
+        progress(`Building "${r.name}"`, builtRoots++, totalRoots);
         const node = await buildNode(r, host, ctx);
         created.push(node);
         if (at !== undefined) host.insertChild(Math.min(at++, host.children.length - 1), node);
@@ -579,7 +585,8 @@ export async function executePlan(plan: ResolvedPlan, meta?: { session?: string;
 export async function applyTransformations(list: Transformation[]): Promise<TransformReport> {
   const ctx = new Ctx();
   const report: TransformReport = { applied: [], failed: [], hiddenOriginals: [] };
-  for (const t of list) {
+  for (const [i, t] of list.entries()) {
+    if (i % 10 === 0) progress("Applying the Design System", i, list.length);
     try {
       const node = (await figma.getNodeByIdAsync(t.nodeId)) as SceneNode | null;
       if (!node || node.removed) throw new Error(`node ${t.nodeId} not found`);

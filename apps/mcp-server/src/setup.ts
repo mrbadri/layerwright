@@ -1,7 +1,7 @@
 // `init` (one-command setup for a project) and `doctor` (diagnose a broken setup).
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import WebSocket from "ws";
 import { BIN, DEFAULT_PORT, FROM_SOURCE, MIN_NODE, PKG_NAME, PKG_VERSION, PORT_RANGE, REPO_ROOT, pluginHome, pluginSource, portAllowed, skillSource } from "./meta.ts";
 
@@ -19,7 +19,27 @@ function serverEntry() {
   return { command: "npx", args: ["-y", `${PKG_NAME}@${PKG_VERSION}`] };
 }
 
-export interface InitOptions { dir?: string; port?: number; skipInstall?: boolean; skipBrowserCheck?: boolean; out?: Out }
+export interface InitOptions { dir?: string; port?: number; skipInstall?: boolean; skipBrowserCheck?: boolean; out?: Out;
+  /** Also set up Cursor (.cursor/mcp.json + a rule). Default: when the project already has a .cursor folder. */
+  cursor?: boolean }
+
+/** Register the server in an MCP config file, merged: other servers are never touched. false = the file is broken. */
+function registerMcp(file: string, port: number): boolean {
+  let cfg: any = {};
+  if (existsSync(file)) { try { cfg = JSON.parse(readFileSync(file, "utf8")); } catch { return false; } }
+  cfg.mcpServers ??= {};
+  cfg.mcpServers[BIN] = { ...serverEntry(), env: { LAYERWRIGHT_PORT: String(port) } };
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, JSON.stringify(cfg, null, 2) + "\n");
+  return true;
+}
+
+/** The skill as a Cursor rule: same text, Cursor's frontmatter (Cursor doesn't read .claude/skills). */
+export function cursorRule(skill: string): string {
+  const m = skill.match(/^---\n([\s\S]*?)\n---\n?/);
+  const description = m?.[1].match(/^description:\s*(.+)$/m)?.[1] ?? "Layerwright: Figma design work through the layerwright MCP tools.";
+  return `---\ndescription: ${description}\nalwaysApply: false\n---\n${m ? skill.slice(m[0].length) : skill}`;
+}
 
 export async function init(o: InitOptions = {}): Promise<number> {
   const out = o.out ?? stdout;
@@ -45,19 +65,23 @@ export async function init(o: InitOptions = {}): Promise<number> {
 
   // .mcp.json (merged, never clobbering other servers)
   const mcpPath = join(dir, ".mcp.json");
-  let mcp: any = {};
-  if (existsSync(mcpPath)) {
-    try { mcp = JSON.parse(readFileSync(mcpPath, "utf8")); } catch { out(`✗ ${mcpPath} is not valid JSON; fix or remove it and run init again.`); return 1; }
-  }
-  mcp.mcpServers ??= {};
-  mcp.mcpServers[BIN] = { ...serverEntry(), env: { LAYERWRIGHT_PORT: String(port) } };
-  writeFileSync(mcpPath, JSON.stringify(mcp, null, 2) + "\n");
+  if (!registerMcp(mcpPath, port)) { out(`✗ ${mcpPath} is not valid JSON; fix or remove it and run init again.`); return 1; }
   out(`✓ MCP server "${BIN}" registered in ${mcpPath}`);
 
   const skillDir = join(dir, ".claude", "skills", "figma-design");
   mkdirSync(skillDir, { recursive: true });
   cpSync(skillSource(), join(skillDir, "SKILL.md"));
   out(`✓ Skill copied to ${skillDir}`);
+
+  // Cursor: its own MCP config and the skill as a rule.
+  if (o.cursor ?? existsSync(join(dir, ".cursor"))) {
+    const cursorMcp = join(dir, ".cursor", "mcp.json");
+    if (!registerMcp(cursorMcp, port)) { out(`✗ ${cursorMcp} is not valid JSON; fix or remove it and run init again.`); return 1; }
+    const rule = join(dir, ".cursor", "rules", "figma-design.mdc");
+    mkdirSync(dirname(rule), { recursive: true });
+    writeFileSync(rule, cursorRule(readFileSync(skillSource(), "utf8")));
+    out(`✓ Cursor set up: ${cursorMcp} and ${rule}`);
+  }
 
   const gi = join(dir, ".gitignore");
   // The scan cache and report drafts stay local; mapping.json and memory.json are meant to be shared.
@@ -122,6 +146,12 @@ export async function doctor(o: { dir?: string; port?: number; out?: Out; skipBr
   } catch { failWith(`no .mcp.json in ${dir}`, `run: npx ${PKG_NAME} init   (in your project folder)`); }
 
   if (existsSync(join(dir, ".claude", "skills", "figma-design", "SKILL.md"))) pass("skill installed"); else failWith("skill not installed in .claude/skills", `run: npx ${PKG_NAME} init`);
+  if (existsSync(join(dir, ".cursor"))) {
+    let ok = false;
+    try { ok = !!JSON.parse(readFileSync(join(dir, ".cursor", "mcp.json"), "utf8")).mcpServers?.[BIN]; } catch { /* missing or broken */ }
+    if (ok && existsSync(join(dir, ".cursor", "rules", "figma-design.mdc"))) pass("Cursor set up (.cursor/mcp.json + rule)");
+    else failWith("Cursor isn't set up for Layerwright", `run: npx ${PKG_NAME} init --cursor`);
+  }
   if (existsSync(join(pluginHome(), "manifest.json"))) pass(`plugin files at ${pluginHome()}`); else failWith("plugin files missing", `run: npx ${PKG_NAME} init, then import ${join(pluginHome(), "manifest.json")} in Figma`);
 
   const p = await probe(port);

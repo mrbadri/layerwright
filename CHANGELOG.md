@@ -5,9 +5,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-## [0.2.0] - 2026-09-29
+## [0.2.0] - 2026-09-30
 
 ### Added
+- Long operations don't time out while Figma works: the plugin reports progress (scans, builds, imports, edits, Design System sync), the plugin window forwards it, and each update gives the request its full time again (up to 30 minutes). A real timeout names the last thing Figma was doing.
+- Cursor: `layerwright init --cursor` (automatic when the project has a `.cursor` folder) registers the server in `.cursor/mcp.json` and installs the skill as a Cursor rule; `doctor` checks it.
 - **Design System sync after an import:** `figma_analyze_design({ mode: "sync" })` matches a fresh import to the DS like a designer: buttons and pills become DS components with the closest-looking variant (size by height, hierarchy and colour by fill, text colour and border; resting state), text gets the style with the same size and weight in the same script (even when the import used a stand-in font), colours get variables or colour styles.
 - **Scan works on big library files:** main components are looked up in parallel (a real file went from over 5 minutes to about 12 seconds), library text/colour/effect styles and variables used in the file are found through the layers that use them, each variant's look and each set's usage are recorded, and copies of one library set resolve to the one the file uses most. Progress shows in the plugin window.
 - **Plugin window:** status with file, page and selection; progress bar; an activity list in plain words; errors explained in plain words with the technical line below; update banner; version and build; connection settings folded away.

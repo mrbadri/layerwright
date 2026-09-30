@@ -1,4 +1,5 @@
 // Design System scanner + compact inspector. Runs in the Figma plugin sandbox.
+import { progress } from "./progress.ts";
 import type { ComponentDefinition, ComponentSetDefinition, NodeSnapshot, PropertyDefinition, StyleDefinition, TypographyDefinition, VariableCollectionDefinition, VariableDefinition } from "@cde/core";
 
 const h2 = (n: number) => Math.round(Math.max(0, Math.min(1, n)) * 255).toString(16).padStart(2, "0");
@@ -70,8 +71,6 @@ function setDef(s: ComponentSetNode): ComponentSetDefinition {
   return { id: s.id, key: s.key, name: s.name, description: s.description || undefined, remote: s.remote, page: pageOf(s), properties, variantIds: s.children.map((c) => c.id), defaultVariantId };
 }
 
-/** Progress for the plugin window ("Scanning the Design System… 40%"). */
-export const progress = (label: string, done?: number, total?: number) => { try { figma.ui.postMessage({ type: "progress", label, done, total }); } catch { /* no UI */ } };
 
 export async function scanDesignSystem(opts: { includeLibraries?: boolean; maxInstances?: number } = {}) {
   const timings: Record<string, number> = {};
