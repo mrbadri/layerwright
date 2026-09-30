@@ -20,7 +20,7 @@ test("figma_migrate: old set → new set by variant, renamed values mapped, unma
   const raw = { ...base, semanticTokens: undefined, warnings: [],
     componentSets: [...base.componentSets, set("8:1", "Accordion (old)", "State", ["Closed", "Open", "Paused"]), set("9:1", "Accordion", "State", ["Collapsed", "Expanded"])],
     components: [...base.components, ...comps("8:1", "State", ["Closed", "Open", "Paused"]), ...comps("9:1", "State", ["Collapsed", "Expanded"])] };
-  let edits: any;
+  let edits: any = undefined;
   const ws = new WebSocket("ws://127.0.0.1:7334");
   await new Promise((r) => ws.on("open", r));
   ws.send(JSON.stringify({ type: "hello", fileName: "Acme DS", page: "Page 1" }));
@@ -50,6 +50,6 @@ test("figma_migrate: old set → new set by variant, renamed values mapped, unma
   assert.equal(edits, undefined, "a dry run changes nothing");
   const done = await call("figma_migrate", { ...args, approved: true });
   assert.equal(done.success, true);
-  assert.deepEqual(edits.ops.map((o: any) => [o.op, o.node, o.componentId]), [["swap", "2:1", "9:1.0"], ["swap", "2:2", "9:1.1"]]);
+  assert.deepEqual(edits!.ops.map((o: any) => [o.op, o.node, o.componentId]), [["swap", "2:1", "9:1.0"], ["swap", "2:2", "9:1.1"]]);
   ws.close(); bridge.close();
 });
