@@ -48,20 +48,29 @@ const SERIALIZE = ({ targets, swaps }: { targets: ImportTarget[] | null; swaps: 
     return { hex: `#${h(r)}${h(g)}${h(b)}`.toUpperCase(), a: al };
   };
   const splitTop = (s: string) => { const out: string[] = []; let d = 0, cur = ""; for (const ch of s) { if (ch === "(") d++; if (ch === ")") d--; if (ch === "," && !d) { out.push(cur.trim()); cur = ""; } else cur += ch; } if (cur.trim()) out.push(cur.trim()); return out; };
-  const gradient = (bg: string): any => {
-    const m = bg.match(/^linear-gradient\((.*)\)$/);
+  // (dom.ts parses gradients the same way for the editable importer; both run inside the page.)
+  const gradient = (bg0: string): any => {
+    const bg = splitTop(bg0)[0] ?? "";
+    const m = bg.match(/^(linear|radial|conic)-gradient\((.*)\)$/);
     if (!m) return null;
-    const parts = splitTop(m[1]);
+    const kind = m[1] === "radial" ? "radial" : m[1] === "conic" ? "angular" : "linear";
+    const parts = splitTop(m[2]);
     let angle = 180;
-    if (/deg$/.test(parts[0])) angle = parseFloat(parts.shift()!);
-    else if (/^to /.test(parts[0])) { const t = parts.shift()!; angle = ({ "to top": 0, "to right": 90, "to bottom": 180, "to left": 270 } as any)[t] ?? 180; }
+    if (kind === "linear") {
+      if (/deg$/.test(parts[0])) angle = parseFloat(parts.shift()!);
+      else if (/^to /.test(parts[0])) { const t = parts.shift()!; angle = ({ "to top": 0, "to right": 90, "to bottom": 180, "to left": 270 } as any)[t] ?? 180; }
+    } else if (parts[0] && !COLOR_FN.test(parts[0]) && !/^(transparent|currentcolor)\b/i.test(parts[0])) {
+      const from = parts.shift()!.match(/from\s+(-?[\d.]+)deg/);
+      angle = from ? parseFloat(from[1]) : 0;
+    }
     const stops = parts.map((p, i) => {
       const cm = p.match(COLOR_FN); const c = cm ? color(cm[0]) : null;
       const pos = p.replace(cm?.[0] ?? "", "").match(/([\d.]+)%/);
       return c && { hex: c.hex, a: c.a, pos: pos ? +pos[1] / 100 : i / Math.max(1, parts.length - 1) };
     }).filter(Boolean);
-    return stops.length >= 2 ? { angle, stops } : null;
+    return stops.length >= 2 ? { type: kind, angle, stops } : null;
   };
+  const blurOf = (f: string) => { const b = f && f !== "none" ? f.match(/blur\(([\d.]+)px\)/) : null; return b ? parseFloat(b[1]) || undefined : undefined; };
   const shadows = (v: string) => {
     if (!v || v === "none") return undefined;
     return splitTop(v).map((s) => {
@@ -179,7 +188,7 @@ const SERIALIZE = ({ targets, swaps }: { targets: ImportTarget[] | null; swaps: 
 
     if (notch) { count++; const w = r.width, h = r.height; return [{ type: "svg", name: "notch-fillet", x: r.left - ox, y: r.top - oy, w, h, svg: `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><path d="M0 0A${w} ${h} 0 0 0 ${w} ${h}L0 ${h}Z" fill="${notch.hex}"/></svg>` }]; }
 
-    const visual = isRoot || (cs.display !== "contents" && swaps.some((s) => el.matches(s.selector))) || bg || grad || sh || bw.some(Boolean) || clip || blend || opacity !== undefined || tag === "image-slot";
+    const visual = isRoot || (cs.display !== "contents" && swaps.some((s) => el.matches(s.selector))) || bg || grad || sh || bw.some(Boolean) || clip || blend || opacity !== undefined || tag === "image-slot" || blurOf(cs.filter) || blurOf((cs as any).backdropFilter ?? "");
     const kids: any[] = [];
     const cx = visual ? r.left : ox, cy = visual ? r.top : oy;
     if (tag !== "image-slot") {
@@ -196,6 +205,7 @@ const SERIALIZE = ({ targets, swaps }: { targets: ImportTarget[] | null; swaps: 
     const node: any = {
       type: "frame", name: tag === "image-slot" ? "image" : nameOf(el), x: r.left - ox, y: r.top - oy, w: r.width, h: r.height,
       fill: bg ? { hex: bg.hex, a: bg.a } : undefined, gradient: grad || undefined, shadows: sh,
+      blur: blurOf(cs.filter), backdropBlur: blurOf((cs as any).backdropFilter ?? (cs as any).webkitBackdropFilter),
       stroke: bw.some(Boolean) && bc ? { hex: bc.hex, a: bc.a, weights: bw } : undefined,
       radius: radius.some(Boolean) ? radius : undefined, clip, blend, opacity, children: kids,
     };

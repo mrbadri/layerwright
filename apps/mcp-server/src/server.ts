@@ -408,7 +408,7 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
       numbers: z.record(z.number()).optional(),
       textStyles: z.array(z.object({ name: z.string(), family: z.string(), style: z.string(), size: z.number(), lineHeight: z.number().optional().describe("px"), letterSpacing: z.number().optional().describe("percent") })).optional(),
       paintStyles: z.array(z.object({ name: z.string(), color: z.string().optional(), variable: z.string().optional().describe("Bind the style to this colour variable"),
-        gradient: z.object({ angle: z.number().optional(), stops: z.array(z.object({ color: z.string(), position: z.number().min(0).max(1) })).min(2) }).optional() })).optional(),
+        gradient: z.object({ type: z.enum(["linear", "radial", "angular", "diamond"]).optional(), angle: z.number().optional(), stops: z.array(z.object({ color: z.string(), position: z.number().min(0).max(1) })).min(2) }).optional() })).optional(),
       effectStyles: z.array(z.object({ name: z.string(), shadows: z.array(z.object({ type: z.enum(["drop", "inner"]).optional(), x: z.number().optional(), y: z.number().optional(), blur: z.number().optional(), spread: z.number().optional(), color: z.string() })).optional(),
         blur: z.object({ type: z.enum(["layer", "background"]), radius: z.number().min(0) }).optional() })).optional(),
       gridStyles: z.array(z.object({ name: z.string(),

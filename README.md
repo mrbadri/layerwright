@@ -154,7 +154,7 @@ Start with `npx layerwright doctor`. It checks Node, `.mcp.json`, the skill, the
 ## Limitations
 
 - CSS grid, floats and transforms are imported as positioned layers, not as Auto Layout.
-- Only linear gradients are supported. Radial and conic gradients, filters and blend modes are dropped in plan mode (the pixel-faithful mode keeps blend modes).
+- Linear, radial and conic gradients and `blur()`/`backdrop-filter: blur()` come across; other filters and blend modes are dropped in plan mode (the pixel-faithful mode keeps blend modes). Only the top background layer is used.
 - The largest corner radius is used when the four corners differ.
 - Fonts must be installed on the machine that runs Figma. A missing family falls back to Inter, with a warning.
 - Images must be PNG, JPEG or GIF (a Figma limit), up to 10 MB each.
@@ -164,7 +164,7 @@ Start with `npx layerwright doctor`. It checks Node, `.mcp.json`, the skill, the
 
 ## Roadmap
 
-- Per-corner radii, CSS grid → Auto Layout wrap, radial gradients
+- Per-corner radii, CSS grid → Auto Layout wrap
 - Design tokens export (W3C format) and import
 - Figma Community listing ([plan](https://github.com/shayan-m81/layerwright/blob/main/docs/figma-community-plan.md))
 - Instance-swap properties and hidden-layer overrides in plans

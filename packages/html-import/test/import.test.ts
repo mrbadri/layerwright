@@ -231,3 +231,27 @@ maybe("oklch, hsl and color-mix colours are converted; an absolute layer before 
   assert.ok(bar.children[0].position, "the connector line is the first (bottom) layer");
   assert.match(bar.children[0].fill, /^#[0-9A-F]{6}$/);
 });
+
+maybe("radial and conic gradients, layer blur and backdrop blur come across (plan → Figma paints and effects)", async () => {
+  const { plan } = await renderToPlan(fixture("effects.html"), { viewports: [390] });
+  const all: any[] = [];
+  const walk = (n: any) => { all.push(n); (n.children ?? []).forEach(walk); };
+  walk(plan.screens[0]);
+  const box = (cls: string) => all.find((n) => n.name === cls);
+  assert.equal(box(".a").gradient.type, "radial");
+  assert.deepEqual([box(".b").gradient.type, box(".b").gradient.angle], ["angular", 90]);
+  assert.equal(box(".c").blur, 4);
+  assert.equal(box(".d").backgroundBlur, 12);
+  const { resetFigma } = await import("../../../apps/figma-plugin/test/figma-mock.ts");
+  const { executePlan } = await import("../../../apps/figma-plugin/src/execute.ts");
+  const c = compilePlan({ ...fixtureDs(), typography: [] }, plan);
+  assert.deepEqual(c.errors, []);
+  const page = resetFigma();
+  await executePlan(c.plan!);
+  const nodes = page.children[0].findAll(() => true);
+  const named = (n: string) => nodes.find((x: any) => x.name === n);
+  assert.equal(named(".a").fills.at(-1).type, "GRADIENT_RADIAL");
+  assert.equal(named(".b").fills.at(-1).type, "GRADIENT_ANGULAR");
+  assert.equal(named(".c").effects[0].type, "LAYER_BLUR");
+  assert.equal(named(".d").effects[0].type, "BACKGROUND_BLUR");
+});

@@ -21,7 +21,7 @@ const luminance = (h: string) => { const [r, g, b] = [1, 3, 5].map((i) => parseI
 
 const isFlex = (d: DomNode) => /flex/.test(d.style.display);
 const isOut = (d: DomNode) => d.style.position === "absolute" || d.style.position === "fixed";
-const hasVisual = (d: DomNode) => !!(d.style.bg || d.style.gradient || d.style.border || d.style.shadows || d.style.clip || d.style.opacity !== undefined);
+const hasVisual = (d: DomNode) => !!(d.style.bg || d.style.gradient || d.style.border || d.style.shadows || d.style.clip || d.style.opacity !== undefined || d.style.blur || d.style.backdropBlur);
 const textOnly = (d: DomNode) => d.kind === "element" && d.children.length === 1 && d.children[0].kind === "text";
 
 /** Structure fingerprint used to spot repeated siblings (cards, list items). */
@@ -150,7 +150,8 @@ export function toPlan(screens: { name: string; width: number; dom: DomNode }[],
 
     const out: any = {
       type: "frame", name: d.name.slice(0, 120) || d.tag, layout,
-      fill: hex(s.bg), gradient: s.gradient && { angle: s.gradient.angle, stops: s.gradient.stops.map((st) => ({ color: hex(st.color)!, position: round(st.position) })) },
+      fill: hex(s.bg), gradient: s.gradient && { type: s.gradient.type, angle: s.gradient.angle, stops: s.gradient.stops.map((st) => ({ color: hex(st.color)!, position: round(st.position) })) },
+      blur: s.blur, backgroundBlur: s.backdropBlur,
       stroke: s.border ? hex(s.border.color) : undefined,
       ...(s.border ? (new Set(bw).size === 1 ? { strokeWeight: bw[0] } : { strokeWeights: { top: bw[0], right: bw[1], bottom: bw[2], left: bw[3] } }) : {}),
       radius: s.radius ? round(s.radius) : undefined,

@@ -3,6 +3,7 @@
 import type { ExecutionReport, Num, Paint as PlanPaint, ResolvedFrame, ResolvedGradient, ResolvedInstance, ResolvedInteraction, ResolvedNode, ResolvedPlan, ResolvedRect, ResolvedShadow, ResolvedSvg, ResolvedText, StructuredError, Transformation, TransformReport } from "@cde/core";
 
 import { progress } from "./progress.ts";
+import { blurEffects, gradientPaint } from "./paints.ts";
 import { annotate } from "./annotate.ts";
 
 export class ExecError extends Error {
@@ -66,14 +67,8 @@ export function closestStyle(styles: string[], want: string, italic = false): st
   return [...(pool.length ? pool : styles)].sort((a, b) => Math.abs(weightOf(a) - w) - Math.abs(weightOf(b) - w) || a.length - b.length)[0];
 }
 
-function gradientPaint(g: ResolvedGradient): GradientPaint {
-  // CSS angles: 0deg points up, 90deg right. Figma's gradient space runs left→right, so rotate about the centre.
-  const t = ((g.angle - 90) * Math.PI) / 180, c = Math.cos(t), s = Math.sin(t);
-  return {
-    type: "GRADIENT_LINEAR",
-    gradientTransform: [[c, s, 0.5 - 0.5 * c - 0.5 * s], [-s, c, 0.5 + 0.5 * s - 0.5 * c]],
-    gradientStops: g.stops.map((st) => { const { color, opacity } = hexToRgb(st.hex); return { position: st.position, color: { ...color, a: opacity } }; }),
-  };
+function gradientOf(g: ResolvedGradient): GradientPaint {
+  return gradientPaint(g.type ?? "linear", g.angle, g.stops.map((st) => { const { color, opacity } = hexToRgb(st.hex); return { ...color, a: opacity, position: st.position }; }));
 }
 
 function shadowEffect(s: ResolvedShadow): Effect {
@@ -251,7 +246,7 @@ async function buildFrame(n: ResolvedFrame, parent: BaseNode & ChildrenMixin, ct
     if (n.layout.wrap && n.layout.direction === "HORIZONTAL") f.layoutWrap = "WRAP";
   }
   await ctx.fill(f, n.fill);
-  if (n.gradient) f.fills = [...(f.fills as Paint[]), gradientPaint(n.gradient)];
+  if (n.gradient) f.fills = [...(f.fills as Paint[]), gradientOf(n.gradient)];
   if (n.stroke) {
     await ctx.fill(f, n.stroke, "stroke");
     const w = n.strokeWeight ?? 1;
@@ -268,7 +263,7 @@ async function buildFrame(n: ResolvedFrame, parent: BaseNode & ChildrenMixin, ct
   }
   await ctx.radius(f, n.radius);
   if (n.effectStyleId) await f.setEffectStyleIdAsync(n.effectStyleId);
-  else if (n.shadows?.length) f.effects = n.shadows.map(shadowEffect);
+  else if (n.shadows?.length || n.blur || n.backgroundBlur) f.effects = [...(n.shadows ?? []).map(shadowEffect), ...blurEffects(n.blur, n.backgroundBlur)];
   applySizing(f, n, ctx);
   for (const c of n.children) await buildNode(c, f, ctx);
   return f;

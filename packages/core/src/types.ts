@@ -220,7 +220,7 @@ export interface ResolvedBase {
 }
 
 export interface ResolvedShadow { type: "DROP_SHADOW" | "INNER_SHADOW"; x: number; y: number; blur: number; spread: number; hex: string }
-export interface ResolvedGradient { angle: number; stops: { hex: string; position: number }[] }
+export interface ResolvedGradient { type?: "linear" | "radial" | "angular" | "diamond"; angle: number; stops: { hex: string; position: number }[] }
 export type ResolvedLineHeight = { unit: "PIXELS" | "PERCENT"; value: number } | { unit: "AUTO" };
 
 export interface ResolvedFrame extends ResolvedBase {
@@ -243,6 +243,8 @@ export interface ResolvedFrame extends ResolvedBase {
   shadows?: ResolvedShadow[];
   strokeWeights?: { top?: number; right?: number; bottom?: number; left?: number };
   gradient?: ResolvedGradient;
+  blur?: number;
+  backgroundBlur?: number;
   clip?: boolean;
   scroll?: "NONE" | "VERTICAL" | "HORIZONTAL" | "BOTH";
   fixedChildren?: number;
@@ -365,7 +367,7 @@ export interface ImportSwapRef { component: string; id?: string; key?: string; v
 /** A node serialized from rendered HTML (absolute boxes, relative to the parent node). */
 export interface ImportPaint { hex: string; a: number }
 export type ImportNode =
-  | { type: "frame"; name: string; x: number; y: number; w: number; h: number; fill?: ImportPaint; gradient?: { angle: number; stops: (ImportPaint & { pos: number })[] };
+  | { type: "frame"; name: string; x: number; y: number; w: number; h: number; fill?: ImportPaint; gradient?: { type?: "linear" | "radial" | "angular" | "diamond"; angle: number; stops: (ImportPaint & { pos: number })[] }; blur?: number; backdropBlur?: number;
       shadows?: (ImportPaint & { inset: boolean; x: number; y: number; blur: number; spread: number })[]; stroke?: ImportPaint & { weights: number[] };
       radius?: number[]; clip?: boolean; blend?: string; opacity?: number; placeholder?: string; swap?: ImportSwapRef; children: ImportNode[] }
   | { type: "text"; name: string; x: number; y: number; w: number; h: number; content: string; font: { family: string; style: string }; size: number;

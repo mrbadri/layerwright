@@ -2,6 +2,7 @@
 import type { ImportNode, ImportPaint, ImportSwapRef } from "@cde/core";
 import { ExecError, tag, withTimeout } from "./execute.ts";
 import { progress } from "./progress.ts";
+import { blurEffects, gradientPaint } from "./paints.ts";
 
 const rgb = (hex: string) => ({ r: parseInt(hex.slice(1, 3), 16) / 255, g: parseInt(hex.slice(3, 5), 16) / 255, b: parseInt(hex.slice(5, 7), 16) / 255 });
 const solid = (p: ImportPaint): SolidPaint => ({ type: "SOLID", color: rgb(p.hex), opacity: p.a });
@@ -68,14 +69,9 @@ async function loadFonts(trees: ImportNode[]) {
   return { font: (f: FontName) => map.get(`${f.family}|${f.style}`)!, warnings: [...warnings] };
 }
 
-function gradientPaint(g: { angle: number; stops: (ImportPaint & { pos: number })[] }): GradientPaint {
-  const t = ((g.angle - 90) * Math.PI) / 180, c = Math.cos(t), s = Math.sin(t);
-  return {
-    type: "GRADIENT_LINEAR",
-    gradientTransform: [[c, s, 0.5 - 0.5 * c - 0.5 * s], [-s, c, 0.5 + 0.5 * s - 0.5 * c]],
-    gradientStops: g.stops.map((st) => ({ position: Math.min(1, Math.max(0, st.pos)), color: { ...rgb(st.hex), a: st.a } })),
-  };
-}
+/** The shared gradient builder, from an imported gradient. */
+const gradientOf = (g: NonNullable<Extract<ImportNode, { type: "frame" }>["gradient"]>) =>
+  gradientPaint(g.type ?? "linear", g.angle, g.stops.map((st) => ({ ...rgb(st.hex), a: st.a, position: st.pos })));
 
 type Fonts = Awaited<ReturnType<typeof loadFonts>> & { components?: Map<string, ComponentNode | ComponentSetNode>; swapWarnings?: string[] };
 
@@ -152,7 +148,7 @@ function override(inst: SceneNode, src: ImportNode, mode: "text" | "match", fill
   if (fills && "fills" in inst && (src.fill || src.gradient)) {
     const f: Paint[] = [];
     if (src.fill) f.push(solid(src.fill));
-    if (src.gradient) f.push(gradientPaint(src.gradient));
+    if (src.gradient) f.push(gradientOf(src.gradient));
     if (JSON.stringify((inst as FrameNode).fills) !== JSON.stringify(f)) (inst as FrameNode).fills = f;
   }
   const used = new Set<ImportNode>();
@@ -214,7 +210,7 @@ function build(n: ImportNode, parent: BaseNode & ChildrenMixin, fonts: Fonts): S
   f.resize(Math.max(0.01, n.w), Math.max(0.01, n.h));
   const fills: Paint[] = [];
   if (n.fill) fills.push(solid(n.fill));
-  if (n.gradient) fills.push(gradientPaint(n.gradient));
+  if (n.gradient) fills.push(gradientOf(n.gradient));
   f.fills = fills;
   if (n.stroke) {
     f.strokes = [solid(n.stroke)];
@@ -226,11 +222,11 @@ function build(n: ImportNode, parent: BaseNode & ChildrenMixin, fonts: Fonts): S
   f.clipsContent = !!n.clip;
   if (n.blend && BLEND[n.blend]) f.blendMode = BLEND[n.blend];
   if (n.opacity !== undefined) f.opacity = n.opacity;
-  if (n.shadows?.length) {
-    f.effects = n.shadows.map((s) => ({
+  if (n.shadows?.length || n.blur || n.backdropBlur) {
+    f.effects = [...(n.shadows ?? []).map((s) => ({
       type: s.inset ? "INNER_SHADOW" : "DROP_SHADOW", color: { ...rgb(s.hex), a: s.a }, offset: { x: s.x, y: s.y },
       radius: s.blur, spread: s.spread, visible: true, blendMode: "NORMAL", ...(s.inset ? {} : { showShadowBehindNode: false }),
-    }) as Effect);
+    }) as Effect), ...blurEffects(n.blur, n.backdropBlur)];
   }
   for (const c of n.children) build(c, f, fonts);
   return f;
@@ -315,7 +311,7 @@ const alpha = (hex: string) => (hex.length >= 9 ? parseInt(hex.slice(7, 9), 16) 
 
 export async function foundations(p: { collection?: string; colors?: Record<string, string>; numbers?: Record<string, number>;
   textStyles?: { name: string; family: string; style: string; size: number; lineHeight?: number; letterSpacing?: number }[];
-  paintStyles?: { name: string; color?: string; variable?: string; gradient?: { angle?: number; stops: { color: string; position: number }[] } }[];
+  paintStyles?: { name: string; color?: string; variable?: string; gradient?: { type?: "linear" | "radial" | "angular" | "diamond"; angle?: number; stops: { color: string; position: number }[] } }[];
   effectStyles?: { name: string; shadows?: ShadowIn[]; blur?: { type: "layer" | "background"; radius: number } }[];
   gridStyles?: { name: string; columns?: { count: number; gutter?: number; margin?: number; alignment?: "STRETCH" | "CENTER" | "MIN" | "MAX"; color?: string }; rows?: { count: number; gutter?: number; margin?: number; alignment?: "STRETCH" | "CENTER" | "MIN" | "MAX"; color?: string }; grid?: { size: number; color?: string } }[] }) {
   const cols = await figma.variables.getLocalVariableCollectionsAsync();
@@ -354,7 +350,7 @@ export async function foundations(p: { collection?: string; colors?: Record<stri
   for (const ps of p.paintStyles ?? []) {
     const st = localPaint.find((l) => l.name === ps.name) ?? figma.createPaintStyle();
     st.name = ps.name;
-    if (ps.gradient) st.paints = [gradientPaint({ angle: ps.gradient.angle ?? 180, stops: ps.gradient.stops.map((x) => ({ hex: x.color.slice(0, 7), a: alpha(x.color), pos: x.position })) })];
+    if (ps.gradient) st.paints = [gradientPaint(ps.gradient.type ?? "linear", ps.gradient.angle ?? 180, ps.gradient.stops.map((x) => ({ ...rgb(x.color), a: alpha(x.color), position: x.position })))];
     else if (ps.variable) {
       const v = await findVar(ps.variable);
       if (!v) { warnings.push(`Colour style "${ps.name}": no colour variable "${ps.variable}"; skipped.`); continue; }

@@ -8,7 +8,8 @@ export interface DomStyle {
   display: string; position: string; zIndex?: string; direction: "ltr" | "rtl";
   flexDirection?: string; flexWrap?: string; justify?: string; alignItems?: string; alignSelf?: string; flexGrow?: number;
   rowGap?: number; columnGap?: number; padding: [number, number, number, number];
-  bg?: Rgba; gradient?: { angle: number; stops: { color: Rgba; position: number }[] };
+  bg?: Rgba; gradient?: { type: "linear" | "radial" | "angular"; angle: number; stops: { color: Rgba; position: number }[] };
+  blur?: number; backdropBlur?: number;
   border?: { widths: [number, number, number, number]; color: Rgba };
   radius?: number; shadows?: { inset: boolean; x: number; y: number; blur: number; spread: number; color: Rgba }[];
   opacity?: number; clip?: boolean;
@@ -68,20 +69,30 @@ const SERIALIZE_DOM = ({ selector, marks }: { selector: string; marks: string[] 
     return { hex: `#${h(r)}${h(g)}${h(b)}`.toUpperCase(), a: Math.round(al * 1000) / 1000 };
   };
   const splitTop = (s: string) => { const out: string[] = []; let d = 0, cur = ""; for (const ch of s) { if (ch === "(") d++; if (ch === ")") d--; if (ch === "," && !d) { out.push(cur.trim()); cur = ""; } else cur += ch; } if (cur.trim()) out.push(cur.trim()); return out; };
-  const gradient = (bg: string) => {
-    const m = bg.match(/^linear-gradient\((.*)\)$/);
+  // (tree.ts parses gradients the same way for the pixel-faithful importer; both run inside the page.)
+  const gradient = (bg0: string) => {
+    const bg = splitTop(bg0)[0] ?? ""; // the top layer when there are several backgrounds
+    const m = bg.match(/^(linear|radial|conic)-gradient\((.*)\)$/);
     if (!m) return undefined;
-    const parts = splitTop(m[1]);
+    const kind = m[1] === "radial" ? "radial" : m[1] === "conic" ? "angular" : "linear";
+    const parts = splitTop(m[2]);
     let angle = 180;
-    if (/deg$/.test(parts[0])) angle = parseFloat(parts.shift()!);
-    else if (/^to /.test(parts[0])) angle = ({ "to top": 0, "to right": 90, "to bottom": 180, "to left": 270 } as Record<string, number>)[parts.shift()!] ?? 180;
+    if (kind === "linear") {
+      if (/deg$/.test(parts[0])) angle = parseFloat(parts.shift()!);
+      else if (/^to /.test(parts[0])) angle = ({ "to top": 0, "to right": 90, "to bottom": 180, "to left": 270 } as Record<string, number>)[parts.shift()!] ?? 180;
+    } else if (parts[0] && !COLOR_FN.test(parts[0]) && !/^(transparent|currentcolor)\b/i.test(parts[0])) {
+      // "circle at center", "from 90deg at 50% 50%": the shape/position part (a conic's start angle is kept).
+      const from = parts.shift()!.match(/from\s+(-?[\d.]+)deg/);
+      angle = from ? parseFloat(from[1]) : 0;
+    }
     const stops = parts.map((p, i) => {
       const cm = p.match(COLOR_FN); const color = cm ? rgba(cm[0]) : undefined;
       const pos = p.replace(cm?.[0] ?? "", "").match(/([\d.]+)%/);
       return color && { color, position: pos ? +pos[1] / 100 : i / Math.max(1, parts.length - 1) };
     }).filter(Boolean) as { color: any; position: number }[];
-    return stops.length >= 2 ? { angle, stops } : undefined;
+    return stops.length >= 2 ? { type: kind, angle, stops } : undefined;
   };
+  const blurOf = (f: string) => { const m = f && f !== "none" ? f.match(/blur\(([\d.]+)px\)/) : null; return m ? parseFloat(m[1]) || undefined : undefined; };
   const shadows = (v: string) => {
     if (!v || v === "none") return undefined;
     const out = splitTop(v).map((s) => {
@@ -107,6 +118,7 @@ const SERIALIZE_DOM = ({ selector, marks }: { selector: string; marks: string[] 
       bg: rgba(cs.backgroundColor), gradient: gradient(cs.backgroundImage),
       border: bw.some(Boolean) && bc ? { widths: bw, color: bc } : undefined,
       radius: radius || undefined, shadows: shadows(cs.boxShadow),
+      blur: blurOf(cs.filter), backdropBlur: blurOf((cs as unknown as Record<string, string>).backdropFilter ?? (cs as unknown as Record<string, string>).webkitBackdropFilter),
       opacity: +cs.opacity < 1 ? +cs.opacity : undefined, clip: cs.overflow === "hidden" || cs.overflowX === "hidden" || undefined,
       font: {
         family: family(cs.fontFamily), weight: +cs.fontWeight || 400, size: px(cs.fontSize),

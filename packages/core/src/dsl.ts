@@ -35,7 +35,8 @@ export const Shadow = z.object({
   color: z.string().min(1).default("#00000040"),
 }).strict();
 export const Gradient = z.object({
-  type: z.literal("linear").default("linear"),
+  /** linear (with angle), radial and diamond (from the centre), angular (conic, starting at angle). */
+  type: z.enum(["linear", "radial", "angular", "diamond"]).default("linear"),
   /** CSS angle: 0 = to top, 90 = to right, 180 = to bottom (default). */
   angle: z.number().default(180),
   stops: z.array(z.object({ color: z.string().min(1), position: z.number().min(0).max(1) }).strict()).min(2).max(16),
@@ -111,6 +112,9 @@ const ContainerStyle = {
   /** Per-side stroke widths; overrides strokeWeight/strokeSides. */
   strokeWeights: z.object({ top: z.number().min(0), right: z.number().min(0), bottom: z.number().min(0), left: z.number().min(0) }).partial().strict().optional(),
   gradient: Gradient.optional(),
+  /** Layer blur and background blur (frosted glass), in px. */
+  blur: z.number().min(0).max(250).optional(),
+  backgroundBlur: z.number().min(0).max(250).optional(),
   clip: z.boolean().optional(),
   /** "rtl" reverses the visual order of horizontal children and right-aligns text inside (Persian/Arabic/Hebrew). */
   direction: z.enum(["ltr", "rtl"]).optional(),
