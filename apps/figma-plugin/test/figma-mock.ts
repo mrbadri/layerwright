@@ -36,6 +36,7 @@ export class N {
   insertChild(i: number, c: any) { if (c.parent) c.parent.children = c.parent.children.filter((x: any) => x !== c); this.children.splice(i, 0, c); c.parent = this; }
   remove() { this.removed = true; if (this.parent) this.parent.children = this.parent.children.filter((x: any) => x !== this); }
   resize(w: number, h: number) { this.width = w; this.height = h; }
+  async exportAsync(o?: { format?: string }) { if (o?.format === "SVG_STRING") return `<svg xmlns="http://www.w3.org/2000/svg" width="${this.width}" height="${this.height}"><path d="M0 0H${this.width}V${this.height}Z" fill="#000"/></svg>`; return new Uint8Array([0x89, 0x50]); }
   setBoundVariable(f: string, v: any) { this.boundVariables[f] = { type: "VARIABLE_ALIAS", id: v.id }; }
   findAllWithCriteria(q: any): any[] {
     if (q.pluginData) return this.findAllWithCriteriaPlugin(q.pluginData.keys);

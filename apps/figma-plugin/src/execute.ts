@@ -71,6 +71,12 @@ function gradientOf(g: ResolvedGradient): GradientPaint {
   return gradientPaint(g.type ?? "linear", g.angle, g.stops.map((st) => { const { color, opacity } = hexToRgb(st.hex); return { ...color, a: opacity, position: st.position }; }));
 }
 
+/** An effect style, or raw shadows and blurs (frames and shapes). */
+async function applyEffects(node: BlendMixin & BaseNode, n: { effectStyleId?: string; shadows?: ResolvedShadow[]; blur?: number; backgroundBlur?: number }) {
+  if (n.effectStyleId) await (node as FrameNode).setEffectStyleIdAsync(n.effectStyleId);
+  else if (n.shadows?.length || n.blur || n.backgroundBlur) node.effects = [...(n.shadows ?? []).map(shadowEffect), ...blurEffects(n.blur, n.backgroundBlur)];
+}
+
 function shadowEffect(s: ResolvedShadow): Effect {
   const { color, opacity } = hexToRgb(s.hex);
   const base = { color: { ...color, a: opacity }, offset: { x: s.x, y: s.y }, radius: s.blur, spread: s.spread, visible: true, blendMode: "NORMAL" as const };
@@ -262,8 +268,7 @@ async function buildFrame(n: ResolvedFrame, parent: BaseNode & ChildrenMixin, ct
     }
   }
   await ctx.radius(f, n.radius);
-  if (n.effectStyleId) await f.setEffectStyleIdAsync(n.effectStyleId);
-  else if (n.shadows?.length || n.blur || n.backgroundBlur) f.effects = [...(n.shadows ?? []).map(shadowEffect), ...blurEffects(n.blur, n.backgroundBlur)];
+  await applyEffects(f, n);
   applySizing(f, n, ctx);
   for (const c of n.children) await buildNode(c, f, ctx);
   return f;
@@ -435,6 +440,7 @@ async function buildShape(n: ResolvedShape, parent: BaseNode & ChildrenMixin, ct
   if (n.innerRadius !== undefined && s.type === "STAR") s.innerRadius = n.innerRadius;
   const rad = (d: number) => (d * Math.PI) / 180;
   if (n.arc && s.type === "ELLIPSE") s.arcData = { startingAngle: rad(n.arc.start), endingAngle: rad(n.arc.end), innerRadius: n.arc.innerRadius };
+  await applyEffects(s, n);
   applySizing(s, { ...n, width: undefined, height: undefined }, ctx);
   return s;
 }

@@ -141,3 +141,29 @@ test("shapes: ellipse arc (a ring), a line that fills its column, polygon and st
   assert.deepEqual([star.type, star.pointCount, star.innerRadius, star.width], ["STAR", 7, 0.5, 24]);
   assert.deepEqual(report.warnings, []);
 });
+
+test("round trip: gradients (with angle), shadows, blurs and shapes built in Figma export back to the same plan; vectors come back as SVG icons", async () => {
+  const { snapshot } = await import("../src/scan.ts");
+  const { snapshotToPlan } = await import("@cde/core");
+  const stops = [{ color: "#7C3AED", position: 0 }, { color: "#176B6680", position: 1 }];
+  const { root } = await run({ type: "screen", name: "Round", children: [
+    { type: "card", name: "Hero", width: 200, height: 80, fill: "#FFFFFF", gradient: { type: "linear", angle: 135, stops }, shadows: [{ type: "drop", x: 0, y: 4, blur: 12, spread: -2, color: "#0000001A" }] },
+    { type: "frame", name: "Glass", width: 120, height: 40, backgroundBlur: 16, blur: 2, gradient: { type: "angular", angle: 90, stops } },
+    { type: "shape", shape: "star", name: "Star", width: 24, height: 24, gradient: { type: "radial", stops }, shadows: [{ type: "inner", x: 1, y: 1, blur: 2, spread: 0, color: "#00000040" }] },
+  ] });
+  const vec = new (await import("./figma-mock.ts")).N("BOOLEAN_OPERATION"); vec.name = "Cut"; vec.width = 16; vec.height = 16; root.appendChild(vec);
+  const snap = await snapshot(root, { svg: true });
+  const { plan, warnings } = snapshotToPlan(snap);
+  const [hero, glass, star, cut] = (plan.screens[0] as any).children;
+  assert.deepEqual(hero.gradient, { type: "linear", angle: 135, stops: [{ color: "#7C3AED", position: 0 }, { color: "#176B6680", position: 1 }] });
+  assert.equal(hero.fill, "#FFFFFF");
+  assert.deepEqual(hero.shadows, [{ type: "drop", x: 0, y: 4, blur: 12, spread: -2, color: "#0000001A" }]);
+  assert.deepEqual([glass.gradient.type, glass.gradient.angle, glass.blur, glass.backgroundBlur], ["angular", 90, 2, 16]);
+  assert.deepEqual([star.type, star.gradient.type, star.shadows[0].type], ["shape", "radial", "inner"]);
+  assert.deepEqual([cut.type, cut.width, /^<svg/.test(cut.svg)], ["icon", 16, true]);
+  assert.deepEqual(warnings, []);
+  // …and the exported plan is valid and compiles again.
+  const v = validatePlan(plan);
+  assert.ok(v.success, JSON.stringify(!v.success && v.errors));
+  assert.deepEqual(compilePlan({ ...fixtureDs(), typography: [] }, v.plan).errors, []);
+});

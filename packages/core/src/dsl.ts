@@ -168,6 +168,7 @@ export const DesignNodeSchema: z.ZodType<any> = z.lazy(() =>
     /** A basic shape: an ellipse (an arc makes rings, progress and pie slices), a horizontal line, a polygon or a star. */
     z.object({ type: z.literal("shape"), ...Base, shape: z.enum(["ellipse", "line", "polygon", "star"]),
       fill: ColorRef.optional(), stroke: ColorRef.optional(), strokeWeight: z.number().min(0).max(100).optional(), gradient: Gradient.optional(),
+      effect: z.string().optional(), shadows: z.array(Shadow).max(8).optional(), blur: z.number().min(0).max(250).optional(), backgroundBlur: z.number().min(0).max(250).optional(),
       /** Polygon sides / star points (default 3 / 5). */
       pointCount: z.number().int().min(3).max(60).optional(),
       /** Star: inner radius as a share of the outer one (default 0.38). */

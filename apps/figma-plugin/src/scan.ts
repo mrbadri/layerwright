@@ -253,16 +253,42 @@ function paints(p: readonly Paint[] | typeof figma.mixed | undefined): string[] 
   return out.length ? out : undefined;
 }
 
+const GRADIENT = { GRADIENT_LINEAR: "linear", GRADIENT_RADIAL: "radial", GRADIENT_ANGULAR: "angular", GRADIENT_DIAMOND: "diamond" } as const;
+const r3 = (v: number) => Math.round(v * 1000) / 1000;
+
+/** The top visible gradient, as the DSL writes it (the inverse of paints.ts: CSS angle from the transform). */
+export function gradientOf(p: readonly Paint[] | typeof figma.mixed | undefined): NodeSnapshot["gradient"] {
+  if (!p || p === figma.mixed || !Array.isArray(p)) return undefined;
+  const g = [...(p as Paint[])].reverse().find((x) => x.visible !== false && x.type in GRADIENT) as GradientPaint | undefined;
+  if (!g) return undefined;
+  const type = GRADIENT[g.type as keyof typeof GRADIENT];
+  const m = g.gradientTransform;
+  const angle = type === "linear" || type === "angular" ? (((Math.atan2(m[0][1], m[0][0]) * 180) / Math.PI + 90) % 360 + 360) % 360 : 180;
+  return { type, angle: Math.round(angle * 10) / 10, stops: g.gradientStops.map((st) => ({ color: toHex(st.color, g.opacity ?? 1), position: r3(st.position) })) };
+}
+
+/** Shadows and blurs, as the DSL writes them. */
+export function effectsOf(list: readonly Effect[]): NodeSnapshot["effects"] {
+  const on = list.filter((e) => e.visible !== false);
+  const shadows = on.filter((e): e is DropShadowEffect | InnerShadowEffect => e.type === "DROP_SHADOW" || e.type === "INNER_SHADOW")
+    .map((e) => ({ type: e.type === "INNER_SHADOW" ? "inner" as const : "drop" as const, x: e.offset.x, y: e.offset.y, blur: e.radius, spread: e.spread ?? 0, color: toHex(e.color) }));
+  const blur = (on.find((e) => e.type === "LAYER_BLUR") as BlurEffect | undefined)?.radius;
+  const backgroundBlur = (on.find((e) => e.type === "BACKGROUND_BLUR") as BlurEffect | undefined)?.radius;
+  if (!shadows.length && !blur && !backgroundBlur) return undefined;
+  return { ...(shadows.length ? { shadows } : {}), ...(blur ? { blur } : {}), ...(backgroundBlur ? { backgroundBlur } : {}) };
+}
+
 const isAutoParent = (n: SceneNode) => !!n.parent && "layoutMode" in n.parent && n.parent.layoutMode !== "NONE";
 
-export async function snapshot(node: BaseNode, opts: { depth?: number; maxNodes?: number; expandInstances?: boolean } = {}): Promise<NodeSnapshot> {
+/** svg: also export vectors and boolean shapes as SVG markup (for the plan export). */
+export async function snapshot(node: BaseNode, opts: { depth?: number; maxNodes?: number; expandInstances?: boolean; svg?: boolean } = {}): Promise<NodeSnapshot> {
   let budget = opts.maxNodes ?? 400;
   const varNames = new Map<string, string>();
   const varName = async (id: string) => {
     if (!varNames.has(id)) varNames.set(id, (await figma.variables.getVariableByIdAsync(id))?.name ?? id);
     return varNames.get(id)!;
   };
-  const walk = async (n: BaseNode, depth: number, parentAbs?: { x: number; y: number }): Promise<NodeSnapshot> => {
+  const walk = async (n: BaseNode, depth: number, parentAbs?: { x: number; y: number }, inInstance = false): Promise<NodeSnapshot> => {
     budget--;
     const s: NodeSnapshot = { id: n.id, type: n.type, name: n.name };
     const sn = n as SceneNode;
@@ -275,6 +301,13 @@ export async function snapshot(node: BaseNode, opts: { depth?: number; maxNodes?
     }
     if ("fills" in sn) s.fills = paints(sn.fills as readonly Paint[]);
     if ("strokes" in sn) s.strokes = paints(sn.strokes);
+    if ("fills" in sn) { const g = gradientOf(sn.fills as readonly Paint[]); if (g) s.gradient = g; }
+    if ("effects" in sn && sn.effects.length) { const e = effectsOf(sn.effects); if (e) s.effects = e; }
+    if ("effectStyleId" in sn && typeof sn.effectStyleId === "string" && sn.effectStyleId) s.effectStyle = sn.effectStyleId;
+    // Not inside instances: the export refers to their component, so their icons' SVG would never be used.
+    if (opts.svg && !inInstance && (n.type === "VECTOR" || n.type === "BOOLEAN_OPERATION")) {
+      try { const svg = await sn.exportAsync({ format: "SVG_STRING" }); if (svg.length <= 200_000) s.svg = svg; } catch { /* left out; the export warns */ }
+    }
     if ("cornerRadius" in sn && typeof sn.cornerRadius === "number" && sn.cornerRadius > 0) s.radius = sn.cornerRadius;
     if ("strokeWeight" in sn && typeof sn.strokeWeight === "number" && s.strokes) s.strokeWeight = sn.strokeWeight;
     // Shapes have no Auto Layout of their own, but they can fill their parent's (a divider line across a column).
@@ -345,7 +378,7 @@ export async function snapshot(node: BaseNode, opts: { depth?: number; maxNodes?
       s.children = [];
       for (const c of kids) {
         if (budget <= 0) { s.truncated = kids.length - s.children.length; break; }
-        s.children.push(await walk(c, depth - 1, parentAbs));
+        s.children.push(await walk(c, depth - 1, parentAbs, inInstance || n.type === "INSTANCE"));
       }
     }
     return s;

@@ -1,6 +1,6 @@
 // Resolver: maps semantic requirements (component names, roles, variants, tokens) to real
 // Design System entities, and compiles a validated DesignPlan into an executable ResolvedPlan.
-import type { ComponentDefinition, ComponentSetDefinition, DesignSystem, Num, Paint, ResolvedFrame, ResolvedInstance, ResolvedInteraction, ResolvedNode, ResolvedPlan, Sizing, StructuredError, TypographyDefinition, VariableDefinition } from "./types.ts";
+import type { ComponentDefinition, ComponentSetDefinition, DesignSystem, Num, Paint, ResolvedFrame, ResolvedInstance, ResolvedInteraction, ResolvedNode, ResolvedPlan, ResolvedShadow, Sizing, StructuredError, TypographyDefinition, VariableDefinition } from "./types.ts";
 import type { DesignPlan } from "./dsl.ts";
 import { norm } from "./semantics.ts";
 
@@ -440,6 +440,20 @@ export function compilePlan(ds: DesignSystem, plan: DesignPlan, opts: { preferre
     return res;
   };
 
+  /** Effect style (by name: exact first, then contained), raw shadows and blurs: shared by frames and shapes. */
+  const effectsOf = (node: any, path: string) => {
+    let effectStyleId: string | undefined;
+    if (node.effect) {
+      const fx = ds.styles.filter((s) => s.type === "EFFECT");
+      const e = fx.find((s) => norm(s.name) === norm(node.effect)) ?? fx.find((s) => norm(s.name).includes(norm(node.effect)));
+      if (e) effectStyleId = e.id; else errors.push({ type: "STYLE_NOT_FOUND", path: `${path}.effect`, message: `No effect style matches "${node.effect}".`, suggestions: fx.map((s) => s.name).slice(0, 8) });
+    }
+    return {
+      effectStyleId,
+      shadows: node.shadows?.map((s: any, i: number) => ({ type: s.type === "inner" ? "INNER_SHADOW" : "DROP_SHADOW", x: s.x, y: s.y, blur: s.blur, spread: s.spread, hex: hexOf(s.color, `${path}.shadows[${i}].color`) ?? "#00000040" })) as ResolvedShadow[] | undefined,
+      blur: node.blur as number | undefined, backgroundBlur: node.backgroundBlur as number | undefined,
+    };
+  };
   const gradientOf = (g: any, path: string) => g && { type: g.type, angle: g.angle, stops: g.stops.map((s: any, i: number) => ({ hex: hexOf(s.color, `${path}.gradient.stops[${i}].color`) ?? "#000000", position: s.position })) };
 
   const buildInner = (node: any, path: string, parentDir: "HORIZONTAL" | "VERTICAL" | "NONE" | null, rtlIn: boolean): ResolvedNode | undefined => {
@@ -485,8 +499,7 @@ export function compilePlan(ds: DesignSystem, plan: DesignPlan, opts: { preferre
         strokeSides: node.strokeSides,
         radius: noteNum(r.resolveNum(node.radius ?? preset.radius, `${path}.radius`, errors, "radius")),
         strokeWeights: node.strokeWeights,
-        shadows: node.shadows?.map((s: any, i: number) => ({ type: s.type === "inner" ? "INNER_SHADOW" : "DROP_SHADOW", x: s.x, y: s.y, blur: s.blur, spread: s.spread, hex: hexOf(s.color, `${path}.shadows[${i}].color`) ?? "#00000040" })),
-        blur: node.blur, backgroundBlur: node.backgroundBlur,
+        ...effectsOf(node, path),
         gradient: gradientOf(node.gradient, path),
         clip: node.clip,
         scroll: node.scroll ? node.scroll.toUpperCase() : undefined, fixedChildren: node.fixedChildren,
@@ -496,10 +509,6 @@ export function compilePlan(ds: DesignSystem, plan: DesignPlan, opts: { preferre
         sizingV: h.mode ?? "hug",
         children: [],
       };
-      if (node.effect) {
-        const e = ds.styles.find((s) => s.type === "EFFECT" && norm(s.name).includes(norm(node.effect)));
-        if (e) frame.effectStyleId = e.id; else errors.push({ type: "STYLE_NOT_FOUND", path: `${path}.effect`, message: `No effect style matches "${node.effect}".`, suggestions: ds.styles.filter((s) => s.type === "EFFECT").map((s) => s.name).slice(0, 8) });
-      }
       // A top-level section is a real Figma Section: no Auto Layout, so its children are placed like screens.
       const realSection = t === "section" && parentDir === null;
       if (realSection) { frame.sizingH = undefined; frame.sizingV = undefined; if (!node.layout?.padding) frame.layout = { ...frame.layout!, padding: { top: { value: 80 }, right: { value: 80 }, bottom: { value: 80 }, left: { value: 80 } } }; if (!node.layout?.gap) frame.layout = { ...frame.layout!, gap: { value: 80 } }; if (!node.layout?.direction) frame.layout = { ...frame.layout!, direction: "HORIZONTAL" }; }
@@ -577,7 +586,7 @@ export function compilePlan(ds: DesignSystem, plan: DesignPlan, opts: { preferre
       return { kind: "shape", shape: node.shape, path, name: node.name ?? node.shape[0].toUpperCase() + node.shape.slice(1),
         width: w.size ?? (line ? (w.mode || stretch ? undefined : 100) : 24), height: line ? undefined : h.size ?? 24,
         sizingH: w.mode ?? (line ? stretch : undefined) ?? "fixed", sizingV: line ? undefined : h.mode ?? "fixed",
-        fill, stroke, strokeWeight: node.strokeWeight ?? (line ? 1 : undefined), gradient: gradientOf(node.gradient, path),
+        fill, stroke, strokeWeight: node.strokeWeight ?? (line ? 1 : undefined), gradient: gradientOf(node.gradient, path), ...effectsOf(node, path),
         pointCount: node.pointCount, innerRadius: node.innerRadius, arc: node.arc };
     }
 

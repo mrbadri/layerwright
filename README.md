@@ -40,7 +40,7 @@ Layerwright closes that gap locally:
 - **AI design to Figma from a prompt.** Claude writes a typed Design Plan (a JSON DSL). The plan is validated and resolved against your components, variables and text styles, then built deterministically. Claude never writes Figma plugin code.
 - **Prototypes.** Click, hover and timed interactions, navigate / overlay / swap / back, smart animate and push transitions, scrolling frames and flow starting points, in plans or on existing frames.
 - **Work on existing designs** (`figma_edit`). Rename, move, duplicate, delete, and turn existing frames into components or variant sets with text properties, in one undo step.
-- **Figma back to a plan.** Any subtree exports as an editable Design Plan to clone, refactor or implement in code.
+- **Figma back to a plan.** Any subtree exports as an editable Design Plan to clone, refactor or implement in code: layout, tokens, text styles, instances, gradients, shadows, blurs, shapes, and vectors or boolean shapes as SVG icons.
 - **Accessibility and critique.** WCAG contrast (on the real background), touch-target and text-size checks, plus consistency signals; Claude uses them with a picture in a critique loop to polish what it builds.
 - **You see what was built.** `figma_export_image` renders any node, and compares it with the source HTML (or another node) with a diff heatmap.
 - **Safe by default.**
@@ -158,6 +158,7 @@ Start with `npx layerwright doctor`. It checks Node, `.mcp.json`, the skill, the
 - CSS grid, floats and transforms are imported as positioned layers, not as Auto Layout.
 - Linear, radial and conic gradients and `blur()`/`backdrop-filter: blur()` come across; other filters and blend modes are dropped in plan mode (the pixel-faithful mode keeps blend modes). Only the top background layer is used.
 - The largest corner radius is used when the four corners differ.
+- The plan export leaves image fills out (they need the original file) and keeps one colour plus the top gradient when a layer stacks several fills.
 - Fonts must be installed on the machine that runs Figma. A missing family falls back to Inter, with a warning.
 - Images must be PNG, JPEG or GIF (a Figma limit), up to 10 MB each.
 - The scan finds library components only when an instance of them exists in the open file. Others can be used by key (e.g. found with the official Figma MCP's library search).

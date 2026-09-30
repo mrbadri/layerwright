@@ -174,6 +174,12 @@ export interface NodeSnapshot {
   strokeWeight?: number;
   opacity?: number;
   clip?: boolean;
+  /** The top gradient fill, and shadows/blurs, as the DSL writes them. */
+  gradient?: { type: "linear" | "radial" | "angular" | "diamond"; angle: number; stops: { color: string; position: number }[] };
+  effects?: { shadows?: { type: "drop" | "inner"; x: number; y: number; blur: number; spread: number; color: string }[]; blur?: number; backgroundBlur?: number };
+  effectStyle?: string;
+  /** SVG markup of a vector or boolean shape (inspect with svg: true). */
+  svg?: string;
   /** Polygon/star points, star inner radius, and an ellipse's arc (degrees) when it isn't a full circle. */
   shape?: { pointCount?: number; innerRadius?: number; arc?: { start: number; end: number; innerRadius: number } };
   annotations?: AnnotationSpec[];
@@ -317,6 +323,10 @@ export interface ResolvedShape extends ResolvedBase {
   innerRadius?: number;
   /** Degrees; the executor converts to radians. */
   arc?: { start: number; end: number; innerRadius: number };
+  effectStyleId?: string;
+  shadows?: ResolvedShadow[];
+  blur?: number;
+  backgroundBlur?: number;
 }
 
 export type ResolvedNode = ResolvedFrame | ResolvedText | ResolvedInstance | ResolvedRect | ResolvedSvg | ResolvedShape;

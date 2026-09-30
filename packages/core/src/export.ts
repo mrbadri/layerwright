@@ -22,6 +22,24 @@ export function snapshotToPlan(root: NodeSnapshot, ds?: DesignSystem, opts: { na
 
   const color = (n: NodeSnapshot, field: "fills" | "strokes" = "fills") => n.bound?.[field] ?? hexOnly(field === "fills" ? n.fills : n.strokes);
 
+  /** Fill (a variable, or the one solid colour), the top gradient, and the effect style or raw shadows and blurs. */
+  const look = (n: NodeSnapshot, path: string, out: any) => {
+    const solids = (n.fills ?? []).filter((x) => x.startsWith("#"));
+    out.fill = n.bound?.fills ?? (solids.length === 1 ? solids[0].toUpperCase() : undefined);
+    if (n.gradient) out.gradient = { ...n.gradient, stops: n.gradient.stops.map((st) => ({ ...st, color: st.color.toUpperCase() })) };
+    const gradients = (n.fills ?? []).filter((x) => x.startsWith("gradient_")).length;
+    const other = (n.fills ?? []).find((x) => !x.startsWith("#") && !x.startsWith("gradient_"));
+    if (other) warnings.push(`${path}: "${n.name}" has a ${other} fill; images need the original file, so it's left out.`);
+    if (solids.length > 1 || gradients > 1) warnings.push(`${path}: "${n.name}" stacks several fills; only one colour and the top gradient are exported.`);
+    const style = n.effectStyle ? ds?.styles.find((s) => s.id === n.effectStyle)?.name : undefined;
+    if (style) out.effect = style;
+    else if (n.effects) {
+      if (n.effects.shadows) out.shadows = n.effects.shadows.map((s) => ({ ...s, color: s.color.toUpperCase() }));
+      if (n.effects.blur) out.blur = n.effects.blur;
+      if (n.effects.backgroundBlur) out.backgroundBlur = n.effects.backgroundBlur;
+    }
+  };
+
   const node = (n: NodeSnapshot, parent: NodeSnapshot | undefined, path: string): any => {
     if (n.visible === false) return undefined;
     // Children of a frame without Auto Layout keep their exact position. Group children are in the group's parent space.
@@ -83,8 +101,8 @@ export function snapshotToPlan(root: NodeSnapshot, ds?: DesignSystem, opts: { na
     if (["ELLIPSE", "LINE", "POLYGON", "STAR"].includes(n.type)) {
       const line = n.type === "LINE";
       const out: any = { type: "shape", ...common, shape: n.type.toLowerCase(), width: size(n, "H") === "fill" && inFlow ? "fill" : n.w, ...(line ? {} : { height: n.h }) };
-      if (!line) out.fill = color(n);
-      if (n.fills?.some((x) => !x.startsWith("#"))) warnings.push(`${path}: "${n.name}" has a ${n.fills.find((x) => !x.startsWith("#"))} fill; only solid colours are exported.`);
+      look(n, path, out);
+      if (line) { delete out.fill; delete out.gradient; }
       const s = color(n, "strokes");
       if (s) { out.stroke = s; if (n.strokeWeight) out.strokeWeight = n.strokeWeight; }
       if (n.shape?.pointCount) out.pointCount = n.shape.pointCount;
@@ -107,8 +125,7 @@ export function snapshotToPlan(root: NodeSnapshot, ds?: DesignSystem, opts: { na
         out.width = auto ? fit(size(n, "H"), n.w) : n.w;
         out.height = auto ? fit(size(n, "V"), n.h) : n.h;
       }
-      out.fill = color(n);
-      if (n.fills?.some((x) => !x.startsWith("#"))) warnings.push(`${path}: "${n.name}" has a ${n.fills.find((x) => !x.startsWith("#"))} fill; only solid colours are exported.`);
+      look(n, path, out);
       // A section's outline and corner radius are Figma's section chrome, not design.
       const s = n.type === "SECTION" ? undefined : color(n, "strokes");
       if (s) { out.stroke = s; if (n.strokeWeight) out.strokeWeight = n.strokeWeight; }
@@ -119,7 +136,10 @@ export function snapshotToPlan(root: NodeSnapshot, ds?: DesignSystem, opts: { na
       return strip(out);
     }
 
-    warnings.push(`${path}: ${n.type.toLowerCase()} "${n.name}" can't be exported to the DSL (vectors and images need the original); skipped.`);
+    // Vectors and boolean shapes come back as inline SVG icons, exactly as drawn.
+    if ((n.type === "VECTOR" || n.type === "BOOLEAN_OPERATION") && n.svg) return { type: "icon", ...common, svg: n.svg, width: n.w || 1, height: n.h || 1 };
+
+    warnings.push(`${path}: ${n.type.toLowerCase().replace(/_/g, " ")} "${n.name}" can't be exported to the DSL${n.type === "VECTOR" || n.type === "BOOLEAN_OPERATION" ? " (its SVG wasn't available: inspect with format: \"plan\")" : ""}; skipped.`);
     return undefined;
   };
 

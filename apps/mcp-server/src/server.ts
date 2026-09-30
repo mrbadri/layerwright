@@ -147,7 +147,7 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
   }, async ({ target, depth, maxNodes, expandInstances, format, offset, limit }) => guard(async () => {
     const f = format ?? "tree";
     const deep = f !== "tree";
-    const res = await bridge.request<{ page: string; nodes: NodeSnapshot[] }>("inspect", { target, depth: depth ?? (deep ? 20 : undefined), maxNodes: maxNodes ?? (deep ? 5000 : undefined), expandInstances: deep || expandInstances }, 120_000);
+    const res = await bridge.request<{ page: string; nodes: NodeSnapshot[] }>("inspect", { target, svg: f === "plan", depth: depth ?? (deep ? 20 : undefined), maxNodes: maxNodes ?? (deep ? 5000 : undefined), expandInstances: deep || expandInstances }, 120_000);
     if (!res.nodes.length) return fail([{ type: "NODE_NOT_FOUND", message: "Nothing selected. Pass a node id or ask the user to select a frame." }]);
     const flat: { n: NodeSnapshot; path: string; inInstance: boolean }[] = [];
     const walk = (n: NodeSnapshot, path: string, inInstance: boolean) => { flat.push({ n, path, inInstance }); (n.children ?? []).forEach((c) => walk(c, `${path} / ${c.name}`, inInstance || n.type === "INSTANCE")); };
