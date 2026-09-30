@@ -14,11 +14,12 @@ Follow the figma-design skill in .claude/skills/figma-design. Rules:
   If I didn't say how to bring HTML in (editable copy, with our Design System, or pixel-exact) or on
   which page, ask me once.
 - HTML → Figma: import_html_to_plan({ path, page }) or figma_import_html for exact layers. Never re-type
-  HTML designs as plans by hand.
+  HTML designs as plans by hand. When the file has a Design System, sync right after an editable import:
+  figma_analyze_design({ mode: "sync" }) → show me its groups → figma_apply_transformations.
 - New screens or prototypes: figma_get_design_context → one Design Plan for the whole flow (target.page,
   interactions, prototype.flows) → figma_preview_plan → show me the summary → figma_execute_plan.
-- Existing layers: figma_edit (rename, move, componentize with variants and text properties, prototype
-  links, delete). Show me what will change and use approved: true only after I agree.
+- Existing layers: figma_edit (rename, move, set text, swap, bind, style, group, boolean, componentize
+  with variants and text properties, prototype links, annotations, delete). Show me what will change and use approved: true only after I agree.
 - After every build or edit, look at it with figma_export_image (compareWith: { html } for imports)
   before telling me it's done.
 - Figma → code: figma_inspect(format: "plan") → code_scan_components → confirm mappings with me →

@@ -84,6 +84,12 @@ Up to 3 rounds, stop as soon as nothing important is left:
   - `swap` (`{ node, component, variant? }`) moves an instance to another component or variant; Figma keeps its text and other overrides.
   - `group` (`{ nodes, name? }`), `ungroup` (`{ node }`: a group, frame or boolean shape), `boolean` (`{ nodes, operation: union | subtract | intersect | exclude | flatten }`; layers with one parent, the bottom one is the base and gives its paint).
   - `annotate` (`{ node, annotations: [{ label, properties?, category? }] }`) writes native Figma annotations for developers: markdown notes, live measurements (padding, fills, …), a category such as "Development".
+- **Replace text** (copy updates, real content, a translation):
+  1. Find it: `figma_inspect({ target, format: "text" })`, paged. Texts over 300 characters come back cut with "…"; don't write those back.
+  2. Use the highest lever that fits: an instance's TEXT property (`set` on the instance with `properties: { Label: "…" }`; see `format: "instances"`), then a text layer inside an instance (`inInstance: true`: `set text` on its id, an override), then a plain text layer (`set text`). Never edit a main component to change one screen's copy.
+  3. One `figma_edit` call for the whole set (up to 200 ops), so one undo reverts it. For a translated copy: `duplicate` the frame, inspect the copy for its ids, change the copy.
+  4. `style: "mixed"` means styled runs: `set text` gives the whole text the first character's style. Change such a text through a plan with `runs` (`format: "plan"`), or tell the user.
+  5. Longer copy can wrap or overflow fixed widths, and another script needs a font that has it (Persian in a Latin-only font shows boxes). Check with `figma_export_image`; switching to RTL also needs `direction: "rtl"` through a plan, not only new characters.
 - **Move to a new component set** (a new Accordion, another library): `figma_migrate({ from, to, target, propertyMap?, valueMap? })` first reports what would change (instances per target variant, and the unmatched ones: map renamed properties or values and check again), then with `approved: true` swaps them all in one undo step.
   - Changing existing nodes needs `approved: true` after the user agreed. Without it, `delete` only hides the node and prefixes 🗑.
 - **Fill many slots:** a plan with `inserts: [{ parentId, index?, nodes }]` (one run, needs approval).
