@@ -6,3 +6,4 @@ export * from "./retrieval.ts";
 export * from "./analyze.ts";
 export * from "./export.ts";
 export * from "./weights.ts";
+export * from "./critique.ts";

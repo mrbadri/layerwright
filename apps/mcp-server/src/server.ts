@@ -4,7 +4,7 @@ import { z } from "zod";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import {
-  analyzeDesign, compilePlan, emptyDesignSystem, enrichDesignSystem, Interaction, resolveInteraction, retrieve, snapshotToPlan, summarize, validatePlan, verifyAgainstPlan,
+  accessibilityFindings, analyzeDesign, compilePlan, designMetrics, emptyDesignSystem, enrichDesignSystem, Interaction, resolveInteraction, retrieve, snapshotToPlan, summarize, validatePlan, verifyAgainstPlan,
   type AnalysisResult, type DesignSystem, type ExecutionReport, type NodeSnapshot, type ResolvedPlan, type StructuredError, type TransformReport, type PlanSummary,
 } from "@cde/core";
 import { BridgeError, type FigmaTransport } from "./bridge.ts";
@@ -291,8 +291,23 @@ export function createServer(bridge: FigmaTransport, opts: ServerOptions = {}) {
   server.registerTool("figma_analyze_design", {
     description: "Mode B. Inspect the selected frame (or node id), compare it to the Design System, and propose NON-destructive transformations: custom buttons/inputs → DS instances, raw spacing/radius → tokens, raw colors → color variables, raw text → text styles, manual layout → Auto Layout. Returns an analysisId + grouped summary. Nothing is changed.",
     inputSchema: { target: z.string().optional().describe("'selection' (default) or node id"), verbose: z.boolean().optional().describe("Include every transformation (default: summary + first 40)"),
-      mode: z.enum(["audit", "sync"]).optional().describe("audit (default): exact matches only. sync: after an import (e.g. from HTML), match to the Design System like a designer: buttons and pills become DS components with the closest-looking variant, text gets the style with the same size and weight (even if the import used a stand-in font), colours get variables or colour styles") },
+      mode: z.enum(["audit", "sync", "a11y", "critique"]).optional().describe("audit (default): exact matches only. sync: after an import (e.g. from HTML), match to the Design System like a designer: buttons and pills become DS components with the closest-looking variant, text gets the style with the same size and weight (even if the import used a stand-in font), colours get variables or colour styles. a11y: WCAG 2.2 checks (text contrast against its real background, touch target size, tiny text). critique: a11y plus consistency signals (spacing off the scale, font sizes, raw colours, near-miss alignment) for the visual critique loop") },
   }, async ({ target, verbose, mode }) => guard(async () => {
+    // Accessibility and critique report findings; they change nothing and need no Design System scan.
+    if (mode === "a11y" || mode === "critique") {
+      const snap = await bridge.request<{ nodes: NodeSnapshot[] }>("inspect", { target: target ?? "selection", depth: 20, maxNodes: 20000, expandInstances: true }, 180_000);
+      if (!snap.nodes.length) return fail([{ type: "NODE_NOT_FOUND", message: "Nothing selected. Ask the user to select a frame." }]);
+      const d = loadDs();
+      const findings = snap.nodes.flatMap((n) => accessibilityFindings(n));
+      const metrics = mode === "critique" ? snap.nodes.map((n) => designMetrics(n, d)) : [];
+      findings.push(...metrics.flatMap((m) => m.findings));
+      const order = { error: 0, warning: 1, info: 2 } as const;
+      findings.sort((a, b) => order[a.severity] - order[b.severity]);
+      const count = (sev: string) => findings.filter((f) => f.severity === sev).length;
+      return ok({ mode, errors: count("error"), warnings: count("warning"), infos: count("info"), findings: verbose ? findings : findings.slice(0, 40), total: findings.length,
+        metrics: mode === "critique" ? metrics.map((m) => m.metrics) : undefined,
+        next: mode === "critique" ? "Look at figma_export_image of the same node too. Score the rubric (hierarchy, spacing, alignment, contrast, consistency, density), fix the worst issues with a plan or figma_edit, and check again (at most 3 rounds)." : "Tell the user the errors first; fix contrast with DS colours, not raw values." });
+    }
     const d = needDs();
     const snap = await bridge.request<{ nodes: NodeSnapshot[] }>("inspect", { target: target ?? "selection", depth: 20, maxNodes: 20000 });
     if (!snap.nodes.length) return fail([{ type: "NODE_NOT_FOUND", message: "Nothing selected. Ask the user to select a frame." }]);

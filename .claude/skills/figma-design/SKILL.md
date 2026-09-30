@@ -62,7 +62,15 @@ Don't ask what you can find out: the file, page, selection and DS come from `fig
 3. Write **one** plan for the whole flow (DSL below), with `target.page`. Put screens in a top-level `section`.
 4. For a prototype, give nodes `interactions` and the plan `prototype.flows` (DSL below).
 5. `figma_preview_plan` → fix errors from their `suggestions` → show the summary → `figma_execute_plan`.
-6. `figma_export_image` on the result. Report what you built, the verification and the warnings.
+6. Run the **critique loop** (below) on the result. Then report what you built, the verification, the warnings and what the critique changed.
+
+### Critique loop (after building from a prompt, or when asked to "polish" / "review" a design)
+
+Up to 3 rounds, stop as soon as nothing important is left:
+1. Look: `figma_export_image({ nodeId })`, and measure: `figma_analyze_design({ target: nodeId, mode: "critique" })` (accessibility errors, spacing off the scale, font-size count, raw colours, near-miss alignment).
+2. Score each 1–5, one line each: **hierarchy** (one clear primary action and title; the eye knows where to go), **spacing** (a consistent scale; related things closer than unrelated), **alignment** (shared edges; no 1–3px misses), **contrast** (WCAG from the findings; nothing important low-contrast), **consistency** (DS components, tokens and text styles; few font sizes and colours), **density** (not cramped, not empty; mobile vs desktop).
+3. Fix the lowest scores first, with the DS (tokens, styles, components), through a plan with `target`/`inserts` or `figma_edit`. Don't restyle what already scores 4–5.
+4. Look again. Tell the user the scores before and after, in one short table.
 
 ## 5. Job C: change existing Figma
 
@@ -75,6 +83,7 @@ Don't ask what you can find out: the file, page, selection and DS come from `fig
 - **Fill many slots:** a plan with `inserts: [{ parentId, index?, nodes }]` (one run, needs approval).
 - **Refactor or clone:** `figma_inspect({ format: "plan" })` gives the subtree as a plan (instances by set id, text styles, tokens, interactions). Edit it, preview, execute; compare old and new with `figma_export_image({ nodeId, compareWith: { nodeId } })`.
 - **Apply the DS (audit):** `figma_analyze_design` → show its `groups` → `figma_apply_transformations({ analysisId, approved: true, groups | excludeGroups })`.
+- **Accessibility:** `figma_analyze_design({ target, mode: "a11y" })`: text contrast against its real background (WCAG 1.4.3), touch targets under 24px (2.5.8, 44px recommended), text under 12px. Report errors first; fix contrast with DS colours, never raw hex.
 - **Clean up** failed attempts: `figma_cleanup()` lists what this session made; `approved: true` removes it.
 
 ## 6. Job D: Figma → code

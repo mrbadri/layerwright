@@ -41,6 +41,7 @@ Layerwright closes that gap locally:
 - **Prototypes.** Click, hover and timed interactions, navigate / overlay / swap / back, smart animate and push transitions, scrolling frames and flow starting points, in plans or on existing frames.
 - **Work on existing designs** (`figma_edit`). Rename, move, duplicate, delete, and turn existing frames into components or variant sets with text properties, in one undo step.
 - **Figma back to a plan.** Any subtree exports as an editable Design Plan to clone, refactor or implement in code.
+- **Accessibility and critique.** WCAG contrast (on the real background), touch-target and text-size checks, plus consistency signals; Claude uses them with a picture in a critique loop to polish what it builds.
 - **You see what was built.** `figma_export_image` renders any node, and compares it with the source HTML (or another node) with a diff heatmap.
 - **Safe by default.**
   - Every run is one undo step.
