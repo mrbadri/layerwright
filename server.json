@@ -1,0 +1,22 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.shayan-m81/layerwright",
+  "title": "Layerwright",
+  "description": "HTML and Claude Design exports to editable Figma layers with your Design System, and Figma to code.",
+  "repository": {
+    "url": "https://github.com/shayan-m81/layerwright",
+    "source": "github"
+  },
+  "websiteUrl": "https://github.com/shayan-m81/layerwright#readme",
+  "version": "0.2.2",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "layerwright",
+      "version": "0.2.2",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

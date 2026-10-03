@@ -2,6 +2,7 @@
   "name": "layerwright",
   "version": "0.2.2",
   "description": "Turn Claude Design and Claude Code designs into native, editable Figma files (HTML to Figma with Auto Layout and your Design System components), and Figma frames into code that uses your own React components. An MCP server and Figma plugin for Claude Code.",
+  "mcpName": "io.github.shayan-m81/layerwright",
   "keywords": [
     "claude design to figma",
     "export claude design",
@@ -18,7 +19,9 @@
     "design-to-code",
     "figma to code",
     "figma to react",
-    "auto-layout"
+    "auto-layout",
+    "mcp-server",
+    "cursor"
   ],
   "homepage": "https://github.com/shayan-m81/layerwright#readme",
   "repository": {

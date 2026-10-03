@@ -5,6 +5,9 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Listed metadata for MCP directories: `mcpName` in the npm package and a `server.json` for the official MCP Registry (a test keeps their name and version in step), and `glama.json` for claiming the Glama listing.
+
 ## [0.2.2] - 2026-09-30
 
 ### Fixed
