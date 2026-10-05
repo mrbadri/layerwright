@@ -5,6 +5,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-05
+
 ### Added
 - Any number of Claude Code and Cursor sessions use Figma at once. The first one starts a small shared process (the hub) that owns the bridge port; every session joins it, and the plugin connects to it once. Closing a session doesn't touch the others; if the hub goes away, a session starts a new one and the plugin reconnects by itself. The hub stops when no session has been connected for a minute. `layerwright hub status` / `hub stop` show and stop it; `LAYERWRIGHT_DIRECT=1` keeps the old one-session bridge.
 - The plugin window lists the connected sessions (colour, project, client, what each is doing) and tags activity and errors with the session they belong to.
@@ -166,7 +168,8 @@ All notable changes to this project are documented here. The format follows
 ### Fixed
 - The plugin no longer opens a duplicate connection after the port is changed.
 
-[Unreleased]: https://github.com/shayan-m81/layerwright/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/shayan-m81/layerwright/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/shayan-m81/layerwright/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/shayan-m81/layerwright/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/shayan-m81/layerwright/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/shayan-m81/layerwright/compare/v0.1.4...v0.2.0
