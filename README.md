@@ -78,7 +78,7 @@ npx layerwright init
 ```
 `init` asks which agents get the Layerwright plugin (the ones it finds are preselected; `--agents claude,codex` or `--no-agents` skip the question), installs it with their own `claude plugin` / `codex plugin` commands, and pairs the Figma plugin with this computer.
 
-2. In **Figma desktop**, go to **Plugins → Development → Import plugin from manifest…** and pick the path `init` printed (`~/.layerwright/figma-plugin/manifest.json`). Open your file and run **Layerwright**. Keep its small window open.
+2. In **Figma desktop**, go to **Plugins → Development → Import plugin from manifest…**. The plugin sits in a hidden folder (`~/.layerwright/figma-plugin/manifest.json`), so `init` copies that path to your clipboard and shows the folder: in the file dialog press **⌘⇧G** (Windows: click the File name box), paste, Enter. You do this once; afterwards run **Plugins → Development → Layerwright** and keep its small window open. `npx layerwright plugin` shows these steps again.
 3. Start a new **Claude Code** or **Codex** session, type `/layer:help`, or ask:
    - *"Import ./design.html into Figma"*: a Claude Design HTML export becomes editable frames.
    - *"Create a sign-up flow in Figma using our Design System"*: new screens built from your components.

@@ -13,6 +13,7 @@ const HELP = () => `Usage:
                                      and this project (run in your project folder)
       --agents claude,codex    install the agent plugin for these without asking (--no-agents: none)
       --cursor                 also set up Cursor (.cursor/mcp.json and a rule; automatic when .cursor exists)
+  ${BIN} plugin                 reinstall the Figma plugin and show how to import it (copies its path, opens its folder)
   ${BIN} claude [args…]         start Claude Code with requests from the Figma window arriving live (channels)
   ${BIN} agents [claude|codex]  install or refresh the agent plugin (/layer commands); default: the agents found
   ${BIN} doctor [--port 7331]   check Node, the server, the Figma plugin connection and the file
@@ -346,6 +347,7 @@ export async function main(argv = process.argv.slice(2)) {
     const agents = rest.includes("--no-agents") ? [] : i >= 0 ? agentList(rest[i + 1]) : undefined;
     process.exitCode = await (await import("./setup.ts")).init({ port, skipInstall: rest.includes("--skip-install"), cursor: rest.includes("--cursor") ? true : undefined, agents });
   }
+  else if (cmd === "plugin") process.exitCode = (await import("./setup.ts")).pluginCommand();
   else if (cmd === "claude") process.exitCode = await (await import("./agents.ts")).claudeWithChannels(rest);
   else if (cmd === "agents") process.exitCode = await agentsCommand(rest);
   else if (cmd === "inbox-watch") process.exitCode = await inboxWatch();

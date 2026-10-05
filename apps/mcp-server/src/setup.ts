@@ -60,6 +60,43 @@ export function installPluginFiles(src = pluginSource()): string {
   return home;
 }
 
+/** Put text on the clipboard; false when this computer has no tool for it. */
+function copyToClipboard(text: string): boolean {
+  const tools: [string, string[]][] = process.platform === "darwin" ? [["pbcopy", []]] : process.platform === "win32" ? [["clip", []]] : [["wl-copy", []], ["xclip", ["-selection", "clipboard"]]];
+  for (const [cmd, args] of tools) { const r = spawnSync(cmd, args, { input: text, stdio: ["pipe", "ignore", "ignore"] }); if (r.status === 0) return true; }
+  return false;
+}
+
+/** Show the file in Finder / Explorer (the plugin lives in a hidden folder, so nobody finds it by browsing). */
+function revealFile(file: string): void {
+  try {
+    if (process.platform === "darwin") spawnSync("open", ["-R", file], { stdio: "ignore" });
+    else if (process.platform === "win32") spawnSync("explorer", [`/select,${file}`], { stdio: "ignore" });
+    else spawnSync("xdg-open", [dirname(file)], { stdio: "ignore" });
+  } catch { /* nothing to show it with */ }
+}
+
+/** Tell the user how to import the plugin into Figma. At a terminal the path is also copied and the folder is shown,
+ *  because the file dialog doesn't list hidden folders: they only need to paste. */
+export function importGuide(home: string, interactive = Boolean(process.stdout.isTTY)): string {
+  const manifest = join(home, "manifest.json");
+  const copied = interactive && copyToClipboard(manifest);
+  if (interactive) revealFile(manifest);
+  const paste = process.platform === "darwin" ? "press ⌘⇧G, paste the path (⌘V) and press Enter" : "paste the path (Ctrl+V) into the File name box and press Enter";
+  return `Figma desktop → Plugins → Development → Import plugin from manifest…, then ${paste}.
+     ${manifest}${copied ? "   (copied to your clipboard)" : ""}
+     Once only: afterwards it's under Plugins → Development → Layerwright.`;
+}
+
+/** `layerwright plugin`: reinstall the plugin files and show how to import them into Figma. */
+export function pluginCommand(out: Out = stdout): number {
+  const src = pluginSource();
+  if (!existsSync(join(src, "manifest.json")) || !existsSync(join(src, "dist", "code.js"))) { out(`✗ Built plugin not found in ${src}. Run "npm run build" in the repository.`); return 1; }
+  const home = installPluginFiles(src);
+  out(`✓ Figma plugin installed at ${home}\n  ${importGuide(home)}`);
+  return 0;
+}
+
 /** ۱ / ١ → 1: an answer typed with a Persian or Arabic keyboard. */
 export const asciiDigits = (s: string) => s.replace(/[۰-۹٠-٩]/g, (d) => String((d.charCodeAt(0) & 0xf) % 10));
 
@@ -239,7 +276,7 @@ export async function init(o: InitOptions = {}): Promise<number> {
     : `  3. Restart Claude Code in ${dir} and ask, for example:`;
   out(`
 Next steps:
-  1. Figma desktop → Plugins → Development → Import plugin from manifest… → ${join(home, "manifest.json")}
+  1. ${importGuide(home)}
   2. Open your design file and run the plugin (keep its small window open).
 ${agentLine}
      • "Import ./design.html into Figma"                         (HTML → Figma)
