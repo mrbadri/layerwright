@@ -2,18 +2,23 @@
 
 **Turn Claude Design and Claude Code designs into native, editable Figma files, and Figma designs into code that uses your own components.**
 
-Layerwright is an open-source MCP server and Figma plugin that works with Claude Code. It imports
-HTML (for example a Claude Design "standalone HTML" export) into Figma as real frames with Auto
-Layout, text, images and vector icons, and it lets Claude build new screens from your own Design
-System: real component instances, variables and text styles. It is not a screenshot and it is not a
-flat SVG. It also works the other way: select a Figma frame and Claude implements it in your codebase
-with your existing components and tokens, then checks that it did.
-
 [![CI](https://github.com/shayan-m81/layerwright/actions/workflows/ci.yml/badge.svg)](https://github.com/shayan-m81/layerwright/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/layerwright.svg)](https://www.npmjs.com/package/layerwright)
 [![MIT](https://img.shields.io/badge/license-MIT-green.svg)](https://github.com/shayan-m81/layerwright/blob/main/LICENSE)
 
-![Demo: an HTML page imported into Figma as editable Auto Layout frames, desktop and mobile](https://github.com/shayan-m81/layerwright/raw/main/docs/assets/demo.gif)
+![Demo: Claude Code imports an HTML landing page into Figma as editable Auto Layout frames, desktop and mobile](https://github.com/shayan-m81/layerwright/raw/main/docs/assets/demo.gif)
+
+<sub>Claude Code imports an HTML landing page through the Layerwright plugin: a 1440 and a 390 frame with Auto Layout, real text layers and named groups (`nav`, `hero`, `cta`), not a picture.</sub>
+
+```bash
+npx layerwright init   # in your project, then open the plugin in Figma desktop (see Quickstart)
+```
+
+Layerwright is an open-source MCP server and Figma plugin for Claude Code (and Cursor). It imports
+HTML, such as a Claude Design "standalone HTML" export, into Figma as real frames with Auto Layout,
+text, images and vector icons. It builds new screens from your own Design System: real component
+instances, variables and text styles. And it works the other way: select a Figma frame and Claude
+implements it in your codebase with your existing components and tokens, then checks that it did.
 
 ## Why
 

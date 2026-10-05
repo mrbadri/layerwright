@@ -8,6 +8,7 @@ All notable changes to this project are documented here. The format follows
 ## [1.0.0] - 2026-10-05
 
 ### Added
+- Listed metadata for MCP directories: `mcpName` in the npm package and a `server.json` for the official MCP Registry (a test keeps their name and version in step), and `glama.json` for claiming the Glama listing.
 - Importing the Figma plugin no longer means hunting for a hidden folder: `init` copies the manifest path to the clipboard and shows the folder in Finder / Explorer, and the steps say to paste it in the file dialog (⌘⇧G on a Mac). `layerwright plugin` reinstalls the plugin files and shows the same steps again.
 - Any number of Claude Code and Cursor sessions use Figma at once. The first one starts a small shared process (the hub) that owns the bridge port; every session joins it, and the plugin connects to it once. Closing a session doesn't touch the others; if the hub goes away, a session starts a new one and the plugin reconnects by itself. The hub stops when no session has been connected for a minute. `layerwright hub status` / `hub stop` show and stop it; `LAYERWRIGHT_DIRECT=1` keeps the old one-session bridge.
 - The plugin window lists the connected sessions (colour, project, client, what each is doing) and tags activity and errors with the session they belong to.
