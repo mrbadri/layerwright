@@ -5,7 +5,7 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-## [0.3.0] - 2026-10-05
+## [1.0.0] - 2026-10-05
 
 ### Added
 - Importing the Figma plugin no longer means hunting for a hidden folder: `init` copies the manifest path to the clipboard and shows the folder in Finder / Explorer, and the steps say to paste it in the file dialog (⌘⇧G on a Mac). `layerwright plugin` reinstalls the plugin files and shows the same steps again.
@@ -169,8 +169,8 @@ All notable changes to this project are documented here. The format follows
 ### Fixed
 - The plugin no longer opens a duplicate connection after the port is changed.
 
-[Unreleased]: https://github.com/shayan-m81/layerwright/compare/v0.3.0...HEAD
-[0.3.0]: https://github.com/shayan-m81/layerwright/compare/v0.2.2...v0.3.0
+[Unreleased]: https://github.com/shayan-m81/layerwright/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/shayan-m81/layerwright/compare/v0.2.2...v1.0.0
 [0.2.2]: https://github.com/shayan-m81/layerwright/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/shayan-m81/layerwright/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/shayan-m81/layerwright/compare/v0.1.4...v0.2.0
